@@ -45,7 +45,11 @@ export default function VenueDetail() {
   // Reviews: your own (from completed bookings) first, then guests, newest first.
   const mine = bookings
     .filter((b) => b.targetId === venue.id && myReviews[b.id])
-    .map((b) => ({ id: `mine-${b.id}`, authorId: 'me', rating: myReviews[b.id].rating, text: myReviews[b.id].text, date: b.date, context: b.eventTitle }));
+    .map((b) => {
+      const r = myReviews[b.id];
+      const tags = r.tags ?? [];
+      return { id: `mine-${b.id}`, authorId: 'me', rating: r.rating, text: r.text || (tags.length ? `Loved the ${tags.join(', ').toLowerCase()}.` : ''), date: b.date, context: b.eventTitle };
+    });
   const allReviews = [
     ...mine,
     ...reviewsFor(venue.id)
@@ -53,7 +57,9 @@ export default function VenueDetail() {
       .sort((a, b) => b.date.localeCompare(a.date)),
   ];
   const reviewCount = allReviews.length;
+  const reviewsLabel = `${reviewCount} review${reviewCount === 1 ? '' : 's'}`;
   const rating = reviewCount ? allReviews.reduce((n, r) => n + r.rating, 0) / reviewCount : venue.rating;
+  const ratingText = rating.toFixed(1).replace('.', ',');
   const openRatings = () => router.push(`/ratings/${venue.id}`);
 
   return (
@@ -75,15 +81,22 @@ export default function VenueDetail() {
             <HeartToggle on={wished} onPress={() => toggleWish('venues', venue.id)} label={wished ? 'Remove from wishlist' : 'Save to wishlist'} />
           </SafeAreaView>
           <Row style={{ position: 'absolute', left: 20, right: 16, bottom: 18 }} justify="space-between" align="flex-end">
-            <View>
+            <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={{ color: colors.white, fontFamily: fonts.display, fontSize: 30 }}>{venue.name}</Text>
               <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }}>{venue.city}, {venue.postcode}</Text>
             </View>
             <Row gap={8}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Rated ${rating.toFixed(1)} out of 5${reviewCount ? ` from ${reviewCount} reviews` : ''}. See reviews`} onPress={openRatings} hitSlop={8}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Rated ${ratingText} out of 5${reviewCount ? ` from ${reviewsLabel}` : ''}. See reviews`} onPress={openRatings} hitSlop={8}>
                 <RatingBadge value={rating} />
               </Pressable>
-              <Button title={following ? 'Following' : 'Follow'} icon={following ? 'check' : 'plus'} size="sm" onPress={() => toggleFollow(venue.id)} />
+              <Button
+                title={following ? 'Following' : 'Follow'}
+                accessibilityLabel={following ? `Unfollow ${venue.name}` : `Follow ${venue.name}`}
+                icon={following ? 'check' : 'plus'}
+                size="sm"
+                hitSlop={4}
+                onPress={() => toggleFollow(venue.id)}
+              />
             </Row>
           </Row>
           <Row gap={5} style={{ position: 'absolute', top: 70, alignSelf: 'center' }}>
@@ -143,7 +156,7 @@ export default function VenueDetail() {
               {reviewCount ? (
                 <Row gap={6}>
                   <Stars value={rating} size={14} />
-                  <T v="bodyBold">{rating.toFixed(1).replace('.', ',')}</T>
+                  <T v="bodyBold">{ratingText}</T>
                   <T v="small">({reviewCount})</T>
                 </Row>
               ) : null}
@@ -164,7 +177,7 @@ export default function VenueDetail() {
               );
             })}
             {reviewCount ? (
-              <Button title={`See all ${reviewCount} review${reviewCount === 1 ? '' : 's'}`} variant="secondary" size="md" icon="star-outline" onPress={openRatings} />
+              <Button title={reviewCount === 1 ? 'See review' : `See all ${reviewsLabel}`} variant="secondary" size="md" icon="star-outline" onPress={openRatings} />
             ) : (
               <View style={{ backgroundColor: colors.surface, padding: 16, borderRadius: radius.md, gap: 4, ...shadow(1) }}>
                 <T v="bodyBold">No reviews yet</T>

@@ -16,6 +16,7 @@ export default function EventComments() {
   const user = useApp((s) => s.user);
   const extra = useApp((s) => (id ? s.extraComments[`event:${id}`] : undefined));
   const addComment = useApp((s) => s.addComment);
+  const tickets = useApp((s) => s.tickets);
   const [text, setText] = useState('');
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const inputRef = useRef<TextInput>(null);
@@ -38,6 +39,7 @@ export default function EventComments() {
 
   const comments = [...(eventDiscussion[event.id] ?? []), ...(extra ?? [])];
   const count = comments.length;
+  const myTicket = tickets.find((t) => t.eventId === event.id && t.status === 'valid');
 
   const send = () => {
     const t = text.trim();
@@ -84,7 +86,7 @@ export default function EventComments() {
                 style={{ fontFamily: fonts.body, fontSize: 16, color: colors.ink, minHeight: 46 }}
               />
             </View>
-            <IconButton name="send" label="Post comment" color={text.trim() ? colors.brand : colors.disabled} onPress={send} />
+            <IconButton name="send" label="Post comment" color={colors.brand} disabled={!text.trim()} onPress={send} />
           </Row>
         </BottomBar>
       }
@@ -105,7 +107,13 @@ export default function EventComments() {
             <T v="title" numberOfLines={1}>{event.title}</T>
             <T v="small" numberOfLines={1}>{eventWhen(event.start, event.end)}</T>
           </View>
-          <Button title="Tickets" size="sm" variant="light" onPress={() => router.push(`/tickets/${event.id}`)} />
+          <Button
+            title={myTicket ? 'My ticket' : 'Tickets'}
+            size="sm"
+            variant="light"
+            accessibilityLabel={myTicket ? `Open my ticket for ${event.title}` : `Get tickets for ${event.title}`}
+            onPress={() => router.push(myTicket ? `/ticket/${myTicket.id}` : `/tickets/${event.id}`)}
+          />
         </Row>
 
         {count === 0 ? (
@@ -141,7 +149,7 @@ export default function EventComments() {
                       <T v="small" style={{ fontSize: 12 }}>{c.time === 'now' ? 'Just now' : c.time}</T>
                       <T v="small" style={{ fontSize: 12 }}>{likes} {likes === 1 ? 'like' : 'likes'}</T>
                       {c.authorId !== 'me' ? (
-                        <Pressable accessibilityRole="button" accessibilityLabel={`Reply to ${name}`} onPress={() => reply(name, c.authorId)} hitSlop={10}>
+                        <Pressable accessibilityRole="button" accessibilityLabel={`Reply to ${name}`} onPress={() => reply(name, c.authorId)} hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}>
                           <T v="smallBold" style={{ fontSize: 12 }} color={colors.brand}>Reply</T>
                         </Pressable>
                       ) : null}

@@ -67,11 +67,11 @@ function NextGigs() {
     <View style={{ backgroundColor: colors.surface, paddingVertical: 14, marginBottom: 10 }}>
       <Row justify="space-between" style={{ paddingHorizontal: 14, marginBottom: 10 }}>
         <T v="h3">Musicians’ next events</T>
-        <Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/artists')} hitSlop={8}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="See all musicians" onPress={() => router.push('/(tabs)/artists')} hitSlop={12}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
       </Row>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, gap: 12 }}>
         {rows.map(({ a, next }) => (
-          <Pressable key={a.id} accessibilityRole="button" onPress={() => router.push(`/event/${next!.id}`)} style={{ width: 140, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.surface, ...shadow(1) }}>
+          <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`${a.name}, next event: ${next!.title}`} onPress={() => router.push(`/event/${next!.id}`)} style={{ width: 140, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.surface, ...shadow(1) }}>
             <Photo src={a.avatar} style={{ height: 150 }} />
             <View style={{ position: 'absolute', top: 8, left: 8 }}><DateBadge iso={next!.start} size={42} /></View>
             <View style={{ padding: 8, gap: 2 }}>
@@ -92,7 +92,7 @@ function UpcomingEvents() {
     <View style={{ backgroundColor: colors.surface, paddingVertical: 14, marginBottom: 10 }}>
       <Row justify="space-between" style={{ paddingHorizontal: 14, marginBottom: 10 }}>
         <T v="h3">Upcoming events near you</T>
-        <Pressable accessibilityRole="button" onPress={() => router.push('/events/all')} hitSlop={8}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="See all upcoming events" onPress={() => router.push('/events/all')} hitSlop={12}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
       </Row>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, gap: 12, paddingBottom: 4 }}>
         {list.map((e) => <MiniEventCard key={e.id} event={e} />)}
@@ -142,7 +142,7 @@ export default function Home() {
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.brand} colors={[colors.brand]} onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 800); }} />}
         ListHeaderComponent={
           <View style={{ backgroundColor: colors.surface, marginBottom: 10 }}>
-            <Pressable accessibilityRole="search" onPress={() => router.push('/search')} style={{ marginHorizontal: 12, marginTop: 12, height: 46, borderRadius: 14, backgroundColor: '#F1EFF6', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 }}>
+            <Pressable accessibilityRole="search" accessibilityLabel="Search events, artists, venues" onPress={() => router.push('/search')} style={{ marginHorizontal: 12, marginTop: 12, height: 46, borderRadius: 14, backgroundColor: '#F1EFF6', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 }}>
               <Icon name="magnify" size={22} color={colors.muted} />
               <T v="body" color={colors.subtle}>Search events, artists, venues</T>
             </Pressable>

@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { BottomBar, Screen, ScreenHeader } from '../../components/layout';
+import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Avatar, Banner, Button, Card, Chip, Divider, Field, KeyValue, Photo, Row, Stepper, T, Toggle } from '../../components/ui';
 import { OCCASIONS, profileById, venueById } from '../../data/mock';
 import { euro, isoDay, shortDate, TODAY } from '../../lib/format';
@@ -21,6 +21,7 @@ export default function NewBooking() {
   const artist = type === 'musician' ? profileById(id ?? '') : undefined;
   const venue = type === 'venue' ? venueById(id ?? '') : undefined;
   const user = useApp((s) => s.user);
+  const bookings = useApp((s) => s.bookings);
   const createBooking = useApp((s) => s.createBooking);
 
   const dates = useMemo(() => Array.from({ length: 45 }, (_, i) => new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + 3 + i, 12)), []);
@@ -39,9 +40,10 @@ export default function NewBooking() {
 
   if (!artist && !venue) {
     return (
-      <Screen header={<ScreenHeader title="Booking" />}>
+      <Screen header={<ScreenHeader title="Booking" onBack={() => goBack('/(tabs)/artists')} />}>
         <T v="body">Choose a musician or venue first.</T>
         <Button title="Browse artists" onPress={() => router.replace('/artists/all')} />
+        <Button title="Browse venues" variant="secondary" onPress={() => router.replace('/venues')} />
       </Screen>
     );
   }
@@ -51,11 +53,17 @@ export default function NewBooking() {
   const end = addHours(start, hours);
   const equipment = artist ? (ownGear ? 'Provided by venue / host' : 'Artist brings own gear') : venue!.equipment;
 
+  const targetId = (artist?.id ?? venue?.id)!;
+  // You can only hold one open request per provider and date.
+  const clash = bookings.find((b) => b.targetId === targetId && b.date === isoDay(date) && !['declined', 'cancelled', 'expired', 'completed'].includes(b.status));
+
   const toReview = () => {
     const e: Record<string, string> = {};
     if (title.trim().length < 3) e.title = 'Give your event a name';
     if (artist && location.trim().length < 3) e.location = 'Where is the event?';
     if (!Number(guests)) e.guests = 'Roughly how many guests?';
+    else if (venue && Number(guests) > venue.capacity) e.guests = `${venue.name} fits up to ${venue.capacity} people`;
+    if (clash) e.date = `You already have a request with ${name} on ${shortDate(isoDay(date))}`;
     setErrors(e);
     if (!Object.keys(e).length) setStep('review');
   };
@@ -63,7 +71,7 @@ export default function NewBooking() {
   const send = () => {
     const bid = createBooking({
       type: type === 'venue' ? 'venue' : 'musician',
-      targetId: (artist?.id ?? venue?.id)!,
+      targetId,
       eventTitle: title.trim(),
       date: isoDay(date),
       startTime: start,
@@ -73,7 +81,7 @@ export default function NewBooking() {
       guests: Number(guests),
       equipment,
       extras: extras.trim() || 'None',
-      note: note.trim(),
+      note: [occasion !== 'Other' ? `Occasion: ${occasion}.` : '', note.trim()].filter(Boolean).join(' '),
       amount,
     });
     router.replace({ pathname: '/success', params: { kind: 'request', id: bid } });
@@ -125,7 +133,7 @@ export default function NewBooking() {
   return (
     <Screen
       keyboard
-      header={<ScreenHeader title="Booking" />}
+      header={<ScreenHeader title={`Book ${name}`} onBack={() => goBack(artist ? `/artist/${artist.id}` : `/venue/${venue?.id}`)} />}
       footer={
         <BottomBar>
           {Object.keys(errors).length ? (
@@ -160,7 +168,7 @@ export default function NewBooking() {
           {dates.map((d) => {
             const on = isoDay(d) === isoDay(date);
             return (
-              <Pressable key={isoDay(d)} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setDate(d)} style={{ width: 62, height: 74, borderRadius: 14, borderWidth: 1, borderColor: on ? colors.brand : colors.borderStrong, backgroundColor: on ? colors.brand : colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+              <Pressable key={isoDay(d)} accessibilityRole="button" accessibilityLabel={shortDate(isoDay(d))} accessibilityState={{ selected: on }} onPress={() => { setDate(d); setErrors((e) => Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'date'))); }} style={{ width: 62, height: 74, borderRadius: 14, borderWidth: 1, borderColor: on ? colors.brand : colors.borderStrong, backgroundColor: on ? colors.brand : colors.surface, alignItems: 'center', justifyContent: 'center' }}>
                 <T v="small" color={on ? colors.lilacLight : colors.muted}>{shortDate(isoDay(d)).split(' ')[0]}</T>
                 <T v="h3" color={on ? colors.white : colors.ink} style={{ fontFamily: fonts.display }}>{d.getDate()}</T>
                 <T v="small" color={on ? colors.lilacLight : colors.muted} style={{ fontSize: 11 }}>{shortDate(isoDay(d)).split(' ')[2]}</T>
@@ -168,6 +176,7 @@ export default function NewBooking() {
             );
           })}
         </ScrollView>
+        {errors.date ? <T v="small" color={colors.danger}>{errors.date}</T> : null}
       </View>
       <View style={{ gap: 8 }}>
         <T v="label">Start time</T>
@@ -180,7 +189,7 @@ export default function NewBooking() {
           <T v="label">Duration</T>
           <T v="small">{start} – {end}</T>
         </View>
-        <Stepper value={hours} onChange={setHours} min={1} max={12} />
+        <Stepper value={hours} onChange={setHours} min={1} max={12} label="hours" />
       </Row>
       {artist ? <Field label="Location" value={location} onChangeText={setLocation} placeholder="Address or venue" icon="map-marker-outline" error={errors.location} /> : null}
       <Field label="Number of guests" value={guests} onChangeText={(t) => setGuests(t.replace(/\D/g, ''))} keyboardType="number-pad" error={errors.guests} />

@@ -44,20 +44,25 @@ export default function Ratings() {
   const sub = artist ? artist.title : `${venue!.type} · ${venue!.area}, ${venue!.city}`;
   const image = artist ? artist.avatar : venue!.cover;
   const profileHref = artist ? `/artist/${artist.id}` : `/venue/${venue!.id}`;
-  const bookable = !!venue || (artist && artist.kind !== 'fan' && artist.kind !== 'organizer');
+  const isBlocked = blocked.includes(id);
+  const bookable = !isBlocked && (!!venue || (!!artist && artist.kind !== 'fan' && artist.kind !== 'organizer'));
 
   // Your own reviews of completed bookings with this target come first.
   const mine: Item[] = bookings
     .filter((b) => b.targetId === id && myReviews[b.id])
-    .map((b) => ({
-      id: `mine-${b.id}`,
-      authorId: 'me',
-      rating: myReviews[b.id].rating,
-      text: myReviews[b.id].text || (myReviews[b.id].tags.length ? `Loved the ${myReviews[b.id].tags.join(', ').toLowerCase()}.` : ''),
-      date: b.date,
-      context: b.eventTitle,
-      bookingId: b.id,
-    }));
+    .map((b) => {
+      const r = myReviews[b.id];
+      const tags = r.tags ?? [];
+      return {
+        id: `mine-${b.id}`,
+        authorId: 'me',
+        rating: r.rating,
+        text: r.text || (tags.length ? `Loved the ${tags.join(', ').toLowerCase()}.` : ''),
+        date: b.date,
+        context: b.eventTitle,
+        bookingId: b.id,
+      };
+    });
   const seeded: Item[] = reviewsFor(id)
     .filter((r) => !blocked.includes(r.authorId))
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -66,7 +71,9 @@ export default function Ratings() {
   const avg = total ? all.reduce((n, r) => n + r.rating, 0) / total : 0;
   const dist = [5, 4, 3, 2, 1].map((n) => ({ n, count: all.filter((r) => Math.round(r.rating) === n).length }));
   const shown = stars ? all.filter((r) => Math.round(r.rating) === stars) : all;
-  const completed = bookings.find((b) => b.targetId === id && b.status === 'completed');
+  // Prefer a completed booking you have not reviewed yet; otherwise offer to edit the latest review.
+  const completedAll = bookings.filter((b) => b.targetId === id && b.status === 'completed');
+  const completed = completedAll.find((b) => !myReviews[b.id]) ?? completedAll[0];
 
   const openAuthor = (authorId: string) => {
     if (authorId === 'me') return router.push('/profile/me');
@@ -141,6 +148,7 @@ export default function Ratings() {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Open ${isMine ? 'your' : `${authorName}’s`} profile`}
+                      disabled={!isMine && !author}
                       onPress={() => openAuthor(r.authorId)}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, minHeight: 44 }}
                     >
@@ -161,7 +169,7 @@ export default function Ratings() {
                   </Row>
                   {r.text ? <T v="body" color={colors.inkSoft}>{r.text}</T> : null}
                   {isMine && r.bookingId ? (
-                    <Button title="Edit review" variant="ghost" size="sm" icon="pencil-outline" style={{ alignSelf: 'flex-start', paddingHorizontal: 0 }} onPress={() => router.push(`/review/${r.bookingId}`)} />
+                    <Button title="Edit review" variant="ghost" size="sm" icon="pencil-outline" hitSlop={6} style={{ alignSelf: 'flex-start', paddingHorizontal: 0 }} onPress={() => router.push(`/review/${r.bookingId}`)} />
                   ) : null}
                 </Card>
               );

@@ -55,7 +55,11 @@ export default function ArtistProfile() {
   // Reviews: your own (from completed bookings) first, then everyone else, newest first.
   const mine = bookings
     .filter((b) => b.targetId === artist.id && myReviews[b.id])
-    .map((b) => ({ id: `mine-${b.id}`, authorId: 'me', rating: myReviews[b.id].rating, text: myReviews[b.id].text, date: b.date, context: b.eventTitle }));
+    .map((b) => {
+      const r = myReviews[b.id];
+      const tags = r.tags ?? [];
+      return { id: `mine-${b.id}`, authorId: 'me', rating: r.rating, text: r.text || (tags.length ? `Loved the ${tags.join(', ').toLowerCase()}.` : ''), date: b.date, context: b.eventTitle };
+    });
   const allReviews = [
     ...mine,
     ...reviewsFor(artist.id)
@@ -63,6 +67,7 @@ export default function ArtistProfile() {
       .sort((a, b) => b.date.localeCompare(a.date)),
   ];
   const reviewCount = allReviews.length;
+  const reviewsLabel = `${reviewCount} review${reviewCount === 1 ? '' : 's'}`;
   const rating = reviewCount ? allReviews.reduce((n, r) => n + r.rating, 0) / reviewCount : artist.rating;
   const followerCount = artist.followers + (following ? 1 : 0);
   const isBlocked = blocked.includes(artist.id);
@@ -96,13 +101,21 @@ export default function ArtistProfile() {
           <Row style={{ position: 'absolute', left: 20, right: 16, bottom: 20 }} justify="space-between" align="flex-end">
             <View style={{ flex: 1 }}>
               <Row gap={6}>
-                <Text style={{ color: colors.white, fontFamily: fonts.display, fontSize: 32 }}>{artist.name}</Text>
+                <Text style={{ color: colors.white, fontFamily: fonts.display, fontSize: 32, flexShrink: 1 }}>{artist.name}</Text>
                 {artist.verified ? <Icon name="check-decagram" size={22} color="#A78BFA" /> : null}
               </Row>
               <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }}>{artist.title}</Text>
             </View>
             {isBlocked ? null : (
-              <Button title={following ? 'Following' : 'Follow'} icon={following ? 'check' : 'plus'} size="md" variant={following ? 'secondary' : 'primary'} onPress={() => toggleFollow(artist.id)} />
+              <Button
+                title={following ? 'Following' : 'Follow'}
+                accessibilityLabel={following ? `Unfollow ${artist.name}` : `Follow ${artist.name}`}
+                icon={following ? 'check' : 'plus'}
+                size="md"
+                variant={following ? 'secondary' : 'primary'}
+                style={{ marginLeft: 12 }}
+                onPress={() => toggleFollow(artist.id)}
+              />
             )}
           </Row>
         </View>
@@ -137,7 +150,7 @@ export default function ArtistProfile() {
               <View style={{ gap: 8 }}>
                 <T v="smallBold" color={colors.danger}>You blocked {artist.name}</T>
                 <T v="small" color={colors.danger}>They can’t message you or send you booking offers, and you won’t see their posts.</T>
-                <Button title="Unblock" variant="secondary" size="sm" icon="account-check-outline" style={{ alignSelf: 'flex-start' }} onPress={block} />
+                <Button title="Unblock" accessibilityLabel={`Unblock ${artist.name}`} variant="secondary" size="sm" icon="account-check-outline" hitSlop={4} style={{ alignSelf: 'flex-start' }} onPress={block} />
               </View>
             </Banner>
           ) : null}
@@ -145,13 +158,17 @@ export default function ArtistProfile() {
           <Row gap={16} style={{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, ...shadow(1) }}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={rating ? `Rated ${fmtRating(rating)} out of 5 from ${reviewCount} reviews. See all reviews` : 'No rating yet. See reviews'}
+              accessibilityLabel={
+                rating
+                  ? `Rated ${fmtRating(rating)} out of 5${reviewCount ? ` from ${reviewsLabel}` : ''}. See reviews`
+                  : 'No rating yet. See reviews'
+              }
               onPress={openRatings}
-              style={({ pressed }) => ({ flex: 1, alignItems: 'center', opacity: pressed ? 0.6 : 1 })}
+              style={({ pressed }) => ({ flex: 1, alignItems: 'center', minHeight: 44, opacity: pressed ? 0.6 : 1 })}
             >
               <T v="h3">{rating ? fmtRating(rating) : '—'}</T>
               <Stars value={rating ?? 0} size={12} />
-              <T v="small" style={{ fontSize: 11 }}>{reviewCount ? `${reviewCount} review${reviewCount === 1 ? '' : 's'}` : 'No reviews'}</T>
+              <T v="small" style={{ fontSize: 11 }}>{reviewCount ? reviewsLabel : rating ? 'Rating' : 'No reviews'}</T>
             </Pressable>
             <View style={{ width: 1, height: 36, backgroundColor: colors.divider }} />
             <View style={{ flex: 1, alignItems: 'center' }}><T v="h3">{artist.eventsCount ?? 0}</T><T v="small">Gigs played</T></View>
@@ -232,7 +249,7 @@ export default function ArtistProfile() {
               );
             })}
             {reviewCount ? (
-              <Button title={`See all ${reviewCount} reviews`} variant="secondary" size="md" icon="star-outline" onPress={openRatings} />
+              <Button title={reviewCount === 1 ? 'See review' : `See all ${reviewsLabel}`} variant="secondary" size="md" icon="star-outline" onPress={openRatings} />
             ) : (
               <View style={{ backgroundColor: colors.surface, padding: 16, borderRadius: radius.md, gap: 4, ...shadow(1) }}>
                 <T v="bodyBold">No reviews yet</T>

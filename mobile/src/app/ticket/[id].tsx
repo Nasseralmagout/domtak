@@ -1,12 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Share, Text, View } from 'react-native';
+import { ScrollView, Share, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { goBack } from '../../components/layout';
 import { Button, IconButton, Photo, Pill, Row, T } from '../../components/ui';
 import { venueById } from '../../data/mock';
-import { parse, time } from '../../lib/format';
+import { isoDay, parse, time } from '../../lib/format';
+import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
 
@@ -21,14 +22,29 @@ export default function ETicket() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const ticket = useApp((s) => s.tickets.find((t) => t.id === id));
   const event = useEvent(ticket?.eventId);
+  const going = useApp((s) => (ticket ? !!s.going[ticket.eventId] : false));
+  const toggleGoing = useApp((s) => s.toggleGoing);
 
   if (!ticket || !event) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.brandDeep, padding: 24 }}>
-        <T v="h2" color={colors.white}>Ticket not found</T>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.brandDeep }}>
+        <Row style={{ paddingHorizontal: 8 }}>
+          <IconButton name="chevron-left" label="Back" color={colors.white} iconSize={30} onPress={() => goBack('/my-bookings?tab=tickets')} />
+        </Row>
+        <View style={{ padding: 24, gap: 12 }}>
+          <T v="h2" color={colors.white}>Ticket not found</T>
+          <T v="body" color={colors.lilacLight}>It may have been refunded or moved to another account.</T>
+          <Button title="Your tickets" variant="outlineLight" onPress={() => router.replace('/my-bookings?tab=tickets')} />
+        </View>
       </SafeAreaView>
     );
   }
+  const addToCalendar = () => {
+    // Tickets already count as plans; marking "going" keeps the event in the calendar even after check-in.
+    if (!going) toggleGoing(event.id);
+    toast(going ? `${event.title} is in your calendar` : `Added ${event.title} to your calendar`);
+    router.push({ pathname: '/(tabs)/calendar', params: { date: isoDay(parse(event.start)) } });
+  };
   const type = event.ticketTypes.find((t) => t.id === ticket.typeId);
   const d = parse(event.start);
   const payload = JSON.stringify({ t: ticket.id, e: event.id, c: ticket.code });
@@ -37,9 +53,9 @@ export default function ETicket() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.brandDeep }}>
       <Row style={{ paddingHorizontal: 8 }} justify="space-between">
         <IconButton name="chevron-left" label="Back" color={colors.white} iconSize={30} onPress={() => goBack('/my-bookings?tab=tickets')} />
-        <IconButton name="share-variant-outline" label="Share ticket" color={colors.white} onPress={() => Share.share({ message: `My ticket for ${event.title}: ${ticket.code}` }).catch(() => {})} />
+        <IconButton name="share-variant-outline" label="Share ticket" color={colors.white} onPress={() => Share.share({ message: `My ticket for ${event.title}: ${ticket.code}` }).catch(() => toast('Could not open the share sheet'))} />
       </Row>
-      <View style={{ flex: 1, padding: 24, justifyContent: 'center' }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 8, justifyContent: 'center' }} showsVerticalScrollIndicator={false}>
         <View style={{ backgroundColor: '#F8F7FB', borderRadius: 18 }}>
           <View style={{ alignItems: 'center', padding: 20, gap: 12 }}>
             <Photo src={event.cover} style={{ width: 200, height: 150 }} radius={18} />
@@ -76,9 +92,13 @@ export default function ETicket() {
             <T v="small" center>Holder: {ticket.holder} · show this at the entrance</T>
           </View>
         </View>
-      </View>
+      </ScrollView>
       <View style={{ padding: 24, paddingTop: 0 }}>
-        <Button title="Add to calendar" variant="outlineLight" onPress={() => router.push('/(tabs)/calendar')} />
+        {ticket.status === 'cancelled' ? (
+          <Button title="Refund details" icon="cash-refund" variant="outlineLight" onPress={() => router.push('/help?section=refunds')} />
+        ) : (
+          <Button title={going ? 'View in calendar' : 'Add to calendar'} icon="calendar-plus" variant="outlineLight" onPress={addToCalendar} />
+        )}
       </View>
     </SafeAreaView>
   );

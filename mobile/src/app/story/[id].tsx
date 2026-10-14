@@ -32,6 +32,8 @@ export default function StoryViewer() {
   const [pos, move] = useReducer(step, { story: startIndex, frame: 0, done: false });
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
+  // The pause button sets a lock, so releasing a hold or leaving the reply box does not silently resume.
+  const [locked, setLocked] = useState(false);
   const [reply, setReply] = useState('');
   const elapsed = useRef(0);
   const ensureConversation = useApp((s) => s.ensureConversation);
@@ -82,6 +84,12 @@ export default function StoryViewer() {
   };
 
   const watchLive = () => router.replace(`/live/${story.id}`);
+  const togglePause = () => {
+    setLocked(!locked);
+    setPaused(!locked);
+  };
+  const hold = () => setPaused(true);
+  const release = () => setPaused(locked);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.black }}>
@@ -106,12 +114,12 @@ export default function StoryViewer() {
               <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: fonts.body, fontSize: 13 }}>2h</Text>
             )}
           </Pressable>
-          <IconButton name={paused ? 'play' : 'pause'} label={paused ? 'Resume story' : 'Pause story'} color={colors.white} onPress={() => setPaused(!paused)} />
+          <IconButton name={locked ? 'play' : 'pause'} label={locked ? 'Resume story' : 'Pause story'} selected={locked} color={colors.white} onPress={togglePause} />
           <IconButton name="close" label="Close story" color={colors.white} onPress={close} />
         </Row>
         <Row style={{ flex: 1 }} gap={0}>
-          <Pressable accessibilityLabel="Previous" onPress={prev} onLongPress={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ flex: 1 }} />
-          <Pressable accessibilityLabel="Next" onPress={next} onLongPress={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ flex: 2 }} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Previous story" accessibilityHint="Hold to pause" onPress={prev} onLongPress={hold} onPressOut={release} style={{ flex: 1 }} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Next story" accessibilityHint="Hold to pause" onPress={next} onLongPress={hold} onPressOut={release} style={{ flex: 2 }} />
         </Row>
         {story.live ? (
           <View style={{ alignItems: 'center', paddingBottom: 14 }}>
@@ -131,8 +139,8 @@ export default function StoryViewer() {
             <TextInput
               value={reply}
               onChangeText={setReply}
-              onFocus={() => setPaused(true)}
-              onBlur={() => setPaused(false)}
+              onFocus={hold}
+              onBlur={release}
               onSubmitEditing={send}
               placeholder="Send message"
               placeholderTextColor={colors.muted}

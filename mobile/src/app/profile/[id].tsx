@@ -4,8 +4,8 @@ import { Pressable, Share, View, useWindowDimensions } from 'react-native';
 
 import { ActionSheet } from '../../components/ActionSheet';
 import { EventRow, FollowButton } from '../../components/cards';
-import { Screen, ScreenHeader } from '../../components/layout';
-import { Avatar, Banner, Button, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
+import { Screen, ScreenHeader, goBack } from '../../components/layout';
+import { Avatar, Banner, Button, EmptyState, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
 import { followersOf, profileById, venueById } from '../../data/mock';
 import { compact } from '../../lib/format';
 import { toast } from '../../store/toast';
@@ -64,7 +64,7 @@ export default function ProfileScreen() {
   if (!isMe && !p) {
     return (
       <Screen header={<ScreenHeader title="Profile" />}>
-        <T v="body">Profile not found.</T>
+        <EmptyState icon="account-question-outline" title="Profile not found" body="This account may have been removed or the link is broken." action="Go back" onAction={() => goBack('/')} />
       </Screen>
     );
   }
@@ -119,7 +119,7 @@ export default function ProfileScreen() {
       </Row>
 
       <Row style={{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: 10, ...shadow(1) }} gap={0}>
-        <Stat value={isMe ? String(myPosts.length) : compact(p!.eventsCount ?? myPosts.length)} label={isMe ? 'Posts' : p!.kind === 'organizer' ? 'Events' : 'Posts'} />
+        <Stat value={!isMe && p!.kind === 'organizer' ? compact(p!.eventsCount ?? hostEvents.length) : String(myPosts.length)} label={!isMe && p!.kind === 'organizer' ? 'Events' : 'Posts'} />
         <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
         <Stat value={isMe ? String(myFollowerCount) : compact(p!.followers + (followingMap[p!.id] ? 1 : 0))} label="Followers" onPress={() => openConnections('followers')} />
         <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
@@ -138,7 +138,7 @@ export default function ProfileScreen() {
           <View style={{ gap: 8 }}>
             <T v="smallBold" color={colors.danger}>You blocked {name}</T>
             <T v="small" color={colors.danger}>They can’t message you, follow you or see your posts. They won’t be told.</T>
-            <Button title="Unblock" variant="secondary" size="sm" icon="account-check-outline" style={{ alignSelf: 'flex-start' }} onPress={block} />
+            <Button title="Unblock" accessibilityLabel={`Unblock ${name}`} variant="secondary" size="sm" icon="account-check-outline" hitSlop={4} style={{ alignSelf: 'flex-start' }} onPress={block} />
           </View>
         </Banner>
       ) : (

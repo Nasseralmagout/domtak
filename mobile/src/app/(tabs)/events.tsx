@@ -8,13 +8,17 @@ import { EventRow } from '../../components/cards';
 import { DomtakHeader } from '../../components/layout';
 import { Button, Icon, Photo, Row, T } from '../../components/ui';
 import { eventCategories, venueById } from '../../data/mock';
-import { shortDate, time } from '../../lib/format';
+import { parse, shortDate, time, TODAY } from '../../lib/format';
+import { activeFilterCount, useFilters } from '../../store/filters';
 import { useAllEvents } from '../../store/useApp';
 import { colors, fonts, shadow } from '../../theme';
 
 export default function EventsTab() {
   const { width } = useWindowDimensions();
-  const events = useAllEvents();
+  const all = useAllEvents();
+  const filterCount = useFilters((s) => activeFilterCount(s.filters));
+  // Private events are invite-only, and past events don't belong in discovery.
+  const events = all.filter((e) => !e.isPrivate && parse(e.end) >= TODAY);
   const featured = events.filter((e) => e.sponsored || e.going > 200).slice(0, 4);
   const [slide, setSlide] = useState(0);
   const thisWeek = [...events].sort((a, b) => a.start.localeCompare(b.start)).slice(0, 4);
@@ -51,15 +55,20 @@ export default function EventsTab() {
 
         <View style={{ padding: 16, gap: 14 }}>
           <Row gap={10}>
-            <Pressable accessibilityRole="search" onPress={() => router.push('/search')} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, ...shadow(1) }}>
+            <Pressable accessibilityRole="search" accessibilityLabel="Search events" onPress={() => router.push('/search?type=event')} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, ...shadow(1) }}>
               <Icon name="magnify" size={22} color={colors.muted} />
               <T v="body" color={colors.subtle}>Search events</T>
             </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="Map view" onPress={() => router.push('/map')} style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="map-outline" size={22} color={colors.white} />
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Filters" onPress={() => router.push('/filters')} style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Filters${filterCount ? `, ${filterCount} active` : ''}`} onPress={() => router.push({ pathname: '/filters', params: { next: '/events/all' } })} style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="tune-variant" size={22} color={colors.white} />
+              {filterCount ? (
+                <View style={{ position: 'absolute', top: -4, right: -4, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 4, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.white }}>
+                  <Text style={{ fontFamily: fonts.bodyBold, fontSize: 11, color: colors.brandDark }}>{filterCount}</Text>
+                </View>
+              ) : null}
             </Pressable>
           </Row>
 
@@ -76,7 +85,7 @@ export default function EventsTab() {
 
           <Row justify="space-between" style={{ marginTop: 8 }}>
             <T v="h3" color={colors.brandDeep}>Coming up</T>
-            <Pressable accessibilityRole="button" onPress={() => router.push('/events/all')} hitSlop={8}><T v="smallBold" color={colors.brand}>All events</T></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="See all events" onPress={() => router.push('/events/all')} hitSlop={12}><T v="smallBold" color={colors.brand}>All events</T></Pressable>
           </Row>
           {thisWeek.map((e) => <EventRow key={e.id} event={e} />)}
           <Button title="Browse venues" variant="secondary" icon="storefront-outline" onPress={() => router.push('/venues')} />

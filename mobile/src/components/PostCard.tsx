@@ -1,13 +1,32 @@
 import { router } from 'expo-router';
 import { memo, useRef, useState } from 'react';
-import { FlatList, Pressable, Share, Text, View, useWindowDimensions } from 'react-native';
+import { FlatList, Platform, Pressable, Share, Text, View, useWindowDimensions } from 'react-native';
 
 import { profileById, venueById } from '../data/mock';
 import type { Post } from '../data/types';
 import { compact, shortDate, time } from '../lib/format';
+import { toast } from '../store/toast';
 import { useApp, useEvent } from '../store/useApp';
 import { colors, fonts } from '../theme';
+import { ActionSheet, type SheetAction } from './ActionSheet';
 import { Avatar, Button, Icon, IconButton, Photo, Row, T } from './ui';
+
+const postLink = (id: string) => `https://domtak.de/p/${id}`;
+
+/** Copies text where the platform allows it (web); otherwise opens the share sheet, which has a copy option. */
+async function copyLink(url: string) {
+  const clip = Platform.OS === 'web' ? (globalThis as { navigator?: { clipboard?: { writeText?: (t: string) => Promise<void> } } }).navigator?.clipboard : undefined;
+  if (clip?.writeText) {
+    try {
+      await clip.writeText(url);
+      toast('Link copied');
+      return;
+    } catch {
+      // fall through to the share sheet
+    }
+  }
+  Share.share({ message: url }).catch(() => toast('Could not open the share sheet'));
+}
 
 export function authorFor(id: string, me: { name: string; avatar?: import('../data/images').ImgKey; role: string }) {
   if (id === 'me') return { id: 'me', name: me.name, avatar: me.avatar, title: 'You', verified: false, kind: 'fan' as const };
@@ -23,9 +42,14 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
   const extra = useApp((s) => s.extraComments[post.id]);
   const toggleLike = useApp((s) => s.toggleLike);
   const toggleSave = useApp((s) => s.toggleSave);
+  const followingAuthor = useApp((s) => !!s.following[post.authorId]);
+  const toggleFollow = useApp((s) => s.toggleFollow);
   const event = useEvent(post.eventId);
   const [slide, setSlide] = useState(0);
   const [burst, setBurst] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const lastTap = useRef(0);
 
   const author = authorFor(post.authorId, user);
@@ -46,8 +70,32 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
   };
 
   const share = () => {
-    Share.share({ message: `${author.name} on Domtak: ${post.caption}` }).catch(() => {});
+    Share.share({ message: `${author.name} on Domtak: ${post.caption}\n${postLink(post.id)}` }).catch(() => toast('Could not open the share sheet'));
   };
+
+  const mine = author.id === 'me';
+  const actions: SheetAction[] = [
+    { label: saved ? 'Remove from saved' : 'Save post', icon: saved ? 'bookmark-remove-outline' : 'bookmark-outline', onPress: () => { toggleSave(post.id); toast(saved ? 'Removed from saved' : 'Saved to your collection'); } },
+    { label: 'Share', icon: 'share-variant-outline', onPress: share },
+    { label: 'Copy link', icon: 'link-variant', onPress: () => { copyLink(postLink(post.id)); } },
+    ...(event ? [{ label: `View ${event.title}`, icon: 'party-popper' as const, onPress: () => router.push(`/event/${event.id}`) }] : []),
+    ...(!mine && followingAuthor ? [{ label: `Unfollow ${author.name}`, icon: 'account-minus-outline' as const, onPress: () => { toggleFollow(author.id); toast(`You unfollowed ${author.name}`); } }] : []),
+    ...(!mine ? [{ label: 'Hide post', icon: 'eye-off-outline' as const, onPress: () => setHidden(true) }] : []),
+    ...(!mine ? [{ label: 'Report post', icon: 'flag-outline' as const, destructive: true, onPress: () => toast('Thanks, our team will review this post') }] : []),
+  ];
+
+  if (hidden) {
+    return (
+      <Row gap={12} style={{ backgroundColor: colors.surface, marginBottom: 10, paddingHorizontal: 16, paddingVertical: 14 }}>
+        <Icon name="eye-off-outline" size={22} color={colors.muted} />
+        <View style={{ flex: 1 }}>
+          <T v="bodyBold">Post hidden</T>
+          <T v="small">You’ll see fewer posts like this from {author.name}.</T>
+        </View>
+        <Button title="Undo" variant="light" size="sm" accessibilityLabel="Undo hide post" onPress={() => setHidden(false)} />
+      </Row>
+    );
+  }
 
   return (
     <View style={{ backgroundColor: colors.surface, marginBottom: 10 }}>
@@ -63,10 +111,11 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
             {post.location ? <T v="small" numberOfLines={1} style={{ fontSize: 12 }}>{post.location}</T> : null}
           </View>
         </Pressable>
-        <IconButton name="dots-horizontal" label="More options" size={40} />
+        <IconButton name="dots-horizontal" label="More options" size={40} onPress={() => setMenu(true)} />
       </Row>
+      <ActionSheet visible={menu} title={mine ? 'Your post' : `Post by ${author.name}`} actions={actions} onClose={() => setMenu(false)} />
 
-      <Pressable accessibilityLabel="Post media. Double tap to like." onPress={onMediaPress}>
+      <Pressable accessibilityLabel={`Photo by ${author.name}`} accessibilityHint="Double tap quickly to like" onPress={onMediaPress}>
         {post.media.length > 1 ? (
           <FlatList
             data={post.media}
@@ -114,7 +163,7 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
       ) : null}
 
       {event ? (
-        <Pressable accessibilityRole="button" onPress={() => router.push(`/event/${event.id}`)} style={{ marginHorizontal: 12, marginTop: 10, padding: 10, borderRadius: 14, backgroundColor: colors.brandTint, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Event: ${event.title}`} onPress={() => router.push(`/event/${event.id}`)} style={{ marginHorizontal: 12, marginTop: 10, padding: 10, borderRadius: 14, backgroundColor: colors.brandTint, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: colors.brandDeep, alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="party-popper" size={20} color={colors.gold} />
           </View>
@@ -122,10 +171,10 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
             <T v="smallBold" numberOfLines={1}>{event.title}</T>
             <T v="small" style={{ fontSize: 12 }}>{shortDate(event.start)} · {time(event.start)}</T>
           </View>
-          <Button title="Tickets" size="sm" onPress={() => router.push(`/tickets/${event.id}`)} />
+          <Button title="Tickets" accessibilityLabel={`Tickets for ${event.title}`} size="sm" onPress={() => router.push(`/tickets/${event.id}`)} />
         </Pressable>
       ) : bookable ? (
-        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/booking/new', params: { type: 'musician', id: author.id } })} style={{ marginHorizontal: 12, marginTop: 10, padding: 10, borderRadius: 14, backgroundColor: colors.brandTint, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Book ${author.name} for your event`} onPress={() => router.push({ pathname: '/booking/new', params: { type: 'musician', id: author.id } })} style={{ marginHorizontal: 12, marginTop: 10, padding: 10, borderRadius: 14, backgroundColor: colors.brandTint, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Icon name="calendar-plus" size={22} color={colors.brand} />
           <T v="smallBold" style={{ flex: 1 }}>Book {author.name} for your event</T>
           <Icon name="chevron-right" size={20} color={colors.brand} />
@@ -141,16 +190,20 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
       </Row>
       <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 4 }}>
         <T v="bodyBold">{compact(post.likes + (liked ? 1 : 0))} likes</T>
-        <T v="body" numberOfLines={3}>
-          <T v="bodyBold">{author.name} </T>
-          {post.caption}
-        </T>
-        {commentCount > 0 ? (
-          <Pressable accessibilityRole="button" onPress={() => router.push(`/post/${post.id}`)}>
-            <T v="small">View all {commentCount} comments</T>
+        {post.caption ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={expanded ? 'Show less of caption' : 'Show full caption'} onPress={() => setExpanded(!expanded)}>
+            <T v="body" numberOfLines={expanded ? undefined : 3}>
+              <T v="bodyBold">{author.name} </T>
+              {post.caption}
+            </T>
           </Pressable>
         ) : null}
-        <Pressable accessibilityRole="button" onPress={() => router.push(`/post/${post.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+        {commentCount > 0 ? (
+          <Pressable accessibilityRole="button" onPress={() => router.push(`/post/${post.id}`)} hitSlop={8}>
+            <T v="small">{commentCount === 1 ? 'View 1 comment' : `View all ${commentCount} comments`}</T>
+          </Pressable>
+        ) : null}
+        <Pressable accessibilityRole="button" accessibilityLabel="Add a comment" onPress={() => router.push({ pathname: '/post/[id]', params: { id: post.id, reply: '1' } })} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, minHeight: 36 }}>
           <Avatar src={user.avatar} size={26} label={user.name} />
           <T v="small" color={colors.subtle}>Add a comment…</T>
         </Pressable>

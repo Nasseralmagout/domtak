@@ -8,12 +8,12 @@ import { ArtistTile, BackOverlay, FollowButton, GoingFaces, HeartToggle } from '
 import { BottomBar, goBack } from '../../components/layout';
 import { Avatar, Button, EmptyState, Icon, type IconName, Photo, RatingBadge, Row, SectionTitle, T } from '../../components/ui';
 import { eventDiscussion, profileById, venueById } from '../../data/mock';
-import { compact, eventWhen, priceRange } from '../../lib/format';
+import { compact, eventWhen, isoDay, parse, priceRange } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
-function InfoCard({ icon, title, sub, action, actionIcon, actionVariant = 'light', onAction }: { icon: IconName; title: string; sub: string; action?: string; actionIcon?: IconName; actionVariant?: 'light' | 'secondary'; onAction?: () => void }) {
+function InfoCard({ icon, title, sub, action, actionIcon, actionVariant = 'light', actionLabel, onAction }: { icon: IconName; title: string; sub: string; action?: string; actionIcon?: IconName; actionVariant?: 'light' | 'secondary'; actionLabel?: string; onAction?: () => void }) {
   return (
     <Row gap={14} style={{ backgroundColor: colors.surface, padding: 14, borderRadius: radius.lg, ...shadow(1) }}>
       <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.brandDeep, alignItems: 'center', justifyContent: 'center' }}>
@@ -23,7 +23,7 @@ function InfoCard({ icon, title, sub, action, actionIcon, actionVariant = 'light
         <T v="title">{title}</T>
         <T v="small">{sub}</T>
       </View>
-      {action ? <Button title={action} icon={actionIcon} size="sm" variant={actionVariant} onPress={onAction} accessibilityLabel={`${action}: ${title}`} /> : null}
+      {action ? <Button title={action} icon={actionIcon} size="sm" variant={actionVariant} onPress={onAction} accessibilityLabel={actionLabel ?? `${action}: ${title}`} /> : null}
     </Row>
   );
 }
@@ -79,20 +79,29 @@ export default function EventDetail() {
   const hasTicket = !!myTicket;
   const goingCount = event.going + (going ? 1 : 0);
   const commentCount = (eventDiscussion[event.id]?.length ?? 0) + (extraComments?.length ?? 0);
-  const inCalendar = going || hasTicket;
+  // Same rule as the calendar tab: going, holding a valid ticket, or organizing it yourself.
+  const inCalendar = going || hasTicket || event.organizerId === 'me';
+  const longDescription = event.description.length > 160;
   const openTicket = () => (myTicket ? router.push(`/ticket/${myTicket.id}`) : router.push(`/tickets/${event.id}`));
-  const share = () => Share.share({ message: `${event.title} — ${eventWhen(event.start, event.end)} at ${venue?.name}. Join me on Domtak!` }).catch(() => toast('Could not open the share sheet'));
+  const share = () => Share.share({ message: `${event.title} — ${eventWhen(event.start, event.end)}${venue ? ` at ${venue.name}` : ''}. Join me on Domtak!` }).catch(() => toast('Could not open the share sheet'));
   const directions = () => {
-    const destination = encodeURIComponent([venue?.name, venue?.area, venue?.city].filter(Boolean).join(', '));
+    if (!venue) {
+      router.push(`/map?focus=${event.id}`);
+      return;
+    }
+    const destination = encodeURIComponent([venue.name, venue.area, venue.city].join(', '));
     Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destination}`).catch(() => router.push(`/map?focus=${event.id}`));
   };
   const toggleGoingWithToast = () => {
     toggleGoing(event.id);
-    toast(going ? (hasTicket ? 'No longer marked as going' : 'Removed from your calendar') : 'You’re going! Added to your calendar');
+    // A ticket or your own event keeps it in the calendar even when you are no longer marked as going.
+    const staysInCalendar = hasTicket || event.organizerId === 'me';
+    toast(going ? (staysInCalendar ? 'No longer marked as going' : 'Removed from your calendar') : 'You’re going! Added to your calendar');
   };
   const addToCalendar = () => {
     if (inCalendar) {
-      router.push('/(tabs)/calendar');
+      // Open the calendar on the event's day.
+      router.push(`/(tabs)/calendar?date=${isoDay(parse(event.start))}`);
       return;
     }
     toggleGoing(event.id);
@@ -154,11 +163,12 @@ export default function EventDetail() {
             title={eventWhen(event.start, event.end)}
             sub={inCalendar ? 'In your Domtak calendar' : 'Add to your Domtak calendar'}
             action={inCalendar ? 'Added' : 'Add'}
+            actionLabel={inCalendar ? 'Added to your calendar, open calendar' : 'Add to your calendar'}
             actionIcon={inCalendar ? 'check' : 'calendar-plus'}
             actionVariant={inCalendar ? 'secondary' : 'light'}
             onAction={addToCalendar}
           />
-          <InfoCard icon="map-marker-outline" title={`${venue?.city}, ${venue?.area}`} sub={venue?.name ?? ''} action="Map" onAction={() => router.push(`/map?focus=${event.id}`)} />
+          <InfoCard icon="map-marker-outline" title={venue ? `${venue.city}, ${venue.area}` : 'Location to be announced'} sub={venue?.name ?? 'Check back closer to the date'} action="Map" onAction={() => router.push(`/map?focus=${event.id}`)} />
           <InfoCard icon="ticket-confirmation-outline" title={priceRange(prices)} sub={`Ticket price includes tax · ${event.refundPolicy}`} action={hasTicket ? 'View' : 'Buy'} onAction={openTicket} />
 
           {organizer ? (
@@ -176,8 +186,12 @@ export default function EventDetail() {
 
           <View style={{ gap: 6 }}>
             <T v="h3">About event</T>
-            <T v="body" numberOfLines={more ? undefined : 4}>{event.description}</T>
-            <Pressable accessibilityRole="button" onPress={() => setMore(!more)} hitSlop={10} style={{ alignSelf: 'flex-start', paddingVertical: 4 }}><T v="smallBold" color={colors.brand}>{more ? 'See less' : 'See more'}</T></Pressable>
+            <T v="body" numberOfLines={more || !longDescription ? undefined : 4}>{event.description}</T>
+            {longDescription ? (
+              <Pressable accessibilityRole="button" accessibilityLabel={more ? 'Show less of the description' : 'Show the full description'} accessibilityState={{ expanded: more }} onPress={() => setMore(!more)} hitSlop={12} style={{ alignSelf: 'flex-start', paddingVertical: 4 }}>
+                <T v="smallBold" color={colors.brand}>{more ? 'See less' : 'See more'}</T>
+              </Pressable>
+            ) : null}
           </View>
 
           {lineup.length ? (

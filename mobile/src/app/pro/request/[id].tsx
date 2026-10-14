@@ -1,49 +1,116 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Modal, Pressable, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomBar, Screen, ScreenHeader } from '../../../components/layout';
-import { Banner, Button, Card, Divider, Icon, KeyValue, Radio, Row, T } from '../../../components/ui';
-import { euro } from '../../../lib/format';
-import { useApp } from '../../../store/useApp';
+import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/layout';
+import { Avatar, Banner, Button, Card, Divider, Field, Icon, KeyValue, Radio, Row, Stepper, T } from '../../../components/ui';
+import { profiles } from '../../../data/mock';
+import type { IncomingRequest } from '../../../data/types';
+import { euro, isoDay, MONTHS_LONG } from '../../../lib/format';
+import { toast } from '../../../store/toast';
+import { type Availability, useApp, type Weekday } from '../../../store/useApp';
 import { colors } from '../../../theme';
 
 const REASONS = ['Already booked that date', 'Offer below my fee', 'Not my music style', 'Other reason'];
+const FEE_RATE = 0.1;
+const WEEKDAY: Weekday[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Counter offers sent during this session, by request id (the booker sees them in chat). */
+const sentCounters = new Map<string, number>();
+
+/** "Thu 24 Dec 2026" -> Date */
+function requestDate(label: string) {
+  const [, d, mon, y] = label.split(' ');
+  const m = MONTHS_LONG.findIndex((x) => x.startsWith(mon ?? ''));
+  const date = new Date(Number(y), m, Number(d), 12);
+  return Number.isNaN(date.getTime()) || m < 0 ? undefined : date;
+}
+
+/** Checks the request against your availability and other accepted gigs. */
+function conflictFor(req: IncomingRequest, all: IncomingRequest[], availability: Availability) {
+  const date = requestDate(req.date);
+  if (!date) return undefined;
+  const iso = isoDay(date);
+  const other = all.find((r) => r.id !== req.id && r.status === 'accepted' && r.date === req.date);
+  if (other) return { tone: 'danger' as const, text: `You already accepted ${other.title} that night.` };
+  if (availability.blockedDates.includes(iso)) return { tone: 'warning' as const, text: 'You blocked this date in your availability.' };
+  const wd = WEEKDAY[date.getDay()];
+  if (!availability.days[wd]) return { tone: 'warning' as const, text: `${wd} isn’t one of your usual gig days.` };
+  return undefined;
+}
 
 export default function RequestReview() {
   const { id, decline } = useLocalSearchParams<{ id: string; decline?: string }>();
   const insets = useSafeAreaInsets();
   const req = useApp((s) => s.requests.find((r) => r.id === id));
+  const requests = useApp((s) => s.requests);
+  const availability = useApp((s) => s.availability);
   const setStatus = useApp((s) => s.setRequestStatus);
+  const ensureConversation = useApp((s) => s.ensureConversation);
+  const sendMessage = useApp((s) => s.sendMessage);
   const [sheet, setSheet] = useState(decline === '1');
   const [reason, setReason] = useState(REASONS[0]);
+  const [counterOpen, setCounterOpen] = useState(false);
+  const [counter, setCounter] = useState(() => (id ? sentCounters.get(id) : undefined) ?? 0);
+  const [counterNote, setCounterNote] = useState('');
+  const [countered, setCountered] = useState(() => (id ? sentCounters.get(id) : undefined));
 
   if (!req) {
     return (
-      <Screen header={<ScreenHeader title="Request" />}>
+      <Screen header={<ScreenHeader title="Request" onBack={() => goBack('/pro/requests')} />}>
         <T v="body">Request not found.</T>
+        <Button title="All requests" onPress={() => router.replace('/pro/requests')} />
       </Screen>
     );
   }
-  const fee = req.offer * 0.1;
+  const amount = countered ?? req.offer;
+  const fee = amount * FEE_RATE;
+  const first = req.requester.split(' ')[0];
+  // Requests from people with a Domtak profile can be answered in chat.
+  const contact = profiles.find((p) => p.name === req.requester);
+  const conflict = conflictFor(req, requests, availability);
+  const openChat = () => (contact ? router.push(`/chat/${ensureConversation(contact.id)}`) : router.push('/inbox'));
+  const startCounter = () => {
+    setCounter(countered ?? Math.max(availability.feePerHour * req.hours, req.offer + 100));
+    setCounterOpen(true);
+  };
+  const sendCounter = () => {
+    sentCounters.set(req.id, counter);
+    setCountered(counter);
+    setCounterOpen(false);
+    if (contact) {
+      const cid = ensureConversation(contact.id);
+      sendMessage(cid, { type: 'text', text: `Counter offer for ${req.title} (${req.date}): ${euro(counter)} for ${req.hours} h.${counterNote.trim() ? ` ${counterNote.trim()}` : ''}` });
+    }
+    toast(`Counter offer of ${euro(counter)} sent to ${first}`);
+  };
+  const accept = () => {
+    setStatus(req.id, 'accepted');
+    toast(`Accepted ${req.title}. ${first} has 24 h to pay.`);
+  };
 
   if (req.status === 'accepted' && !sheet) {
     return (
       <Screen
-        header={<ScreenHeader title={req.title} />}
-        footer={<BottomBar><Button title={`Message ${req.requester.split(' ')[0]}`} onPress={() => router.push('/inbox')} /></BottomBar>}
+        header={<ScreenHeader title={req.title} onBack={() => goBack('/pro/requests')} />}
+        footer={
+          <BottomBar>
+            <Button title={contact ? `Message ${first}` : 'Open inbox'} icon="message-text-outline" onPress={openChat} />
+            <Button title="Open calendar" variant="ghost" onPress={() => { const d = requestDate(req.date); router.push(d ? { pathname: '/(tabs)/calendar', params: { date: isoDay(d) } } : '/(tabs)/calendar'); }} style={{ marginTop: 6 }} />
+          </BottomBar>
+        }
         contentStyle={{ alignItems: 'center', gap: 14, paddingTop: 40, paddingHorizontal: 24 }}
       >
         <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="check" size={48} color={colors.white} />
         </View>
         <T v="h2" center>Booking accepted</T>
-        <T v="body" color={colors.muted} center>{req.requester} has 24 h to pay. We’ll notify you when {euro(req.offer)} is held in escrow and the date is locked in your calendar.</T>
+        <T v="body" color={colors.muted} center>{req.requester} has 24 h to pay. We’ll notify you when {euro(amount)} is held in escrow and the date is locked in your calendar.</T>
         <Card style={{ alignSelf: 'stretch', gap: 6, marginTop: 8 }}>
           <KeyValue k="Date" v={req.date} />
           <KeyValue k="Time" v={req.time} />
-          <KeyValue k="You receive" v={euro(req.offer - fee, true)} color={colors.brand} />
+          <KeyValue k="You receive" v={euro(amount - fee, true)} color={colors.brand} />
         </Card>
       </Screen>
     );
@@ -52,19 +119,27 @@ export default function RequestReview() {
   return (
     <>
       <Screen
-        header={<ScreenHeader title={`Request from ${req.requester.split(' ')[0]}`} />}
+        header={<ScreenHeader title={`Request from ${first}`} onBack={() => goBack('/pro/requests')} />}
         footer={
           req.status === 'new' ? (
             <BottomBar>
               <Row gap={8}>
                 <Button title="Decline" variant="secondary" size="md" style={{ flex: 1, borderColor: colors.borderStrong }} onPress={() => setSheet(true)} />
-                <Button title="Counter" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push('/inbox')} />
-                <Button title="Accept" size="md" style={{ flex: 1 }} onPress={() => setStatus(req.id, 'accepted')} />
+                <Button title={countered ? 'Edit counter' : 'Counter'} variant="secondary" size="md" style={{ flex: 1 }} onPress={startCounter} />
+                <Button title="Accept" size="md" style={{ flex: 1 }} onPress={accept} />
               </Row>
             </BottomBar>
           ) : null
         }
       >
+        <Row gap={12}>
+          <Avatar src={contact?.avatar} label={req.initials} size={48} verified={contact?.verified} />
+          <View style={{ flex: 1 }}>
+            <T v="bodyBold">{req.requester}</T>
+            <T v="small">{req.requesterRole}</T>
+          </View>
+          {req.status === 'new' ? <T v="smallBold" color={colors.warning}>Expires in {req.expires}</T> : null}
+        </Row>
         <Card style={{ gap: 12 }}>
           <T v="h2">{req.title}</T>
           <KeyValue k="Date" v={req.date} />
@@ -74,21 +149,31 @@ export default function RequestReview() {
           <KeyValue k="Equipment" v={req.equipment} />
           {req.message ? <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.brandTint }}><T v="body" color="#2E1D5E">“{req.message}”</T></View> : null}
         </Card>
-        <Banner icon="calendar-clock" tone="success">You’re free that night — no calendar conflicts</Banner>
+        {req.status === 'new' ? (
+          conflict ? (
+            <Banner icon="calendar-alert" tone={conflict.tone}>{conflict.text}</Banner>
+          ) : (
+            <Banner icon="calendar-check" tone="success">You’re free that night. No calendar conflicts.</Banner>
+          )
+        ) : null}
+        {countered ? (
+          <Banner icon="swap-horizontal" tone="brand">{`You countered with ${euro(countered)}${req.offer !== countered ? ` (offer was ${euro(req.offer)})` : ''}. ${first} can accept or reply in chat.`}</Banner>
+        ) : null}
         <Card style={{ gap: 6 }}>
-          <KeyValue k="Offer" v={euro(req.offer, true)} />
+          <KeyValue k={countered ? 'Your counter offer' : 'Offer'} v={euro(amount, true)} />
           <KeyValue k="Domtak fee (10%)" v={`−${euro(fee, true)}`} />
           <Divider style={{ marginVertical: 6 }} />
-          <KeyValue k="You receive" v={euro(req.offer - fee, true)} strong color={colors.brand} />
+          <KeyValue k="You receive" v={euro(amount - fee, true)} strong color={colors.brand} />
           <T v="small" style={{ fontSize: 12 }}>Paid into escrow when the booker pays, released 24 h after the gig.</T>
         </Card>
         {req.status === 'declined' ? <Banner icon="close" tone="danger">You declined this request. The booker was notified and not charged.</Banner> : null}
         {req.status === 'past' ? <Banner icon="check" tone="success">Completed and paid out.</Banner> : null}
+        {contact && req.status !== 'new' ? <Button title={`Message ${first}`} variant="secondary" icon="message-text-outline" onPress={openChat} /> : null}
       </Screen>
 
       <Modal visible={sheet} transparent animationType="slide" onRequestClose={() => setSheet(false)}>
         <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
-          <Pressable accessibilityLabel="Close" style={{ flex: 1 }} onPress={() => setSheet(false)} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1 }} onPress={() => setSheet(false)} />
           <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: insets.bottom + 20, gap: 12 }}>
             <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
             <T v="h3">Why are you declining?</T>
@@ -103,10 +188,52 @@ export default function RequestReview() {
             <T v="small">The requester is notified and not charged.</T>
             <Row gap={10}>
               <Button title="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setSheet(false)} />
-              <Button title="Decline request" variant="danger" style={{ flex: 1 }} onPress={() => { setStatus(req.id, 'declined'); setSheet(false); router.back(); }} />
+              <Button
+                title="Decline request"
+                variant="danger"
+                style={{ flex: 1 }}
+                onPress={() => {
+                  setStatus(req.id, 'declined');
+                  setSheet(false);
+                  toast(`Declined: ${reason.toLowerCase()}`);
+                  goBack('/pro/requests');
+                }}
+              />
             </Row>
           </View>
         </View>
+      </Modal>
+
+      <Modal visible={counterOpen} transparent animationType="slide" onRequestClose={() => setCounterOpen(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close counter offer" style={{ flex: 1 }} onPress={() => setCounterOpen(false)} />
+            <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: insets.bottom + 20, gap: 14 }}>
+              <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
+              <T v="h3">Counter offer</T>
+              <T v="small">{req.title} · {req.date} · {req.hours} h. {first} offered {euro(req.offer)}; your usual fee is {euro(availability.feePerHour)}/h ({euro(availability.feePerHour * req.hours)}).</T>
+              <Row justify="space-between">
+                <View>
+                  <T v="label">Your price</T>
+                  <T v="small">{euro(counter / req.hours)}/h</T>
+                </View>
+                <Stepper value={counter} onChange={setCounter} min={50} max={20000} step={50} label="counter offer" format={(n) => euro(n)} />
+              </Row>
+              <Row gap={8} style={{ flexWrap: 'wrap' }}>
+                {[req.offer + 100, req.offer + 250, availability.feePerHour * req.hours].filter((v, i, all) => v > 0 && all.indexOf(v) === i).map((v) => (
+                  <Button key={v} title={euro(v)} variant={counter === v ? 'primary' : 'light'} size="sm" accessibilityState={{ selected: counter === v }} onPress={() => setCounter(v)} />
+                ))}
+              </Row>
+              <Field label="Note (optional)" value={counterNote} onChangeText={setCounterNote} placeholder="e.g. Includes my own CDJs and an extra 30 min" multiline />
+              <KeyValue k="You’d receive" v={euro(counter * (1 - FEE_RATE), true)} color={colors.brand} />
+              <Row gap={10}>
+                <Button title="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setCounterOpen(false)} />
+                <Button title="Send counter" style={{ flex: 1 }} disabled={counter === req.offer} onPress={sendCounter} />
+              </Row>
+              {counter === req.offer ? <T v="small" center>That’s the same as the offer. Tap Accept instead.</T> : null}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );

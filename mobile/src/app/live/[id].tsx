@@ -72,11 +72,13 @@ function LiveViewer({ story, author }: { story: Story; author: Profile }) {
   const toggleFollow = useApp((s) => s.toggleFollow);
 
   const [chat, setChat] = useState<ChatLine[]>(() => Array.from({ length: SEED_COUNT }, (_, i) => sampleLine(i)));
-  const [viewers, setViewers] = useState(() => 1180 + (author.followers % 60));
+  const baseViewers = 1180 + (author.followers % 60);
+  const [viewers, setViewers] = useState(baseViewers);
   const [text, setText] = useState('');
   const [hearts, setHearts] = useState<FloatHeart[]>([]);
   const [sent, setSent] = useState(0);
   const nextSample = useRef(SEED_COUNT);
+  const heartSeq = useRef(0);
   const chatRef = useRef<ScrollView>(null);
 
   // New chat lines arrive from the interval callback (never synchronously in the effect body).
@@ -89,18 +91,20 @@ function LiveViewer({ story, author }: { story: Story; author: Profile }) {
     return () => clearInterval(t);
   }, []);
 
-  // The audience drifts slowly up and down.
+  // The audience drifts slowly up and down around its starting size (it never runs away).
   useEffect(() => {
     const t = setInterval(() => {
-      setViewers((v) => Math.max(900, v + Math.round(Math.random() * 36 - 14)));
+      setViewers((v) => Math.max(900, v + Math.round((baseViewers - v) * 0.08 + Math.random() * 40 - 18)));
     }, VIEWERS_MS);
     return () => clearInterval(t);
-  }, []);
+  }, [baseViewers]);
 
   const removeHeart = useCallback((seed: number) => setHearts((h) => h.filter((x) => x.seed !== seed)), []);
 
+  // A ref counter keeps every floating heart key unique, even for taps faster than a re-render.
   const tapHeart = () => {
-    const n = sent + 1;
+    heartSeq.current += 1;
+    const n = heartSeq.current;
     setSent(n);
     setHearts((h) => [...h.slice(-8), { seed: n, n }]);
   };
@@ -197,8 +201,9 @@ function LiveViewer({ story, author }: { story: Story; author: Profile }) {
           <View style={{ flex: 1 }} />
 
           {/* Chat + side actions */}
-          <Row align="flex-end" gap={12} style={{ paddingLeft: 12, paddingRight: 10 }}>
-            <View style={{ flex: 1, height: 260 }}>
+          {/* Fixed 260 px, but allowed to shrink so the comment box stays visible on short screens or with the keyboard open. */}
+          <Row align="flex-end" gap={12} style={{ paddingLeft: 12, paddingRight: 10, height: 260, minHeight: 140, flexShrink: 1 }}>
+            <View style={{ flex: 1, alignSelf: 'stretch' }}>
               <ScrollView
                 ref={chatRef}
                 showsVerticalScrollIndicator={false}
@@ -208,11 +213,11 @@ function LiveViewer({ story, author }: { story: Story; author: Profile }) {
               >
                 {chat.map((line) => (
                   <Row key={line.id} align="flex-start" gap={8}>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${line.name}’s profile`} onPress={() => openProfile(line.authorId)} hitSlop={6}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={line.mine ? 'Open your profile' : `Open ${line.name}’s profile`} onPress={() => openProfile(line.authorId)} hitSlop={8}>
                       <Avatar src={line.avatar} size={30} label={line.name} />
                     </Pressable>
                     <View style={{ flexShrink: 1, backgroundColor: line.mine ? 'rgba(59,31,139,0.75)' : 'rgba(0,0,0,0.38)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 }}>
-                      <Text style={{ color: line.mine ? colors.gold : colors.lilacLight, fontFamily: fonts.bodyBold, fontSize: 12 }}>{line.mine ? 'You' : line.name}</Text>
+                      <Text style={{ color: line.mine ? colors.gold : colors.lilacLight, fontFamily: fonts.bodyBold, fontSize: 12 }}>{line.name}</Text>
                       <Text style={{ color: colors.white, fontFamily: fonts.body, fontSize: 14, lineHeight: 19 }}>{line.text}</Text>
                     </View>
                   </Row>
@@ -261,13 +266,14 @@ function LiveViewer({ story, author }: { story: Story; author: Profile }) {
                 value={text}
                 onChangeText={setText}
                 onSubmitEditing={send}
+                submitBehavior="submit"
                 returnKeyType="send"
                 placeholder="Say something…"
                 placeholderTextColor="rgba(255,255,255,0.7)"
                 accessibilityLabel="Write a comment in the live chat"
                 style={{ flex: 1, height: 46, fontFamily: fonts.body, fontSize: 15, color: colors.white }}
               />
-              <IconButton name="send" label="Send comment" color={text.trim() ? colors.gold : 'rgba(255,255,255,0.6)'} size={46} iconSize={22} onPress={send} />
+              <IconButton name="send" label="Send comment" color={text.trim() ? colors.gold : colors.white} disabled={!text.trim()} size={46} iconSize={22} onPress={send} />
             </View>
           </Row>
         </KeyboardAvoidingView>
@@ -294,7 +300,7 @@ function LiveUnavailable({ story }: { story?: Story }) {
             const p = profileById(s.authorId);
             if (!p) return null;
             return (
-              <Card key={s.id} onPress={() => router.replace(`/live/${s.id}`)}>
+              <Card key={s.id} accessibilityLabel={`Watch ${p.name} live`} onPress={() => router.replace(`/live/${s.id}`)}>
                 <Row gap={12}>
                   <Avatar src={p.avatar} size={48} ring={LIVE_RED} />
                   <View style={{ flex: 1 }}>

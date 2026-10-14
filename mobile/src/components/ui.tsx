@@ -1,7 +1,8 @@
 import { Image, type ImageStyle } from 'expo-image';
-import { isValidElement, type ReactNode, useState } from 'react';
+import { isValidElement, type ReactNode, type Ref, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   type PressableProps,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   TextInput,
   type TextInputProps,
   type TextProps,
+  type TextStyle,
   View,
   type ViewStyle,
   type StyleProp,
@@ -120,14 +122,17 @@ export function Button({ title, variant = 'primary', size = 'lg', icon, loading,
   );
 }
 
-export function IconButton({ name, onPress, label, color = colors.ink, bg = 'transparent', size = 48, iconSize = 24, badge }: { name: IconName; onPress?: () => void; label: string; color?: string; bg?: string; size?: number; iconSize?: number; badge?: number | boolean }) {
+export function IconButton({ name, onPress, onLongPress, label, color = colors.ink, bg = 'transparent', size = 48, iconSize = 24, badge, disabled, selected }: { name: IconName; onPress?: () => void; onLongPress?: () => void; label: string; color?: string; bg?: string; size?: number; iconSize?: number; badge?: number | boolean; disabled?: boolean; selected?: boolean }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={disabled || selected != null ? { disabled, selected } : undefined}
       onPress={onPress}
-      hitSlop={4}
-      style={({ pressed }) => ({ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}
+      onLongPress={onLongPress}
+      disabled={disabled}
+      hitSlop={size < 44 ? (44 - size) / 2 + 2 : 4}
+      style={({ pressed }) => ({ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : pressed ? 0.7 : 1 })}
     >
       <Icon name={name} size={iconSize} color={color} />
       {badge ? (
@@ -139,15 +144,17 @@ export function IconButton({ name, onPress, label, color = colors.ink, bg = 'tra
   );
 }
 
-export function Chip({ label, selected, onPress, icon, tone = 'default', style }: { label: string; selected?: boolean; onPress?: () => void; icon?: IconName; tone?: 'default' | 'dark'; style?: StyleProp<ViewStyle> }) {
+export function Chip({ label, selected, onPress, icon, tone = 'default', style, accessibilityLabel }: { label: string; selected?: boolean; onPress?: () => void; icon?: IconName; tone?: 'default' | 'dark'; style?: StyleProp<ViewStyle>; accessibilityLabel?: string }) {
   const dark = tone === 'dark';
   const bg = selected ? colors.brand : dark ? colors.brandDeep : colors.surface;
   const fg = selected || dark ? colors.white : colors.brand;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected }}
       onPress={onPress}
+      hitSlop={{ top: 4, bottom: 4 }}
       style={[{ height: 38, paddingHorizontal: 14, borderRadius: 19, borderWidth: 1, borderColor: selected ? colors.brand : dark ? colors.brandDeep : colors.borderStrong, backgroundColor: bg, flexDirection: 'row', alignItems: 'center', gap: 6 }, style]}
     >
       {icon ? <Icon name={icon} size={16} color={fg} /> : null}
@@ -177,7 +184,10 @@ export function Segmented<K extends string>({ options, value, onChange, dark }: 
   );
 }
 
-export function Field({ label, icon, right, error, style, ...rest }: TextInputProps & { label?: string; icon?: IconName; right?: ReactNode; error?: string; style?: StyleProp<ViewStyle> }) {
+/** The field draws its own focus border, so drop the browser focus ring on web. */
+const webNoOutline: TextStyle | null = Platform.OS === 'web' ? ({ outlineStyle: 'none', outlineWidth: 0 } as unknown as TextStyle) : null;
+
+export function Field({ label, icon, right, error, style, inputRef, ...rest }: TextInputProps & { label?: string; icon?: IconName; right?: ReactNode; error?: string; style?: StyleProp<ViewStyle>; inputRef?: Ref<TextInput> }) {
   const [focused, setFocused] = useState(false);
   return (
     <View style={[{ gap: 6 }, style]}>
@@ -196,9 +206,10 @@ export function Field({ label, icon, right, error, style, ...rest }: TextInputPr
         }}
       >
         <TextInput
+          ref={inputRef}
           placeholderTextColor={colors.subtle}
           {...rest}
-          accessibilityLabel={label ?? rest.placeholder}
+          accessibilityLabel={rest.accessibilityLabel ?? label ?? rest.placeholder}
           onFocus={(e) => {
             setFocused(true);
             rest.onFocus?.(e);
@@ -207,7 +218,10 @@ export function Field({ label, icon, right, error, style, ...rest }: TextInputPr
             setFocused(false);
             rest.onBlur?.(e);
           }}
-          style={{ flex: 1, fontFamily: fonts.body, fontSize: 16, color: colors.ink, paddingVertical: rest.multiline ? 12 : 0, minHeight: rest.multiline ? 80 : 50, textAlignVertical: rest.multiline ? 'top' : 'center' }}
+          style={[
+            { flex: 1, fontFamily: fonts.body, fontSize: 16, color: colors.ink, paddingVertical: rest.multiline ? 12 : 0, minHeight: rest.multiline ? 80 : 50, textAlignVertical: rest.multiline ? 'top' : 'center' },
+            webNoOutline,
+          ]}
         />
         {right}
         {icon ? <Icon name={icon} size={22} color={colors.muted} /> : null}
@@ -217,11 +231,11 @@ export function Field({ label, icon, right, error, style, ...rest }: TextInputPr
   );
 }
 
-export function Card({ children, style, onPress, padded = true }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void; padded?: boolean }) {
+export function Card({ children, style, onPress, padded = true, accessibilityLabel }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void; padded?: boolean; accessibilityLabel?: string }) {
   const base: ViewStyle = { backgroundColor: colors.surface, borderRadius: radius.lg, padding: padded ? 16 : 0, ...shadow(1) };
   if (onPress) {
     return (
-      <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [base, { opacity: pressed ? 0.92 : 1 }, style]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} style={({ pressed }) => [base, { opacity: pressed ? 0.92 : 1 }, style]}>
         {children}
       </Pressable>
     );
@@ -242,7 +256,7 @@ export function SectionTitle({ title, action, onAction }: { title: string; actio
     <Row justify="space-between" style={{ marginBottom: 10 }}>
       <T v="h3">{title}</T>
       {action ? (
-        <Pressable accessibilityRole="button" onPress={onAction} hitSlop={8}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${action}: ${title}`} onPress={onAction} hitSlop={12}>
           <T v="smallBold" color={colors.brand}>{action}</T>
         </Pressable>
       ) : null}
@@ -282,11 +296,11 @@ export function Toggle({ value, onValueChange, label }: { value: boolean; onValu
 
 export function Stars({ value, size = 16, onChange }: { value: number; size?: number; onChange?: (n: number) => void }) {
   return (
-    <Row gap={onChange ? 4 : 2}>
+    <Row gap={onChange ? 4 : 2} accessibilityLabel={onChange ? undefined : `Rated ${Math.round(value)} out of 5`}>
       {[1, 2, 3, 4, 5].map((n) => {
         const icon = <Icon name={n <= Math.round(value) ? 'star' : 'star-outline'} size={size} color={n <= Math.round(value) ? colors.star : colors.disabled} />;
         return onChange ? (
-          <Pressable key={n} accessibilityRole="button" accessibilityLabel={`${n} star${n > 1 ? 's' : ''}`} onPress={() => onChange(n)} style={{ padding: 4 }}>
+          <Pressable key={n} accessibilityRole="button" accessibilityLabel={`${n} star${n > 1 ? 's' : ''}`} accessibilityState={{ selected: n === Math.round(value) }} onPress={() => onChange(n)} style={{ padding: 4 }}>
             {icon}
           </Pressable>
         ) : (
@@ -306,12 +320,13 @@ export function RatingBadge({ value }: { value: number }) {
   );
 }
 
-export function Stepper({ value, onChange, min = 1, max = 10 }: { value: number; onChange: (n: number) => void; min?: number; max?: number }) {
+export function Stepper({ value, onChange, min = 1, max = 10, step = 1, label, format }: { value: number; onChange: (n: number) => void; min?: number; max?: number; step?: number; label?: string; format?: (n: number) => string }) {
+  const what = label ? ` ${label}` : '';
   return (
     <Row gap={6}>
-      <IconButton name="minus" label="Decrease" onPress={() => onChange(Math.max(min, value - 1))} bg={colors.surface} size={44} iconSize={20} />
-      <Text accessibilityLiveRegion="polite" style={{ minWidth: 32, textAlign: 'center', fontFamily: fonts.displaySemi, fontSize: 20, color: colors.ink }}>{value}</Text>
-      <IconButton name="plus" label="Increase" onPress={() => onChange(Math.min(max, value + 1))} bg={colors.brand} color={colors.white} size={44} iconSize={20} />
+      <IconButton name="minus" label={`Decrease${what}`} disabled={value <= min} onPress={() => onChange(Math.max(min, value - step))} bg={colors.surface} size={44} iconSize={20} />
+      <Text accessibilityLiveRegion="polite" accessibilityLabel={label ? `${label}: ${format ? format(value) : value}` : undefined} style={{ minWidth: 32, textAlign: 'center', fontFamily: fonts.displaySemi, fontSize: 20, color: colors.ink }}>{format ? format(value) : value}</Text>
+      <IconButton name="plus" label={`Increase${what}`} disabled={value >= max} onPress={() => onChange(Math.min(max, value + step))} bg={colors.brand} color={colors.white} size={44} iconSize={20} />
     </Row>
   );
 }

@@ -2,26 +2,52 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { BottomBar, Screen, ScreenHeader } from '../components/layout';
+import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Chip, Field, Icon, Photo, Row, T, Toggle } from '../components/ui';
 import type { ImgKey } from '../data/images';
+import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors } from '../theme';
 
 const LIBRARY: ImgKey[] = ['feed_friends', 'feed_crowd', 'ev_dancing', 'feed_rooftop', 'ev_selfie', 'feed_picnic', 'ev_hands', 'feed_street', 'feed_castle'];
+/** "Camera roll" shots offered by the upload tile in this build. */
+const CAMERA_ROLL: ImgKey[] = ['feed_club', 'ev_lasers2', 'feed_decks', 'ev_red_crowd', 'feed_openair', 'ev_purple_arena'];
 
 export default function NewPost() {
   const { story } = useLocalSearchParams<{ story?: string }>();
   const isStory = story === '1';
   const addPost = useApp((s) => s.addPost);
   const [picked, setPicked] = useState<ImgKey[]>(['feed_friends']);
+  const [uploads, setUploads] = useState<ImgKey[]>([]);
   const [caption, setCaption] = useState('');
   const [music, setMusic] = useState('');
   const [location, setLocation] = useState('Berlin');
   const [visibility, setVisibility] = useState<'Public' | 'Followers'>('Public');
   const [addLocation, setAddLocation] = useState(true);
+  const max = isStory ? 1 : 6;
 
-  const toggle = (k: ImgKey) => setPicked((p) => (p.includes(k) ? p.filter((x) => x !== k) : isStory ? [k] : [...p, k].slice(0, 6)));
+  const toggle = (k: ImgKey) =>
+    setPicked((p) => {
+      if (p.includes(k)) return p.filter((x) => x !== k);
+      if (isStory) return [k];
+      if (p.length >= max) {
+        toast(`You can add up to ${max} photos`);
+        return p;
+      }
+      return [...p, k];
+    });
+
+  const upload = () => {
+    // Device uploads need the installed app's photo permission; here the next camera-roll shot is added.
+    const next = CAMERA_ROLL.find((k) => !uploads.includes(k));
+    if (!next) {
+      toast('All recent camera photos are already added');
+      return;
+    }
+    setUploads((u) => [next, ...u]);
+    setPicked((p) => (isStory ? [next] : p.length >= max ? p : [...p, next]));
+    toast('Added your latest photo from the camera roll');
+  };
 
   const publish = () => {
     if (!picked.length) return;
@@ -29,16 +55,17 @@ export default function NewPost() {
       kind: picked.length > 1 ? 'carousel' : 'photo',
       media: picked,
       caption: caption.trim() || (isStory ? 'New story' : ''),
-      location: addLocation ? location : undefined,
+      location: addLocation && location.trim() ? location.trim() : undefined,
       track: music.trim() || undefined,
     });
+    toast(isStory ? 'Story shared' : visibility === 'Public' ? 'Post published' : 'Post shared with your followers');
     router.replace('/(tabs)');
   };
 
   return (
     <Screen
       keyboard
-      header={<ScreenHeader title={isStory ? 'New story' : 'New post'} close />}
+      header={<ScreenHeader title={isStory ? 'New story' : 'New post'} close onBack={() => goBack('/(tabs)')} />}
       footer={
         <BottomBar>
           <Button title={isStory ? 'Share story' : 'Publish'} onPress={publish} disabled={!picked.length} />
@@ -46,12 +73,12 @@ export default function NewPost() {
       }
     >
       <View style={{ borderRadius: 18, overflow: 'hidden' }}>
-        {picked[0] ? <Photo src={picked[0]} style={{ height: 260 }} /> : (
-          <View style={{ height: 200, borderRadius: 18, borderWidth: 2, borderStyle: 'dashed', borderColor: '#9C8FC2', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        {picked[0] ? <Photo src={picked[0]} style={{ height: 260 }} accessibilityLabel="Selected photo preview" /> : (
+          <Pressable accessibilityRole="button" accessibilityLabel="Add a photo from the camera roll" onPress={upload} style={{ height: 200, borderRadius: 18, borderWidth: 2, borderStyle: 'dashed', borderColor: '#9C8FC2', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
             <Icon name="image-outline" size={34} color={colors.brand} />
-            <T v="bodyBold">Choose photos or a video</T>
-            <T v="small">PNG, GIF, WEBP, MP4 or MP3 · max 1 GB</T>
-          </View>
+            <T v="bodyBold">Choose photos below</T>
+            <T v="small">Or tap here to add your latest camera photo</T>
+          </Pressable>
         )}
         {picked.length > 1 ? (
           <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
@@ -59,15 +86,19 @@ export default function NewPost() {
           </View>
         ) : null}
       </View>
-      <T v="label">{isStory ? 'Pick one photo' : 'Pick up to 6 (multi-file)'}</T>
+      <Row justify="space-between">
+        <T v="label">{isStory ? 'Pick one photo' : `Pick up to ${max} (multi-file)`}</T>
+        {!isStory && picked.length ? <T v="smallBold" color={colors.brand}>{picked.length}/{max}</T> : null}
+      </Row>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Upload from device" style={{ width: '31.5%', aspectRatio: 1, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Upload from device" accessibilityHint="Adds your latest camera photo" onPress={upload} style={{ width: '31.5%', aspectRatio: 1, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
           <Icon name="camera-outline" size={28} color={colors.brand} />
+          <T v="smallBold" color={colors.brand} style={{ fontSize: 12 }}>Camera roll</T>
         </Pressable>
-        {LIBRARY.map((k) => {
+        {[...uploads, ...LIBRARY].map((k, idx) => {
           const i = picked.indexOf(k);
           return (
-            <Pressable key={k} accessibilityRole="button" accessibilityState={{ selected: i >= 0 }} onPress={() => toggle(k)} style={{ width: '31.5%', aspectRatio: 1 }}>
+            <Pressable key={k} accessibilityRole="button" accessibilityLabel={`Photo ${idx + 1}${i >= 0 ? `, selected ${i + 1}` : ''}`} accessibilityState={{ selected: i >= 0 }} onPress={() => toggle(k)} style={{ width: '31.5%', aspectRatio: 1 }}>
               <Photo src={k} style={{ flex: 1, borderRadius: 12, borderWidth: i >= 0 ? 3 : 0, borderColor: colors.brand }} />
               {i >= 0 ? (
                 <View style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
@@ -89,11 +120,12 @@ export default function NewPost() {
             </View>
             <Toggle label="Add location" value={addLocation} onValueChange={setAddLocation} />
           </Row>
-          {addLocation ? <Field value={location} onChangeText={setLocation} icon="map-marker-outline" /> : null}
+          {addLocation ? <Field value={location} onChangeText={setLocation} icon="map-marker-outline" accessibilityLabel="Location" placeholder="Where was this?" /> : null}
           <T v="label">Visibility</T>
           <Row gap={8}>
-            {(['Public', 'Followers'] as const).map((v) => <Chip key={v} label={v} selected={visibility === v} onPress={() => setVisibility(v)} />)}
+            {(['Public', 'Followers'] as const).map((v) => <Chip key={v} label={v} icon={v === 'Public' ? 'earth' : 'account-group-outline'} selected={visibility === v} onPress={() => setVisibility(v)} />)}
           </Row>
+          <T v="small">{visibility === 'Public' ? 'Anyone on Domtak can see this post.' : 'Only people who follow you can see this post.'}</T>
         </>
       ) : (
         <Field label="Text on story" value={caption} onChangeText={setCaption} placeholder="Say something…" />
