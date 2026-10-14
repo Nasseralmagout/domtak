@@ -37,7 +37,7 @@ function StoriesRow() {
         const p = profileById(s.authorId);
         if (!p) return null;
         return (
-          <Pressable key={s.id} accessibilityRole="button" accessibilityLabel={`${p.name}'s story${s.live ? ', live now' : ''}`} onPress={() => router.push(`/story/${s.id}`)} style={{ alignItems: 'center', gap: 6, width: 72 }}>
+          <Pressable key={s.id} accessibilityRole="button" accessibilityLabel={s.live ? `${p.name} is live now, watch stream` : `${p.name}’s story`} onPress={() => router.push(s.live ? `/live/${s.id}` : `/story/${s.id}`)} style={{ alignItems: 'center', gap: 6, width: 72 }}>
             <LinearGradient colors={s.live ? ['#F2B632', '#E5484D'] : ['#8B5CF6', '#3B1F8B']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' }}>
               <View style={{ width: 66, height: 66, borderRadius: 33, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
                 <Photo src={p.avatar} style={{ width: 60, height: 60, borderRadius: 30 }} />

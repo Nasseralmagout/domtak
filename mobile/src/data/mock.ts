@@ -379,6 +379,9 @@ export const initialBookings: Booking[] = [
   {
     id: 'b4', type: 'venue', targetId: 'loft', eventTitle: 'Listening party', date: '2026-09-20', startTime: '20:00', endTime: '23:00', hours: 3,
     location: 'Spree Loft, Friedrichshain', guests: 40, equipment: 'Sound system', extras: 'None', note: '', amount: 650, status: 'declined', createdAt: '2026-09-01',
+  },  {
+    id: 'b5', type: 'musician', targetId: 'adam', eventTitle: 'Office summer party', date: '2026-09-26', startTime: '19:00', endTime: '23:00', hours: 4,
+    location: 'Spree Loft, Friedrichshain', guests: 90, equipment: 'Provided by venue / host', extras: 'None', note: '', amount: 1200, status: 'completed', createdAt: '2026-09-02',
   },
 ];
 

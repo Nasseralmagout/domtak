@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -33,16 +33,11 @@ export default function PaymentMethods() {
     if (params.add === '1') router.back();
   };
 
+  // Payouts live on the Earnings screen; keep old ?payout=1 links working.
+  if (params.payout === '1') return <Redirect href="/pro/earnings" />;
+
   return (
-    <Screen keyboard header={<ScreenHeader title={params.payout ? 'Payouts' : 'Payment methods'} />}>
-      {params.payout ? (
-        <Card style={{ gap: 6 }}>
-          <T v="small">Available for payout</T>
-          <T v="h1">€2.040</T>
-          <T v="small">To IBAN DE•• •••• •••• 0391 · arrives in 1–2 business days</T>
-          <Button title="Pay out now" size="md" style={{ marginTop: 8 }} onPress={() => router.back()} />
-        </Card>
-      ) : null}
+    <Screen keyboard header={<ScreenHeader title="Payment methods" />}>
       <View accessibilityRole="radiogroup" style={{ gap: 10 }}>
         {methods.map((m) => {
           const on = m.id === selected;

@@ -2,20 +2,33 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Share, View, useWindowDimensions } from 'react-native';
 
+import { ActionSheet } from '../../components/ActionSheet';
 import { EventRow, FollowButton } from '../../components/cards';
 import { Screen, ScreenHeader } from '../../components/layout';
-import { Avatar, Button, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
-import { profileById } from '../../data/mock';
+import { Avatar, Banner, Button, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
+import { followersOf, profileById, venueById } from '../../data/mock';
 import { compact } from '../../lib/format';
+import { toast } from '../../store/toast';
 import { ROLE_LABEL, isPro, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <View style={{ flex: 1, alignItems: 'center' }}>
+function Stat({ value, label, onPress }: { value: string; label: string; onPress?: () => void }) {
+  const body = (
+    <>
       <T v="h3" color={colors.brandDeep} style={{ fontFamily: fonts.display }}>{value}</T>
       <T v="small">{label}</T>
-    </View>
+    </>
+  );
+  if (!onPress) return <View style={{ flex: 1, alignItems: 'center' }}>{body}</View>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${value} ${label}. Show list`}
+      onPress={onPress}
+      style={({ pressed }) => ({ flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 48, opacity: pressed ? 0.6 : 1 })}
+    >
+      {body}
+    </Pressable>
   );
 }
 
@@ -39,6 +52,10 @@ export default function ProfileScreen() {
   const followingMap = useApp((s) => s.following);
   const going = useApp((s) => s.going);
   const ensureConversation = useApp((s) => s.ensureConversation);
+  const blockedList = useApp((s) => s.blocked);
+  const toggleBlock = useApp((s) => s.toggleBlock);
+  const toggleFollow = useApp((s) => s.toggleFollow);
+  const [menuOpen, setMenuOpen] = useState(false);
   const posts = useFeedPosts();
   const events = useAllEvents();
   const [tab, setTab] = useState<'posts' | 'events' | 'saved' | 'about'>(id === 'me' ? 'posts' : 'about');
@@ -64,13 +81,29 @@ export default function ProfileScreen() {
   const cell = (width - 32 - 8) / 3;
   const grid = tab === 'saved' ? savedPosts : myPosts;
   const fallbackGrid = !isMe && p?.gallery ? p.gallery : [];
+  const isBlocked = !isMe && blockedList.includes(p!.id);
+  const myFollowerCount = followersOf('me').filter((f) => !blockedList.includes(f.id)).length;
+  const myFollowingCount = Object.keys(followingMap).filter((fid) => (profileById(fid) || venueById(fid)) && !blockedList.includes(fid)).length;
+  const openConnections = (t: 'followers' | 'following') => router.push(`/connections/${isMe ? 'me' : p!.id}?tab=${t}`);
+
+  const block = () => {
+    if (!p) return;
+    if (isBlocked) {
+      toggleBlock(p.id);
+      toast(`${p.name} is unblocked`);
+      return;
+    }
+    if (followingMap[p.id]) toggleFollow(p.id);
+    toggleBlock(p.id);
+    toast(`${p.name} is blocked`);
+  };
 
   return (
     <Screen
       header={
         <ScreenHeader
           title={handle}
-          right={isMe ? <IconButton name="cog-outline" label="Settings" onPress={() => router.push('/settings')} /> : <IconButton name="dots-horizontal" label="More" />}
+          right={isMe ? <IconButton name="cog-outline" label="Settings" onPress={() => router.push('/settings')} /> : <IconButton name="dots-horizontal" label="More options" onPress={() => setMenuOpen(true)} />}
         />
       }
     >
@@ -85,12 +118,12 @@ export default function ProfileScreen() {
         </View>
       </Row>
 
-      <Row style={{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: 14, ...shadow(1) }} gap={0}>
+      <Row style={{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: 10, ...shadow(1) }} gap={0}>
         <Stat value={isMe ? String(myPosts.length) : compact(p!.eventsCount ?? myPosts.length)} label={isMe ? 'Posts' : p!.kind === 'organizer' ? 'Events' : 'Posts'} />
         <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
-        <Stat value={isMe ? '128' : compact(p!.followers + (followingMap[p!.id] ? 1 : 0))} label="Followers" />
+        <Stat value={isMe ? String(myFollowerCount) : compact(p!.followers + (followingMap[p!.id] ? 1 : 0))} label="Followers" onPress={() => openConnections('followers')} />
         <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
-        <Stat value={isMe ? String(Object.keys(followingMap).length) : compact(p!.following)} label="Following" />
+        <Stat value={isMe ? String(myFollowingCount) : compact(p!.following)} label="Following" onPress={() => openConnections('following')} />
       </Row>
 
       {bio ? <T v="body">{bio}</T> : null}
@@ -100,6 +133,14 @@ export default function ProfileScreen() {
           <Button title="Edit profile" size="md" style={{ flex: 1 }} onPress={() => router.push('/profile-setup?mode=edit')} />
           <Button title="Share" variant="secondary" size="md" icon="share-variant-outline" style={{ flex: 1 }} onPress={() => Share.share({ message: `Follow me on Domtak: ${handle}` }).catch(() => {})} />
         </Row>
+      ) : isBlocked ? (
+        <Banner icon="block-helper" tone="danger">
+          <View style={{ gap: 8 }}>
+            <T v="smallBold" color={colors.danger}>You blocked {name}</T>
+            <T v="small" color={colors.danger}>They can’t message you, follow you or see your posts. They won’t be told.</T>
+            <Button title="Unblock" variant="secondary" size="sm" icon="account-check-outline" style={{ alignSelf: 'flex-start' }} onPress={block} />
+          </View>
+        </Banner>
       ) : (
         <Row gap={10}>
           <Button title="Message" size="md" style={{ flex: 1.4 }} onPress={() => router.push(`/chat/${ensureConversation(p!.id)}`)} />
@@ -155,6 +196,21 @@ export default function ProfileScreen() {
           {p.genres.length ? <T v="small">Music: {p.genres.join(', ')}</T> : null}
           <T v="small">Based in {p.city}</T>
         </View>
+      ) : null}
+
+      {p ? (
+        <ActionSheet
+          visible={menuOpen}
+          title={name}
+          onClose={() => setMenuOpen(false)}
+          actions={[
+            { label: 'Share profile', icon: 'share-variant-outline', onPress: () => Share.share({ message: `${name} (${handle}) on Domtak` }).catch(() => {}) },
+            isBlocked
+              ? { label: `Unblock ${name}`, icon: 'account-check-outline', onPress: block }
+              : { label: `Block ${name}`, icon: 'account-cancel-outline', destructive: true, onPress: block },
+            { label: 'Report profile', icon: 'flag-outline', destructive: true, onPress: () => toast('Thanks, our team will review this profile') },
+          ]}
+        />
       ) : null}
     </Screen>
   );

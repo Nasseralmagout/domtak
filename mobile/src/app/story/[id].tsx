@@ -3,12 +3,14 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Avatar, IconButton, Photo, Row } from '../../components/ui';
+import { Avatar, Icon, IconButton, Photo, Row } from '../../components/ui';
 import { profileById, stories } from '../../data/mock';
+import { toast } from '../../store/toast';
 import { useApp } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
 
 const FRAME_MS = 5000;
+const LIVE_RED = '#E5484D';
 
 type Pos = { story: number; frame: number; done: boolean };
 
@@ -34,11 +36,15 @@ export default function StoryViewer() {
   const elapsed = useRef(0);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const sendMessage = useApp((s) => s.sendMessage);
+  const likes = useApp((s) => s.likes);
+  const toggleLike = useApp((s) => s.toggleLike);
 
   const storyIndex = pos.story;
   const frame = pos.frame;
   const story = stories[storyIndex];
   const author = profileById(story.authorId);
+  const likeKey = `story:${story.id}`;
+  const liked = !!likes[likeKey];
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)'));
   const go = (dir: 1 | -1) => {
@@ -72,7 +78,10 @@ export default function StoryViewer() {
     const cid = ensureConversation(author.id);
     sendMessage(cid, { type: 'text', text: `Replied to your story: ${reply.trim()}` });
     setReply('');
+    toast(`Reply sent to ${author.name}`);
   };
+
+  const watchLive = () => router.replace(`/live/${story.id}`);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.black }}>
@@ -86,24 +95,37 @@ export default function StoryViewer() {
           ))}
         </Row>
         <Row gap={10} style={{ paddingHorizontal: 10, paddingTop: 10 }}>
-          <Pressable accessibilityRole="button" onPress={() => author && router.push(`/artist/${author.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={author ? `Open ${author.name}’s profile` : 'Open profile'} onPress={() => author && router.push(`/artist/${author.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
             <Avatar src={author?.avatar} size={36} />
             <Text style={{ color: colors.white, fontFamily: fonts.bodyBold, fontSize: 15 }}>{author?.name}</Text>
             {story.live ? (
-              <View style={{ backgroundColor: '#E5484D', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+              <View style={{ backgroundColor: LIVE_RED, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
                 <Text style={{ color: colors.white, fontFamily: fonts.bodyBold, fontSize: 11 }}>LIVE</Text>
               </View>
             ) : (
               <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: fonts.body, fontSize: 13 }}>2h</Text>
             )}
           </Pressable>
-          <IconButton name={paused ? 'play-circle' : 'dots-horizontal'} label={paused ? 'Resume' : 'Pause'} color={colors.white} onPress={() => setPaused(!paused)} />
+          <IconButton name={paused ? 'play' : 'pause'} label={paused ? 'Resume story' : 'Pause story'} color={colors.white} onPress={() => setPaused(!paused)} />
           <IconButton name="close" label="Close story" color={colors.white} onPress={close} />
         </Row>
         <Row style={{ flex: 1 }} gap={0}>
           <Pressable accessibilityLabel="Previous" onPress={prev} onLongPress={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ flex: 1 }} />
           <Pressable accessibilityLabel="Next" onPress={next} onLongPress={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ flex: 2 }} />
         </Row>
+        {story.live ? (
+          <View style={{ alignItems: 'center', paddingBottom: 14 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Watch ${author?.name ?? 'this'} live`}
+              onPress={watchLive}
+              style={({ pressed }) => ({ height: 48, paddingHorizontal: 22, borderRadius: 24, backgroundColor: LIVE_RED, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.85 : 1 })}
+            >
+              <Icon name="broadcast" size={20} color={colors.white} />
+              <Text style={{ color: colors.white, fontFamily: fonts.bodyBold, fontSize: 15 }}>Watch live</Text>
+            </Pressable>
+          </View>
+        ) : null}
         <Row gap={10} style={{ paddingHorizontal: 14, paddingBottom: 16 }}>
           <View style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.95)', flexDirection: 'row', alignItems: 'center', paddingLeft: 14 }}>
             <TextInput
@@ -119,7 +141,7 @@ export default function StoryViewer() {
             />
             <IconButton name="send" label="Send reply" onPress={send} />
           </View>
-          <IconButton name="heart-outline" label="Like story" color={colors.white} />
+          <IconButton name={liked ? 'heart' : 'heart-outline'} label={liked ? 'Unlike story' : 'Like story'} color={liked ? LIVE_RED : colors.white} onPress={() => toggleLike(likeKey)} />
         </Row>
       </SafeAreaView>
     </View>

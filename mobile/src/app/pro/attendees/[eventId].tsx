@@ -1,9 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Share, View } from 'react-native';
+import { View } from 'react-native';
 
-import { BottomBar, Screen, ScreenHeader } from '../../../components/layout';
-import { Avatar, Button, Card, Chip, Field, Pill, Row, T } from '../../../components/ui';
+import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/layout';
+import { Avatar, Button, Card, Chip, EmptyState, Field, Pill, Row, T } from '../../../components/ui';
 import { attendees as seedAttendees } from '../../../data/mock';
 import { euro, shortDate, time } from '../../../lib/format';
 import { useEvent } from '../../../store/useApp';
@@ -22,8 +22,8 @@ export default function Attendees() {
   );
   if (!event) {
     return (
-      <Screen header={<ScreenHeader title="Attendees" />}>
-        <T v="body">Event not found.</T>
+      <Screen header={<ScreenHeader title="Attendees" onBack={() => goBack('/pro/events')} />}>
+        <EmptyState icon="calendar-remove-outline" title="Event not found" body="This event may have been removed. Pick another one from your events." action="Back to my events" onAction={() => router.replace('/pro/events')} />
       </Screen>
     );
   }
@@ -38,7 +38,19 @@ export default function Attendees() {
         <ScreenHeader
           title={event.title}
           subtitle={`${shortDate(event.start)} · ${time(event.start)}`}
-          right={<Button title="Promote" size="sm" variant="light" style={{ marginRight: 12 }} onPress={() => Share.share({ message: `Get tickets for ${event.title} on Domtak` }).catch(() => {})} />}
+          onBack={() => goBack('/pro/events')}
+          right={
+            <Button
+              title="Promote"
+              icon="rocket-launch-outline"
+              size="sm"
+              variant="light"
+              hitSlop={6}
+              style={{ marginRight: 12 }}
+              accessibilityLabel={`Promote ${event.title}`}
+              onPress={() => router.push(`/pro/promote/${event.id}`)}
+            />
+          }
         />
       }
       footer={<BottomBar><Button title="Scan tickets at the door" icon="qrcode-scan" onPress={() => router.push({ pathname: '/pro/scan', params: { eventId: event.id } })} /></BottomBar>}

@@ -1,18 +1,19 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, Share, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ArtistTile, BackOverlay, FollowButton, GoingFaces, HeartToggle } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
-import { Avatar, Button, Icon, type IconName, Photo, RatingBadge, Row, SectionTitle, T } from '../../components/ui';
-import { profileById, venueById } from '../../data/mock';
+import { Avatar, Button, EmptyState, Icon, type IconName, Photo, RatingBadge, Row, SectionTitle, T } from '../../components/ui';
+import { eventDiscussion, profileById, venueById } from '../../data/mock';
 import { compact, eventWhen, priceRange } from '../../lib/format';
+import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
-function InfoCard({ icon, title, sub, action, onAction }: { icon: IconName; title: string; sub: string; action?: string; onAction?: () => void }) {
+function InfoCard({ icon, title, sub, action, actionIcon, actionVariant = 'light', onAction }: { icon: IconName; title: string; sub: string; action?: string; actionIcon?: IconName; actionVariant?: 'light' | 'secondary'; onAction?: () => void }) {
   return (
     <Row gap={14} style={{ backgroundColor: colors.surface, padding: 14, borderRadius: radius.lg, ...shadow(1) }}>
       <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.brandDeep, alignItems: 'center', justifyContent: 'center' }}>
@@ -22,16 +23,29 @@ function InfoCard({ icon, title, sub, action, onAction }: { icon: IconName; titl
         <T v="title">{title}</T>
         <T v="small">{sub}</T>
       </View>
-      {action ? <Button title={action} size="sm" variant="light" onPress={onAction} /> : null}
+      {action ? <Button title={action} icon={actionIcon} size="sm" variant={actionVariant} onPress={onAction} accessibilityLabel={`${action}: ${title}`} /> : null}
     </Row>
   );
 }
 
-function Stat({ icon, label, onPress }: { icon: IconName; label?: string; onPress?: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label ?? icon} onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 4 }}>
-      {label ? <T v="bodyBold">{label}</T> : null}
+function Stat({ icon, value, label, onPress }: { icon: IconName; value?: string; label: string; onPress?: () => void }) {
+  const content = (
+    <>
+      {value ? <T v="bodyBold">{value}</T> : null}
       <Icon name={icon} size={22} color={colors.ink} />
+    </>
+  );
+  const base = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, minHeight: 44, minWidth: 44, justifyContent: 'center' as const, paddingHorizontal: 4 };
+  if (!onPress) {
+    return (
+      <View accessible accessibilityLabel={label} style={base}>
+        {content}
+      </View>
+    );
+  }
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={4} style={({ pressed }) => [base, { opacity: pressed ? 0.6 : 1 }]}>
+      {content}
     </Pressable>
   );
 }
@@ -44,13 +58,16 @@ export default function EventDetail() {
   const toggleGoing = useApp((s) => s.toggleGoing);
   const toggleWish = useApp((s) => s.toggleWish);
   const tickets = useApp((s) => s.tickets);
+  const extraComments = useApp((s) => (id ? s.extraComments[`event:${id}`] : undefined));
   const [more, setMore] = useState(false);
 
   if (!event) {
     return (
-      <SafeAreaView style={{ flex: 1, padding: 24, gap: 12 }}>
-        <T v="h2">Event not found</T>
-        <Button title="Back" onPress={() => goBack('/(tabs)/events')} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={{ paddingHorizontal: 12, paddingTop: 4 }}>
+          <BackOverlay onPress={() => goBack('/(tabs)/events')} />
+        </View>
+        <EmptyState icon="calendar-remove-outline" title="Event not found" body="This event may have been cancelled or the link is no longer valid." action="Browse events" onAction={() => router.replace('/(tabs)/events')} />
       </SafeAreaView>
     );
   }
@@ -58,8 +75,29 @@ export default function EventDetail() {
   const organizer = event.organizerId === 'me' ? undefined : profileById(event.organizerId);
   const lineup = event.lineup.map((l) => profileById(l)).filter((p): p is NonNullable<typeof p> => !!p);
   const prices = event.ticketTypes.map((t) => t.price);
-  const hasTicket = tickets.some((t) => t.eventId === event.id && t.status === 'valid');
-  const share = () => Share.share({ message: `${event.title} — ${eventWhen(event.start, event.end)} at ${venue?.name}. Join me on Domtak!` }).catch(() => {});
+  const myTicket = tickets.find((t) => t.eventId === event.id && t.status === 'valid');
+  const hasTicket = !!myTicket;
+  const goingCount = event.going + (going ? 1 : 0);
+  const commentCount = (eventDiscussion[event.id]?.length ?? 0) + (extraComments?.length ?? 0);
+  const inCalendar = going || hasTicket;
+  const openTicket = () => (myTicket ? router.push(`/ticket/${myTicket.id}`) : router.push(`/tickets/${event.id}`));
+  const share = () => Share.share({ message: `${event.title} — ${eventWhen(event.start, event.end)} at ${venue?.name}. Join me on Domtak!` }).catch(() => toast('Could not open the share sheet'));
+  const directions = () => {
+    const destination = encodeURIComponent([venue?.name, venue?.area, venue?.city].filter(Boolean).join(', '));
+    Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destination}`).catch(() => router.push(`/map?focus=${event.id}`));
+  };
+  const toggleGoingWithToast = () => {
+    toggleGoing(event.id);
+    toast(going ? (hasTicket ? 'No longer marked as going' : 'Removed from your calendar') : 'You’re going! Added to your calendar');
+  };
+  const addToCalendar = () => {
+    if (inCalendar) {
+      router.push('/(tabs)/calendar');
+      return;
+    }
+    toggleGoing(event.id);
+    toast('Added to your calendar');
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -90,25 +128,42 @@ export default function EventDetail() {
 
         <View style={{ padding: 16, gap: 16 }}>
           <Row justify="space-between">
-            <Stat icon="comment-outline" label={compact(913)} onPress={() => router.push('/post/p3')} />
-            <Stat icon="map-marker-outline" onPress={() => router.push(`/map?focus=${event.id}`)} />
-            <Stat icon="navigation-variant-outline" onPress={() => router.push(`/map?focus=${event.id}`)} />
-            <Stat icon="account-outline" label={compact(event.going + (going ? 1 : 0))} />
-            <Stat icon="share-variant-outline" onPress={share} />
+            <Stat icon="comment-outline" value={compact(commentCount)} label={`${commentCount} ${commentCount === 1 ? 'comment' : 'comments'}, open discussion`} onPress={() => router.push(`/event-comments/${event.id}`)} />
+            <Stat icon="map-marker-outline" label="Show on map" onPress={() => router.push(`/map?focus=${event.id}`)} />
+            <Stat icon="navigation-variant-outline" label="Get directions" onPress={directions} />
+            <Stat icon="account-outline" value={compact(goingCount)} label={`${goingCount} going`} />
+            <Stat icon="share-variant-outline" label="Share event" onPress={share} />
           </Row>
           <Row gap={12}>
-            <Button title={going ? 'Going ✓' : 'Going'} variant={going ? 'secondary' : 'primary'} size="md" style={{ flex: 1 }} onPress={() => toggleGoing(event.id)} />
-            <Button title={hasTicket ? 'My ticket' : 'Tickets'} size="md" style={{ flex: 1 }} onPress={() => (hasTicket ? router.push('/my-bookings?tab=tickets') : router.push(`/tickets/${event.id}`))} />
+            <Button
+              title="Going"
+              icon={going ? 'check' : 'account-plus-outline'}
+              variant={going ? 'secondary' : 'primary'}
+              size="md"
+              style={{ flex: 1 }}
+              accessibilityState={{ selected: going }}
+              accessibilityLabel={going ? 'Going, tap to undo' : 'Mark as going'}
+              onPress={toggleGoingWithToast}
+            />
+            <Button title={hasTicket ? 'My ticket' : 'Tickets'} icon={hasTicket ? 'qrcode' : 'ticket-confirmation-outline'} size="md" style={{ flex: 1 }} onPress={openTicket} />
           </Row>
-          <GoingFaces count={event.going} />
+          <GoingFaces count={goingCount} />
 
-          <InfoCard icon="calendar-month-outline" title={eventWhen(event.start, event.end)} sub="Add to your Domtak calendar" action="Add" onAction={() => router.push('/(tabs)/calendar')} />
+          <InfoCard
+            icon="calendar-month-outline"
+            title={eventWhen(event.start, event.end)}
+            sub={inCalendar ? 'In your Domtak calendar' : 'Add to your Domtak calendar'}
+            action={inCalendar ? 'Added' : 'Add'}
+            actionIcon={inCalendar ? 'check' : 'calendar-plus'}
+            actionVariant={inCalendar ? 'secondary' : 'light'}
+            onAction={addToCalendar}
+          />
           <InfoCard icon="map-marker-outline" title={`${venue?.city}, ${venue?.area}`} sub={venue?.name ?? ''} action="Map" onAction={() => router.push(`/map?focus=${event.id}`)} />
-          <InfoCard icon="ticket-confirmation-outline" title={priceRange(prices)} sub={`Ticket price includes tax · ${event.refundPolicy}`} />
+          <InfoCard icon="ticket-confirmation-outline" title={priceRange(prices)} sub={`Ticket price includes tax · ${event.refundPolicy}`} action={hasTicket ? 'View' : 'Buy'} onAction={openTicket} />
 
           {organizer ? (
             <Row gap={12} style={{ backgroundColor: colors.surface, padding: 14, borderRadius: radius.lg, ...shadow(1) }}>
-              <Pressable accessibilityRole="button" onPress={() => router.push(`/profile/${organizer.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Open organizer ${organizer.name}`} onPress={() => router.push(`/profile/${organizer.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
                 <Avatar src={organizer.avatar} size={52} verified={organizer.verified} />
                 <View style={{ flex: 1 }}>
                   <T v="title" numberOfLines={1}>{organizer.name}</T>
@@ -122,7 +177,7 @@ export default function EventDetail() {
           <View style={{ gap: 6 }}>
             <T v="h3">About event</T>
             <T v="body" numberOfLines={more ? undefined : 4}>{event.description}</T>
-            <Pressable accessibilityRole="button" onPress={() => setMore(!more)}><T v="smallBold" color={colors.brand}>{more ? 'See less' : 'See more'}</T></Pressable>
+            <Pressable accessibilityRole="button" onPress={() => setMore(!more)} hitSlop={10} style={{ alignSelf: 'flex-start', paddingVertical: 4 }}><T v="smallBold" color={colors.brand}>{more ? 'See less' : 'See more'}</T></Pressable>
           </View>
 
           {lineup.length ? (
@@ -135,7 +190,7 @@ export default function EventDetail() {
           ) : null}
 
           {venue ? (
-            <Pressable accessibilityRole="button" onPress={() => router.push(`/venue/${venue.id}`)} style={{ borderRadius: radius.lg, overflow: 'hidden', ...shadow(1), backgroundColor: colors.surface }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Open venue ${venue.name}`} onPress={() => router.push(`/venue/${venue.id}`)} style={{ borderRadius: radius.lg, overflow: 'hidden', ...shadow(1), backgroundColor: colors.surface }}>
               <Photo src={venue.cover} style={{ height: 120 }} />
               <Row justify="space-between" style={{ padding: 12 }}>
                 <View>
@@ -152,9 +207,9 @@ export default function EventDetail() {
         <Row gap={14}>
           <View>
             <T v="small">From</T>
-            <T v="h3">{priceRange([Math.min(...prices)])}</T>
+            <T v="h3">{priceRange(prices.length ? [Math.min(...prices)] : [])}</T>
           </View>
-          <Button title={hasTicket ? 'View my ticket' : 'Get tickets'} style={{ flex: 1 }} onPress={() => (hasTicket ? router.push('/my-bookings?tab=tickets') : router.push(`/tickets/${event.id}`))} />
+          <Button title={hasTicket ? 'View my ticket' : 'Get tickets'} style={{ flex: 1 }} onPress={openTicket} />
         </Row>
       </BottomBar>
     </View>
