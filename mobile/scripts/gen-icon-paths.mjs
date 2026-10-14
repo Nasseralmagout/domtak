@@ -3,8 +3,9 @@
 // native keeps using the icon font. Run after adding new icon names: `npm run icons`.
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as mdi from '@mdi/js';
+import * as mdiModule from '@mdi/js';
 
+const mdi = { ...mdiModule };
 const glyphs = JSON.parse(readFileSync('node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/MaterialCommunityIcons.json', 'utf8'));
 const toKey = (name) => 'mdi' + name.split('-').map((p) => p[0].toUpperCase() + p.slice(1)).join('');
 
