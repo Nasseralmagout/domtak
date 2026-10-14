@@ -8,25 +8,12 @@ import { Button, Card, EmptyState, Icon, Photo, Pill, Row, Segmented, T } from '
 import { events as seedEvents } from '../../data/mock';
 import type { EventItem } from '../../data/types';
 import { euro, eventWhen, isoDay, parse, shortDate, TODAY } from '../../lib/format';
-import { DAY_MS, doorsOpenAt, isPromoted, promotionChain, promotionEnd } from '../../lib/promotions';
-import { type Promotion, useApp, useVenue } from '../../store/useApp';
+import { DAY_MS, doorsOpenAt, type PromotionState, promotionState } from '../../lib/promotions';
+import { useApp, useVenue } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
 
 /** For the demo, these seed organizers count as "you". */
 const DEMO_ORGANIZERS = ['mobolosa', 'og'];
-
-type PromoState = { kind: 'none' } | { kind: 'running' | 'covered'; until: Date };
-
-/**
- * Boost state on the demo clock (same rules as /pro/promote): 'covered' when the running boost
- * already lasts until doors open, so there is nothing left to extend.
- */
-function promoState(promotions: Promotion[], e: EventItem): PromoState {
-  const until = promotionEnd(promotions, e);
-  if (!until || !isPromoted(promotions, e, TODAY)) return { kind: 'none' };
-  const covered = promotionChain(promotions, e.id).end >= doorsOpenAt(e).getTime();
-  return { kind: covered ? 'covered' : 'running', until };
-}
 
 function stats(e: EventItem) {
   const sold = e.ticketTypes.reduce((n, t) => n + t.sold, 0);
@@ -42,7 +29,7 @@ function daysUntil(iso: string) {
   return `In ${d} days`;
 }
 
-function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: PromoState; past: boolean; mine: boolean }) {
+function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: PromotionState; past: boolean; mine: boolean }) {
   // Includes the owner's saved listing edits, like the public venue page.
   const venue = useVenue(event.venueId);
   const { sold, capacity, revenue, pct } = stats(event);
@@ -143,8 +130,8 @@ export default function ProEvents() {
 
   const myIds = useMemo(() => new Set(myEvents.map((e) => e.id)), [myEvents]);
   // Boost state per upcoming event, on the demo clock (boosts are stamped with TODAY).
-  const promos = useMemo(() => new Map(upcoming.map((e) => [e.id, promoState(promotions, e)])), [upcoming, promotions]);
-  const promoOf = (e: EventItem): PromoState => promos.get(e.id) ?? { kind: 'none' };
+  const promos = useMemo(() => new Map(upcoming.map((e) => [e.id, promotionState(promotions, e, TODAY)])), [upcoming, promotions]);
+  const promoOf = (e: EventItem): PromotionState => promos.get(e.id) ?? { kind: 'none' };
 
   const list = tab === 'upcoming' ? upcoming : past;
   const totals = upcoming.reduce(

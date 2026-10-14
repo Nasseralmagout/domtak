@@ -7,7 +7,7 @@ import { Avatar, Button, Card, Chip, EmptyState, Field, Pill, Row, T } from '../
 import { attendees as seedAttendees } from '../../../data/mock';
 import type { Attendee } from '../../../data/types';
 import { euro, isoDay, shortDate, time, TODAY } from '../../../lib/format';
-import { doorsOpenAt, isPromoted, promotionChain, promotionEnd } from '../../../lib/promotions';
+import { doorsOpenAt, promotionState } from '../../../lib/promotions';
 import { useApp, useEvent } from '../../../store/useApp';
 import { colors } from '../../../theme';
 
@@ -57,11 +57,11 @@ export default function Attendees() {
   const checked = guests.filter((a) => a.checkedIn).length;
 
   // Same boost states as /pro/events: Promote, Extend while a boost runs, Promoted once it lasts until doors open.
-  const promoted = isPromoted(promotions, event, TODAY);
-  const promotedUntil = promotionEnd(promotions, event);
-  const covered = promoted && promotionChain(promotions, event.id).end >= doorsOpenAt(event).getTime();
+  const promo = promotionState(promotions, event, TODAY);
+  const promoted = promo.kind !== 'none';
+  const covered = promo.kind === 'covered';
   const canPromote = !event.isPrivate && doorsOpenAt(event) > TODAY;
-  const until = promotedUntil ? shortDate(isoDay(promotedUntil)) : '';
+  const until = promo.kind === 'none' ? '' : shortDate(isoDay(promo.until));
 
   return (
     <Screen
