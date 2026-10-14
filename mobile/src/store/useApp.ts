@@ -105,6 +105,8 @@ interface State {
 
   myPosts: Post[];
   extraComments: Record<string, Comment[]>;
+  /** Comment hearts (post and event discussion comments), keyed by comment id. */
+  likedComments: Record<string, boolean>;
   myEvents: EventItem[];
   tickets: Ticket[];
   bookings: Booking[];
@@ -145,6 +147,7 @@ interface State {
   /** Followers-only posts appear in the Following feed only; Public (default) posts in every feed. */
   addPost: (p: Omit<Post, 'id' | 'likes' | 'comments' | 'shares' | 'time' | 'feed' | 'authorId'>, visibility?: PostVisibility) => string;
   addComment: (postId: string, text: string) => void;
+  toggleCommentLike: (commentId: string) => void;
   addEvent: (e: Omit<EventItem, 'id' | 'going' | 'rating' | 'distanceKm' | 'organizerId'>) => string;
 
   startTicketCheckout: (eventId: string, typeId: string, qty: number) => void;
@@ -205,6 +208,7 @@ const initialData = () => ({
   wishlist: { events: ['danceworld', 'summerfest', 'youngtalent'], artists: ['adam', 'soso'], venues: ['moonclub'] },
   myPosts: [],
   extraComments: {},
+  likedComments: {} as Record<string, boolean>,
   myEvents: [],
   tickets: [
     { id: 't_seed1', eventId: 'danceworld', typeId: 'ga', holder: 'Sara M.', code: 'DW7K2QXA', status: 'valid' as const, purchasedAt: '2026-10-10' },
@@ -305,6 +309,7 @@ export const useApp = create<State>()(
         set((s) => ({ myPosts: [post, ...s.myPosts] }));
         return id;
       },
+      toggleCommentLike: (id) => set((s) => ({ likedComments: { ...s.likedComments, [id]: !s.likedComments[id] } })),
       addComment: (postId, text) =>
         set((s) => ({
           extraComments: {

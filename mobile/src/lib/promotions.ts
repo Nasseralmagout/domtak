@@ -76,3 +76,16 @@ export function activePromotion(promotions: Promotion[], eventOrId: string | Eve
   const end = typeof eventOrId === 'string' ? chain.end : Math.min(chain.end, doorsOpenAt(eventOrId).getTime());
   return end > now.getTime() ? chain.run[chain.run.length - 1] : null;
 }
+
+export type PromotionState = { kind: 'none' } | { kind: 'running' | 'covered'; until: Date };
+
+/**
+ * One answer for every promote button: nothing running, a boost running until `until`, or 'covered'
+ * when the running stretch already lasts until doors open (nothing left to extend).
+ */
+export function promotionState(promotions: Promotion[], event: EventRef, now: Date = TODAY): PromotionState {
+  const end = promotionEnd(promotions, event);
+  if (!end || end.getTime() <= now.getTime()) return { kind: 'none' };
+  const covered = promotionChain(promotions, event.id).end >= doorsOpenAt(event).getTime();
+  return { kind: covered ? 'covered' : 'running', until: end };
+}

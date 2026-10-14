@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { venueById } from '../data/mock';
-import type { EventItem } from '../data/types';
+import type { EventItem, Venue } from '../data/types';
 import { parse, sameDay, TODAY } from '../lib/format';
 
 export type DateFilter = 'any' | 'today' | 'tomorrow' | 'week' | 'month';
@@ -54,10 +54,12 @@ export function activeFilterCount(f: Filters) {
   return n;
 }
 
-export function applyFilters(events: EventItem[], f: Filters) {
+/** Pass `venues` (e.g. useVenues()) so the area check sees the venue owner's saved listing. */
+export function applyFilters(events: EventItem[], f: Filters, venues?: Venue[]) {
   const area = activeArea(f);
+  const areaOf = (id: string) => (venues?.find((v) => v.id === id) ?? venueById(id))?.area;
   return events.filter((e) => {
-    if (area && venueById(e.venueId)?.area !== area) return false;
+    if (area && areaOf(e.venueId) !== area) return false;
     const start = parse(e.start);
     const min = Math.min(...e.ticketTypes.map((t) => t.price));
     if (f.freeOnly && min > 0) return false;
