@@ -26,16 +26,15 @@ export default function NewPost() {
   const [addLocation, setAddLocation] = useState(true);
   const max = isStory ? 1 : 6;
 
-  const toggle = (k: ImgKey) =>
-    setPicked((p) => {
-      if (p.includes(k)) return p.filter((x) => x !== k);
-      if (isStory) return [k];
-      if (p.length >= max) {
-        toast(`You can add up to ${max} photos`);
-        return p;
-      }
-      return [...p, k];
-    });
+  const toggle = (k: ImgKey) => {
+    if (picked.includes(k)) return setPicked(picked.filter((x) => x !== k));
+    if (isStory) return setPicked([k]);
+    if (picked.length >= max) {
+      toast(`You can add up to ${max} photos`);
+      return;
+    }
+    setPicked([...picked, k]);
+  };
 
   const upload = () => {
     // Device uploads need the installed app's photo permission; here the next camera-roll shot is added.
@@ -44,8 +43,12 @@ export default function NewPost() {
       toast('All recent camera photos are already added');
       return;
     }
-    setUploads((u) => [next, ...u]);
-    setPicked((p) => (isStory ? [next] : p.length >= max ? p : [...p, next]));
+    setUploads([next, ...uploads]);
+    if (!isStory && picked.length >= max) {
+      toast(`Added to your photos. Deselect one to use it (max ${max})`);
+      return;
+    }
+    setPicked(isStory ? [next] : [...picked, next]);
     toast('Added your latest photo from the camera roll');
   };
 

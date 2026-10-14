@@ -125,7 +125,7 @@ export default function RequestReview() {
             <BottomBar>
               <Row gap={8}>
                 <Button title="Decline" variant="secondary" size="md" style={{ flex: 1, borderColor: colors.borderStrong }} onPress={() => setSheet(true)} />
-                <Button title={countered ? 'Edit counter' : 'Counter'} variant="secondary" size="md" style={{ flex: 1 }} onPress={startCounter} />
+                <Button title="Counter" accessibilityLabel={countered ? `Edit your counter offer of ${euro(countered)}` : 'Make a counter offer'} variant="secondary" size="md" style={{ flex: 1, paddingHorizontal: 12 }} onPress={startCounter} />
                 <Button title="Accept" size="md" style={{ flex: 1 }} onPress={accept} />
               </Row>
             </BottomBar>

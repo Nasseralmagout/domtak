@@ -117,7 +117,7 @@ export function Button({ title, variant = 'primary', size = 'lg', icon, loading,
       ]}
     >
       {loading ? <ActivityIndicator color={p.fg} /> : icon ? <Icon name={icon} size={size === 'sm' ? 16 : 20} color={p.fg} /> : null}
-      <Text style={{ color: p.fg, fontFamily: size === 'lg' ? fonts.displaySemi : fonts.bodyBold, fontSize: size === 'lg' ? 17 : size === 'md' ? 15 : 13 }}>{title}</Text>
+      <Text numberOfLines={1} style={{ flexShrink: 1, color: p.fg, fontFamily: size === 'lg' ? fonts.displaySemi : fonts.bodyBold, fontSize: size === 'lg' ? 17 : size === 'md' ? 15 : 13 }}>{title}</Text>
     </Pressable>
   );
 }

@@ -142,10 +142,10 @@ export default function BookingStatusScreen() {
       {a ? (
         <Card style={{ gap: 12, backgroundColor: colors.brandSoft }}>
           <T v="body" color="#2E1D5E">{a.hint}</T>
-          <Row gap={10}>
-            <Button title={a.secondary[0]} variant="secondary" size="md" style={{ flex: 1 }} onPress={a.secondary[1]} />
-            <Button title={a.primary[0]} size="md" style={{ flex: 1 }} onPress={a.primary[1]} />
-          </Row>
+          <View style={{ gap: 10 }}>
+            <Button title={a.primary[0]} size="md" onPress={a.primary[1]} />
+            <Button title={a.secondary[0]} variant="secondary" size="md" onPress={a.secondary[1]} />
+          </View>
         </Card>
       ) : null}
 

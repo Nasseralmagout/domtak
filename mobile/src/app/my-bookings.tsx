@@ -75,7 +75,7 @@ export default function MyBookings() {
                   <T v="smallBold" color={colors.inkSoft}>{shortDate(e.start)} · {time(e.start)}–{time(e.end)}</T>
                   <Row gap={4}><Icon name="map-marker-outline" size={16} color={colors.inkSoft} /><T v="small" color={colors.inkSoft} numberOfLines={1} style={{ flex: 1 }}>{venueById(e.venueId)?.name}, Berlin</T></Row>
                   {group.length > 1 ? <T v="small">{group.length} tickets</T> : null}
-                  <Row justify="flex-end" gap={8}>
+                  <Row justify="flex-end" gap={8} style={{ flexWrap: 'wrap', rowGap: 6 }}>
                     {cancelled ? (
                       <>
                         <Pill label="Cancelled · refunded" tone="danger" />

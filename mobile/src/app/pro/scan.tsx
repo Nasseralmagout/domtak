@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { goBack } from '../../components/layout';
 import { Button, Icon, type IconName, IconButton, Row, T } from '../../components/ui';
 import { attendees } from '../../data/mock';
+import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
 
@@ -120,7 +121,17 @@ export default function Scanner() {
                 <Text style={{ color: colors.lilacLight, fontFamily: fonts.body, fontSize: 14, textAlign: 'center' }}>
                   {Platform.OS === 'web' ? 'Camera scanning runs on the phone app. Enter codes below.' : 'Allow camera access to scan QR tickets.'}
                 </Text>
-                {Platform.OS !== 'web' && !permission?.granted ? <Button title="Allow camera" size="sm" onPress={() => requestPermission()} /> : null}
+                {Platform.OS !== 'web' && !permission?.granted ? (
+                  <Button
+                    title="Allow camera"
+                    size="sm"
+                    onPress={async () => {
+                      const res = await requestPermission();
+                      // Once access is denied for good the system won't ask again, so explain where to turn it on.
+                      if (!res.granted) toast(res.canAskAgain ? 'Camera access is needed to scan tickets' : 'Camera is off for Domtak. Turn it on in system settings, or type codes below.');
+                    }}
+                  />
+                ) : null}
               </View>
             ) : null}
           </View>

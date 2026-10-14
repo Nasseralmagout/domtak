@@ -35,8 +35,21 @@ export default function Checkout() {
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState<string>();
   const [promoError, setPromoError] = useState<string>();
+  // Set once the order is complete: the draft is cleared then, so don't show "expired" while the success screen opens.
+  const [paidOut, setPaidOut] = useState(false);
+  const ticketType = draft?.kind === 'ticket' ? event?.ticketTypes.find((t) => t.id === draft.typeId) : undefined;
 
-  if (!draft || (draft.kind === 'ticket' && !event) || (draft.kind === 'booking' && !booking)) {
+  if (paidOut) {
+    return (
+      <Screen header={<ScreenHeader title="Checkout" back={false} />} contentStyle={{ alignItems: 'center', paddingTop: 80, gap: 12 }}>
+        <Icon name="check-circle-outline" size={56} color={colors.success} />
+        <T v="h3" center>Payment complete</T>
+        <T v="body" color={colors.muted} center>Opening your confirmation…</T>
+      </Screen>
+    );
+  }
+
+  if (!draft || (draft.kind === 'ticket' && !ticketType) || (draft.kind === 'booking' && !booking)) {
     return (
       <Screen header={<ScreenHeader title="Checkout" onBack={() => goBack('/(tabs)/events')} />}>
         <T v="body">Your checkout session expired. Pick your tickets again.</T>
@@ -50,8 +63,8 @@ export default function Checkout() {
   let sub = '';
   let image = event?.cover ?? 'ev_dance_world';
   let lines: { k: string; v: number }[] = [];
-  if (draft.kind === 'ticket' && event) {
-    const type = event.ticketTypes.find((t) => t.id === draft.typeId)!;
+  if (draft.kind === 'ticket' && event && ticketType) {
+    const type = ticketType;
     title = event.title;
     sub = `${eventWhen(event.start, event.end)} · ${venueById(event.venueId)?.name}`;
     lines = [{ k: `${draft.qty}× ${type.name}`, v: type.price * draft.qty }, ...(type.price > 0 ? [{ k: 'Service fee', v: 1.5 * draft.qty }] : [])];
@@ -93,6 +106,7 @@ export default function Checkout() {
       const res = complete();
       setLoading(false);
       if (!res) return;
+      setPaidOut(true);
       if (res.kind === 'ticket') router.replace({ pathname: '/success', params: { kind: 'ticket', id: res.ids[0], count: String(res.ids.length) } });
       else router.replace({ pathname: '/success', params: { kind: 'booking', id: res.id } });
     }, 700);

@@ -65,7 +65,7 @@ export function EventCard({ event }: { event: EventItem }) {
         <Row style={{ position: 'absolute', left: 16, right: 16, bottom: 14 }} align="flex-end" justify="space-between">
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: fonts.display, fontSize: 22, color: colors.white }} numberOfLines={1}>{event.title}</Text>
-            <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.lilacLight }} numberOfLines={1}>{venue?.name}, {venue?.area}</Text>
+            <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.lilacLight }} numberOfLines={1}>{venue ? `${venue.name}, ${venue.area}` : 'Venue to be announced'}</Text>
           </View>
           {event.rating ? <RatingBadge value={event.rating} /> : null}
         </Row>
@@ -156,7 +156,7 @@ export function ArtistCard({ artist }: { artist: Profile }) {
         <Row style={{ position: 'absolute', left: 10, right: 8, bottom: 8 }} justify="space-between" align="flex-end">
           <View style={{ flex: 1 }}>
             <Row gap={4}>
-              <Text style={{ fontFamily: fonts.displaySemi, fontSize: 15, color: colors.white }} numberOfLines={1}>{artist.name}</Text>
+              <Text style={{ flexShrink: 1, fontFamily: fonts.displaySemi, fontSize: 15, color: colors.white }} numberOfLines={1}>{artist.name}</Text>
               {artist.verified ? <Icon name="check-decagram" size={14} color="#A78BFA" /> : null}
             </Row>
             <Text style={{ fontFamily: fonts.body, fontSize: 11, color: colors.lilacLight }}>{artist.title}</Text>

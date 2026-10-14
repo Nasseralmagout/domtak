@@ -34,7 +34,8 @@ export function authorFor(id: string, me: { name: string; avatar?: import('../da
   return p ? { id: p.id, name: p.name, avatar: p.avatar, title: p.title, verified: !!p.verified, kind: p.kind } : undefined;
 }
 
-export const PostCard = memo(function PostCard({ post }: { post: Post }) {
+/** `onComment` replaces the default "open the post" behaviour, e.g. on the post screen itself where it focuses the comment box. */
+export const PostCard = memo(function PostCard({ post, onComment }: { post: Post; onComment?: () => void }) {
   const { width } = useWindowDimensions();
   const user = useApp((s) => s.user);
   const liked = useApp((s) => !!s.likes[post.id]);
@@ -67,6 +68,11 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
       setTimeout(() => setBurst(false), 700);
     }
     lastTap.current = now;
+  };
+
+  const openComments = (reply = false) => {
+    if (onComment) onComment();
+    else router.push({ pathname: '/post/[id]', params: reply ? { id: post.id, reply: '1' } : { id: post.id } });
   };
 
   const share = () => {
@@ -104,9 +110,9 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
           <Avatar src={author.avatar} size={40} label={author.name} ring />
           <View style={{ flex: 1 }}>
             <Row gap={4}>
-              <T v="bodyBold" numberOfLines={1}>{author.name}</T>
+              <T v="bodyBold" numberOfLines={1} style={{ flexShrink: 1 }}>{author.name}</T>
               {author.verified ? <Icon name="check-decagram" size={15} color="#8B5CF6" /> : null}
-              <T v="small" style={{ fontSize: 12 }}>· {author.title}</T>
+              <T v="small" numberOfLines={1} style={{ fontSize: 12, flexShrink: 1 }}>· {author.title}</T>
             </Row>
             {post.location ? <T v="small" numberOfLines={1} style={{ fontSize: 12 }}>{post.location}</T> : null}
           </View>
@@ -183,7 +189,7 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
 
       <Row style={{ paddingHorizontal: 4, paddingTop: 4 }} gap={0}>
         <IconButton name={liked ? 'heart' : 'heart-outline'} label={liked ? 'Unlike' : 'Like'} color={liked ? colors.danger : colors.ink} iconSize={27} onPress={() => toggleLike(post.id)} />
-        <IconButton name="comment-outline" label="Comments" iconSize={25} onPress={() => router.push(`/post/${post.id}`)} />
+        <IconButton name="comment-outline" label="Comments" iconSize={25} onPress={() => openComments()} />
         <IconButton name="send-outline" label="Share" iconSize={25} onPress={share} />
         <View style={{ flex: 1 }} />
         <IconButton name={saved ? 'bookmark' : 'bookmark-outline'} label={saved ? 'Remove from saved' : 'Save'} color={saved ? colors.brand : colors.ink} iconSize={26} onPress={() => toggleSave(post.id)} />
@@ -199,11 +205,11 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
           </Pressable>
         ) : null}
         {commentCount > 0 ? (
-          <Pressable accessibilityRole="button" onPress={() => router.push(`/post/${post.id}`)} hitSlop={8}>
+          <Pressable accessibilityRole="button" onPress={() => openComments()} hitSlop={8}>
             <T v="small">{commentCount === 1 ? 'View 1 comment' : `View all ${commentCount} comments`}</T>
           </Pressable>
         ) : null}
-        <Pressable accessibilityRole="button" accessibilityLabel="Add a comment" onPress={() => router.push({ pathname: '/post/[id]', params: { id: post.id, reply: '1' } })} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, minHeight: 36 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Add a comment" onPress={() => openComments(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, minHeight: 36 }}>
           <Avatar src={user.avatar} size={26} label={user.name} />
           <T v="small" color={colors.subtle}>Add a comment…</T>
         </Pressable>

@@ -82,7 +82,7 @@ export default function PostDetail() {
       }
     >
       <ScrollView ref={scroll} keyboardShouldPersistTaps="handled">
-        <PostCard post={post} />
+        <PostCard post={post} onComment={() => input.current?.focus()} />
         <View style={{ padding: 16, gap: 16 }}>
           <T v="h3">Comments{comments.length ? ` (${comments.length})` : ''}</T>
           {comments.length === 0 ? (

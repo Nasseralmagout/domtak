@@ -6,10 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateBadge, EventRow } from '../../components/cards';
 import { Avatar, Button, Icon, IconButton, Pill, Row, Segmented, T } from '../../components/ui';
 import { profileById, venueById } from '../../data/mock';
-import type { Booking, BookingStatus } from '../../data/types';
+import type { Booking, BookingStatus, IncomingRequest } from '../../data/types';
 import { STATUS_LABEL, STATUS_TONE } from '../../lib/booking';
 import { isoDay, MONTHS_LONG, parse, sameDay, shortDate, TODAY } from '../../lib/format';
-import { useAllEvents, useApp } from '../../store/useApp';
+import { isPro, useAllEvents, useApp } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -28,6 +28,14 @@ function monthGrid(year: number, month: number) {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
+/** Incoming requests carry a label like "Thu 24 Dec 2026"; returns its ISO day. */
+function requestDay(label: string) {
+  const [, d, mon, y] = label.split(' ');
+  const m = mon ? MONTHS_LONG.findIndex((x) => x.startsWith(mon)) : -1;
+  if (m < 0 || !Number(d) || !Number(y)) return undefined;
+  return isoDay(noon(Number(y), m, Number(d)));
+}
+
 function bookingName(b: Booking) {
   return (b.type === 'musician' ? profileById(b.targetId)?.name : venueById(b.targetId)?.name) ?? 'Booking';
 }
@@ -38,7 +46,9 @@ export default function CalendarTab() {
   const going = useApp((s) => s.going);
   const tickets = useApp((s) => s.tickets);
   const bookings = useApp((s) => s.bookings);
+  const requests = useApp((s) => s.requests);
   const events = useAllEvents();
+  const pro = isPro(user.role);
   const [view, setView] = useState<View3>('month');
   const [selected, setSelected] = useState(TODAY);
   const [cursor, setCursor] = useState(noon(TODAY.getFullYear(), TODAY.getMonth(), 1));
@@ -80,6 +90,21 @@ export default function CalendarTab() {
     activeBookings.forEach((b) => m.set(b.date, [...(m.get(b.date) ?? []), b]));
     return m;
   }, [activeBookings]);
+  // Pros also see the gigs they accepted from booking requests.
+  const gigs = useMemo(
+    () =>
+      (pro ? requests : [])
+        .filter((r) => r.status === 'accepted')
+        .map((r) => ({ r, day: requestDay(r.date) }))
+        .filter((g): g is { r: IncomingRequest; day: string } => !!g.day)
+        .sort((a, b) => a.day.localeCompare(b.day)),
+    [pro, requests],
+  );
+  const gigsByDay = useMemo(() => {
+    const m = new Map<string, IncomingRequest[]>();
+    gigs.forEach(({ r, day }) => m.set(day, [...(m.get(day) ?? []), r]));
+    return m;
+  }, [gigs]);
 
   const weekStart = mondayOf(selected);
   const days = view === 'month' ? monthGrid(cursor.getFullYear(), cursor.getMonth()) : view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [];
@@ -87,6 +112,8 @@ export default function CalendarTab() {
   // Your plans first, then everything else happening in Berlin that day.
   const dayEvents = [...(byDay.get(selKey) ?? [])].sort((a, b) => Number(myEventIds.has(b.id)) - Number(myEventIds.has(a.id)) || a.start.localeCompare(b.start));
   const dayBookings = bookingsByDay.get(selKey) ?? [];
+  const dayGigs = gigsByDay.get(selKey) ?? [];
+  const dayCount = dayEvents.length + dayBookings.length + dayGigs.length;
 
   const mine = events.filter((e) => myEventIds.has(e.id) && parse(e.end) >= TODAY).sort((a, b) => a.start.localeCompare(b.start));
   const groups = mine.reduce<Record<string, typeof mine>>((acc, e) => {
@@ -96,6 +123,7 @@ export default function CalendarTab() {
     return acc;
   }, {});
   const upcomingBookings = activeBookings.filter((b) => parse(b.date) >= addDays(TODAY, -1));
+  const upcomingGigs = gigs.filter((g) => parse(g.day) >= addDays(TODAY, -1));
 
   const changeView = (v: View3) => {
     setView(v);
@@ -136,7 +164,7 @@ export default function CalendarTab() {
         {overview ? (
           <>
             <T v="h1">Your event overview</T>
-            {Object.keys(groups).length === 0 && upcomingBookings.length === 0 ? (
+            {Object.keys(groups).length === 0 && upcomingBookings.length === 0 && upcomingGigs.length === 0 ? (
               <View style={{ gap: 10 }}>
                 <T v="body" color={colors.muted}>Tap “Going” or buy a ticket and your events show up here.</T>
                 <Button title="Find events" variant="secondary" size="md" onPress={() => router.push('/events/all')} />
@@ -169,6 +197,18 @@ export default function CalendarTab() {
                 <Icon name="chevron-right" size={22} color={colors.subtle} />
               </Pressable>
             ))}
+            {upcomingGigs.length ? <T v="h2" style={{ marginTop: 8 }}>Your gigs</T> : null}
+            {upcomingGigs.map(({ r, day }) => (
+              <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Gig: ${r.title}, ${shortDate(day)}, ${r.time}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                <DateBadge iso={day} size={64} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <T v="title">{r.title}</T>
+                  <T v="small">{r.requester} · {r.time}</T>
+                  <Pill label="Accepted gig" tone="success" />
+                </View>
+                <Icon name="chevron-right" size={22} color={colors.subtle} />
+              </Pressable>
+            ))}
           </>
         ) : (
           <>
@@ -193,11 +233,12 @@ export default function CalendarTab() {
                     const inMonth = view === 'week' || d.getMonth() === cursor.getMonth();
                     const evs = byDay.get(k) ?? [];
                     const bks = bookingsByDay.get(k) ?? [];
-                    const isMine = evs.some((e) => myEventIds.has(e.id)) || bks.length > 0;
+                    const gg = gigsByDay.get(k) ?? [];
+                    const isMine = evs.some((e) => myEventIds.has(e.id)) || bks.length > 0 || gg.length > 0;
                     const others = evs.some((e) => !myEventIds.has(e.id));
                     const sel = sameDay(d, selected);
                     const today = sameDay(d, TODAY);
-                    const count = evs.length + bks.length;
+                    const count = evs.length + bks.length + gg.length;
                     return (
                       <Pressable
                         key={k}
@@ -228,7 +269,18 @@ export default function CalendarTab() {
             ) : null}
             <Button title="Overview" icon="format-list-bulleted" size="md" style={{ alignSelf: 'center', paddingHorizontal: 40 }} onPress={() => setOverview(true)} />
 
-            <T v="h3">{dayEvents.length + dayBookings.length ? `On ${shortDate(selKey)}` : `Nothing planned on ${shortDate(selKey)}`}</T>
+            <T v="h3">{dayCount ? `On ${shortDate(selKey)}` : `Nothing planned on ${shortDate(selKey)}`}</T>
+            {dayGigs.map((r) => (
+              <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Gig: ${r.title} for ${r.requester}, ${r.time}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.successBg, padding: 14, borderRadius: radius.lg }}>
+                <Icon name="microphone" size={24} color={colors.success} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <T v="title">{r.title}</T>
+                  <T v="small">{r.time} · {r.location.split(',')[0]} · for {r.requester}</T>
+                  <Pill label="Accepted gig" tone="success" />
+                </View>
+                <Icon name="chevron-right" size={22} color={colors.subtle} />
+              </Pressable>
+            ))}
             {dayBookings.map((b) => (
               <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={`Booking: ${b.eventTitle} with ${bookingName(b)}, ${STATUS_LABEL[b.status]}`} onPress={() => router.push(`/booking/${b.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.brandTint, padding: 14, borderRadius: radius.lg }}>
                 <Icon name="calendar-clock" size={24} color={colors.brand} />
@@ -246,7 +298,7 @@ export default function CalendarTab() {
                 <EventRow event={e} />
               </View>
             ))}
-            {dayEvents.length + dayBookings.length === 0 ? <Button title="Find events" variant="secondary" size="md" onPress={() => router.push('/events/all')} /> : null}
+            {dayCount === 0 ? <Button title="Find events" variant="secondary" size="md" onPress={() => router.push('/events/all')} /> : null}
           </>
         )}
       </ScrollView>

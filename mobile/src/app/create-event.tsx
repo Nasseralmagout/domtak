@@ -36,7 +36,7 @@ export default function CreateEvent() {
 
   const [step, setStep] = useState(0);
   const [cover, setCover] = useState<ImgKey>(isPrivate ? 'ev_pool_party' : 'ev_lasers');
-  const [title, setTitle] = useState(isPrivate ? `${user.name.split(' ')[0]}'s Birthday Party` : '');
+  const [title, setTitle] = useState(isPrivate ? `${user.name.split(' ')[0]}’s Birthday Party` : '');
   const [category, setCategory] = useState<EventCategory>(isPrivate ? 'Parties' : 'Electronic');
   const [genre, setGenre] = useState('Techno');
   const [date, setDate] = useState(dates[14]);
@@ -198,7 +198,7 @@ export default function CreateEvent() {
             accessibilityState={{ selected: i === step, disabled: i > step }}
             disabled={i > step}
             onPress={() => { setError(undefined); setStep(i); }}
-            style={{ flex: 1, gap: 6, minHeight: 32 }}
+            style={{ flex: 1, gap: 6, minHeight: 44, justifyContent: 'center' }}
           >
             <View style={{ height: 5, borderRadius: 3, backgroundColor: i <= step ? colors.brand : colors.track }} />
             <T v="smallBold" style={{ fontSize: 11 }} color={i <= step ? colors.brand : colors.subtle}>{s}</T>
@@ -284,7 +284,7 @@ export default function CreateEvent() {
                 {artists.map((a) => {
                   const on = lineup.includes(a.id);
                   return (
-                    <Pressable key={a.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setLineup(on ? lineup.filter((x) => x !== a.id) : [...lineup, a.id])} style={{ alignItems: 'center', gap: 4, width: 64 }}>
+                    <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={on ? `Remove ${a.name} from the line up` : `Tag ${a.name} in the line up`} accessibilityState={{ selected: on }} onPress={() => setLineup(on ? lineup.filter((x) => x !== a.id) : [...lineup, a.id])} style={{ alignItems: 'center', gap: 4, width: 64 }}>
                       <Avatar src={a.avatar} size={56} ring={on ? colors.brand : false} />
                       <T v="small" numberOfLines={1} color={on ? colors.brand : colors.ink} style={{ fontSize: 12 }}>{a.name}</T>
                     </Pressable>
@@ -386,7 +386,12 @@ export default function CreateEvent() {
       {step === 3 ? (
         <>
           <T v="small">This is how people will see your event in the feed and on the map.</T>
-          <EventCard event={{ ...draft, id: 'preview', organizerId: 'me', going: 0, rating: 0, distanceKm: 0.5 }} />
+          {/* A picture of the card only: the event doesn't exist yet, so its buttons must not navigate or save. */}
+          <View style={{ pointerEvents: 'none' }} accessible accessibilityLabel={`Preview of ${draft.title}`}>
+            <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+              <EventCard event={{ ...draft, id: 'preview', organizerId: 'me', going: 0, rating: 0, distanceKm: 0.5 }} />
+            </View>
+          </View>
           <View style={{ gap: 6, backgroundColor: colors.surface, padding: 16, borderRadius: radius.lg }}>
             <Row justify="space-between"><T v="body" color={colors.muted}>Visibility</T><T v="bodyBold">{isPrivate ? 'Private · invite only' : 'Public · feed & map'}</T></Row>
             <Row justify="space-between"><T v="body" color={colors.muted}>When</T><T v="bodyBold">{shortDate(startIso)}, {startTime}–{endIso.slice(11, 16)}</T></Row>

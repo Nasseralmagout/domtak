@@ -27,7 +27,8 @@ export default function NewBooking() {
   const dates = useMemo(() => Array.from({ length: 45 }, (_, i) => new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + 3 + i, 12)), []);
   const [step, setStep] = useState<'form' | 'review'>('form');
   const [title, setTitle] = useState('');
-  const [occasion, setOccasion] = useState('Birthday');
+  // Venues only list the occasions they host, so start on one of those.
+  const [occasion, setOccasion] = useState(venue && !venue.occasions.slice(0, 6).includes('Birthday') ? (venue.occasions[0] ?? 'Other') : 'Birthday');
   const [date, setDate] = useState(dates[10]);
   const [start, setStart] = useState('20:00');
   const [hours, setHours] = useState(type === 'venue' ? 6 : 4);
