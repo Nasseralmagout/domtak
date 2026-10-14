@@ -1,0 +1,161 @@
+import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, Share, View, useWindowDimensions } from 'react-native';
+
+import { EventRow, FollowButton } from '../../components/cards';
+import { Screen, ScreenHeader } from '../../components/layout';
+import { Avatar, Button, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
+import { profileById } from '../../data/mock';
+import { compact } from '../../lib/format';
+import { ROLE_LABEL, isPro, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
+import { colors, fonts, radius, shadow } from '../../theme';
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <T v="h3" color={colors.brandDeep} style={{ fontFamily: fonts.display }}>{value}</T>
+      <T v="small">{label}</T>
+    </View>
+  );
+}
+
+function Shortcut({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={{ alignItems: 'center', gap: 6, width: 72 }}>
+      <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={26} color={colors.brand} />
+      </View>
+      <T v="small" color={colors.ink}>{label}</T>
+    </Pressable>
+  );
+}
+
+export default function ProfileScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const isMe = id === 'me';
+  const { width } = useWindowDimensions();
+  const user = useApp((s) => s.user);
+  const saves = useApp((s) => s.saves);
+  const followingMap = useApp((s) => s.following);
+  const going = useApp((s) => s.going);
+  const ensureConversation = useApp((s) => s.ensureConversation);
+  const posts = useFeedPosts();
+  const events = useAllEvents();
+  const [tab, setTab] = useState<'posts' | 'events' | 'saved' | 'about'>(id === 'me' ? 'posts' : 'about');
+
+  const p = isMe ? undefined : profileById(id ?? '');
+  if (!isMe && !p) {
+    return (
+      <Screen header={<ScreenHeader title="Profile" />}>
+        <T v="body">Profile not found.</T>
+      </Screen>
+    );
+  }
+  const name = isMe ? user.name : p!.name;
+  const handle = isMe ? user.handle : p!.handle;
+  const avatar = isMe ? user.avatar : p!.avatar;
+  const bio = isMe ? user.bio : p!.bio;
+  const city = isMe ? user.city : p!.city;
+  const verified = isMe ? user.pro === 'verified' : !!p!.verified;
+  const authorId = isMe ? 'me' : p!.id;
+  const myPosts = posts.filter((x) => x.authorId === authorId);
+  const savedPosts = posts.filter((x) => saves[x.id]);
+  const hostEvents = events.filter((e) => e.organizerId === authorId);
+  const cell = (width - 32 - 8) / 3;
+  const grid = tab === 'saved' ? savedPosts : myPosts;
+  const fallbackGrid = !isMe && p?.gallery ? p.gallery : [];
+
+  return (
+    <Screen
+      header={
+        <ScreenHeader
+          title={handle}
+          right={isMe ? <IconButton name="cog-outline" label="Settings" onPress={() => router.push('/settings')} /> : <IconButton name="dots-horizontal" label="More" />}
+        />
+      }
+    >
+      <Row gap={16}>
+        <Avatar src={avatar} size={96} label={name} verified={verified} ring />
+        <View style={{ flex: 1, gap: 4 }}>
+          <T v="h2" color={colors.brandDeep}>{name}</T>
+          <Row gap={4}><Icon name="map-marker-outline" size={16} color={colors.muted} /><T v="small">{city}</T></Row>
+          <View style={{ alignSelf: 'flex-start', marginTop: 2, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: colors.brandSoft }}>
+            <T v="caption">{isMe ? ROLE_LABEL[user.role].toUpperCase() : p!.title.toUpperCase()}</T>
+          </View>
+        </View>
+      </Row>
+
+      <Row style={{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: 14, ...shadow(1) }} gap={0}>
+        <Stat value={isMe ? String(myPosts.length) : compact(p!.eventsCount ?? myPosts.length)} label={isMe ? 'Posts' : p!.kind === 'organizer' ? 'Events' : 'Posts'} />
+        <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
+        <Stat value={isMe ? '128' : compact(p!.followers + (followingMap[p!.id] ? 1 : 0))} label="Followers" />
+        <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
+        <Stat value={isMe ? String(Object.keys(followingMap).length) : compact(p!.following)} label="Following" />
+      </Row>
+
+      {bio ? <T v="body">{bio}</T> : null}
+
+      {isMe ? (
+        <Row gap={10}>
+          <Button title="Edit profile" size="md" style={{ flex: 1 }} onPress={() => router.push('/profile-setup?mode=edit')} />
+          <Button title="Share" variant="secondary" size="md" icon="share-variant-outline" style={{ flex: 1 }} onPress={() => Share.share({ message: `Follow me on Domtak: ${handle}` }).catch(() => {})} />
+        </Row>
+      ) : (
+        <Row gap={10}>
+          <Button title="Message" size="md" style={{ flex: 1.4 }} onPress={() => router.push(`/chat/${ensureConversation(p!.id)}`)} />
+          <View style={{ flex: 1 }}><FollowButton id={p!.id} size="md" /></View>
+        </Row>
+      )}
+
+      {isMe ? (
+        <Row justify="space-between">
+          <Shortcut icon="ticket-confirmation-outline" label="Tickets" onPress={() => router.push('/my-bookings?tab=tickets')} />
+          <Shortcut icon="basket-outline" label="Bookings" onPress={() => router.push('/my-bookings?tab=musician')} />
+          <Shortcut icon="heart-outline" label="Wishlist" onPress={() => router.push('/wishlist')} />
+          {isPro(user.role) ? <Shortcut icon="view-grid-outline" label="Workspace" onPress={() => router.push('/pro/workspace')} /> : <Shortcut icon="check-decagram" label="Go Pro" onPress={() => router.push('/pro-verification')} />}
+        </Row>
+      ) : null}
+
+      <Segmented
+        options={isMe ? [{ key: 'posts', label: 'Posts' }, { key: 'saved', label: 'Saved' }, { key: 'events', label: 'Events' }] : [{ key: 'about', label: 'About' }, { key: 'posts', label: 'Photos' }, { key: 'events', label: 'Events' }]}
+        value={!isMe && tab === 'saved' ? 'about' : tab}
+        onChange={setTab}
+      />
+
+      {tab === 'posts' || tab === 'saved' ? (
+        grid.length || fallbackGrid.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+            {grid.map((x) => (
+              <Pressable key={x.id} accessibilityRole="button" accessibilityLabel="Open post" onPress={() => router.push(`/post/${x.id}`)}>
+                <Photo src={x.media[0]} style={{ width: cell, height: cell }} radius={6} />
+                {x.media.length > 1 ? <View style={{ position: 'absolute', top: 6, right: 6 }}><Icon name="view-grid-outline" size={16} color={colors.white} /></View> : null}
+              </Pressable>
+            ))}
+            {!grid.length ? fallbackGrid.map((g) => <Photo key={g} src={g} style={{ width: cell, height: cell }} radius={6} />) : null}
+          </View>
+        ) : (
+          <View style={{ alignItems: 'center', padding: 24, gap: 10 }}>
+            <Icon name={tab === 'saved' ? 'bookmark-outline' : 'camera-outline'} size={40} color={colors.brand} />
+            <T v="body" color={colors.muted} center>{tab === 'saved' ? 'Posts you save appear here.' : 'Share your first night out.'}</T>
+            {tab === 'posts' && isMe ? <Button title="Create post" size="md" onPress={() => router.push('/new-post')} /> : null}
+          </View>
+        )
+      ) : null}
+
+      {tab === 'events' ? (
+        <View style={{ gap: 10 }}>
+          {(hostEvents.length ? hostEvents : events.filter((e) => isMe && going[e.id])).map((e) => <EventRow key={e.id} event={e} />)}
+          {!hostEvents.length && !(isMe && events.some((e) => going[e.id])) ? <T v="body" color={colors.muted}>No events yet.</T> : null}
+        </View>
+      ) : null}
+
+      {tab === 'about' && p ? (
+        <View style={{ gap: 12 }}>
+          <T v="body">{p.bio}</T>
+          {p.genres.length ? <T v="small">Music: {p.genres.join(', ')}</T> : null}
+          <T v="small">Based in {p.city}</T>
+        </View>
+      ) : null}
+    </Screen>
+  );
+}

@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "Domtak",
+    "slug": "domtak",
+    "scheme": "domtak",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F8F7FB",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "de.domtak.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Domtak uses the camera to scan e-tickets at the door."
+      }
+    },
+    "android": {
+      "package": "de.domtak.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#2E0B5E",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#2E0B5E"
+        }
+      ],
+      "expo-font",
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Domtak uses the camera to scan e-tickets at the door.",
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
