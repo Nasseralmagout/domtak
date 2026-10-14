@@ -6,7 +6,7 @@ import { BottomBar, Screen, ScreenHeader, goBack } from '../../components/layout
 import { Avatar, Banner, Button, Card, Chip, EmptyState, Photo, Pill, Row, Stars, T } from '../../components/ui';
 import { profileById, reviewsFor, venueById } from '../../data/mock';
 import { shortDate } from '../../lib/format';
-import { useApp } from '../../store/useApp';
+import { useApp, useRating, useVenue } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
 
 interface Item {
@@ -28,9 +28,11 @@ export default function Ratings() {
   const myReviews = useApp((s) => s.reviews);
   const blocked = useApp((s) => s.blocked);
   const [stars, setStars] = useState(0);
-
-  const artist = profileById(id);
-  const venue = artist ? undefined : venueById(id);
+  // Venues first (every venue also has a stand-in profile); useVenue includes the owner's listing edits.
+  const venue = useVenue(id);
+  const artist = venue ? undefined : profileById(id);
+  // The headline average is rounded exactly like the venue/artist page and the venue cards.
+  const { rating: avg } = useRating(id);
 
   if (!artist && !venue) {
     return (
@@ -43,7 +45,7 @@ export default function Ratings() {
   const name = artist ? artist.name : venue!.name;
   const sub = artist ? artist.title : `${venue!.type} · ${venue!.area}, ${venue!.city}`;
   const image = artist ? artist.avatar : venue!.cover;
-  const profileHref = artist ? `/artist/${artist.id}` : `/venue/${venue!.id}`;
+  const profileHref = !artist ? `/venue/${venue!.id}` : artist.kind === 'fan' || artist.kind === 'organizer' ? `/profile/${artist.id}` : `/artist/${artist.id}`;
   const isBlocked = blocked.includes(id);
   const bookable = !isBlocked && (!!venue || (!!artist && artist.kind !== 'fan' && artist.kind !== 'organizer'));
 
@@ -68,7 +70,6 @@ export default function Ratings() {
     .sort((a, b) => b.date.localeCompare(a.date));
   const all = [...mine, ...seeded];
   const total = all.length;
-  const avg = total ? all.reduce((n, r) => n + r.rating, 0) / total : 0;
   const dist = [5, 4, 3, 2, 1].map((n) => ({ n, count: all.filter((r) => Math.round(r.rating) === n).length }));
   const shown = stars ? all.filter((r) => Math.round(r.rating) === stars) : all;
   // Prefer a completed booking you have not reviewed yet; otherwise offer to edit the latest review.
@@ -77,6 +78,7 @@ export default function Ratings() {
 
   const openAuthor = (authorId: string) => {
     if (authorId === 'me') return router.push('/profile/me');
+    if (venueById(authorId)) return router.push(`/venue/${authorId}`);
     const p = profileById(authorId);
     if (!p) return;
     router.push(p.kind === 'fan' || p.kind === 'organizer' ? `/profile/${p.id}` : `/artist/${p.id}`);

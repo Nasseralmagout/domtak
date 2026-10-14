@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ArtistTile, BackOverlay, FollowButton, GoingFaces, HeartToggle } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
-import { Avatar, Button, EmptyState, Icon, type IconName, Photo, RatingBadge, Row, SectionTitle, T } from '../../components/ui';
+import { Avatar, Button, Card, EmptyState, Icon, type IconName, Photo, RatingBadge, Row, SectionTitle, Stars, T } from '../../components/ui';
 import { eventDiscussion, profileById } from '../../data/mock';
 import { compact, eventWhen, isoDay, parse, priceRange } from '../../lib/format';
 import { toast } from '../../store/toast';
@@ -59,6 +59,8 @@ export default function EventDetail() {
   const toggleWish = useApp((s) => s.toggleWish);
   const tickets = useApp((s) => s.tickets);
   const extraComments = useApp((s) => (id ? s.extraComments[`event:${id}`] : undefined));
+  // Event reviews are stored under the event id (the same id /review/<id> and Your bookings use).
+  const myReview = useApp((s) => (id ? s.reviews[id] : undefined));
   // The venue as its public page shows it, including the owner's listing edits.
   const venue = useVenue(event?.venueId);
   const [more, setMore] = useState(false);
@@ -84,6 +86,8 @@ export default function EventDetail() {
   // Same rule as the calendar tab: going, holding a valid ticket, or organizing it yourself.
   const inCalendar = going || hasTicket || event.organizerId === 'me';
   const longDescription = event.description.length > 160;
+  const reviewTags = myReview?.tags ?? [];
+  const reviewText = myReview ? myReview.text || (reviewTags.length ? `Loved the ${reviewTags.join(', ').toLowerCase()}.` : '') : '';
   const openTicket = () => (myTicket ? router.push(`/ticket/${myTicket.id}`) : router.push(`/tickets/${event.id}`));
   const share = () => Share.share({ message: `${event.title} — ${eventWhen(event.start, event.end)}${venue ? ` at ${venue.name}` : ''}. Join me on Domtak!` }).catch(() => toast('Could not open the share sheet'));
   const directions = () => {
@@ -160,6 +164,26 @@ export default function EventDetail() {
             <Button title={hasTicket ? 'My ticket' : 'Tickets'} icon={hasTicket ? 'qrcode' : 'ticket-confirmation-outline'} size="md" style={{ flex: 1 }} onPress={openTicket} />
           </Row>
           <GoingFaces count={goingCount} />
+
+          {myReview ? (
+            <Card style={{ gap: 8 }}>
+              <Row justify="space-between">
+                <T v="h3" accessibilityRole="header">Your review</T>
+                <Button
+                  title="Edit"
+                  variant="ghost"
+                  size="sm"
+                  icon="pencil-outline"
+                  hitSlop={6}
+                  accessibilityLabel="Edit your review"
+                  style={{ paddingHorizontal: 4 }}
+                  onPress={() => router.push(`/review/${event.id}`)}
+                />
+              </Row>
+              <Stars value={myReview.rating} size={18} />
+              {reviewText ? <T v="body" color={colors.inkSoft}>{reviewText}</T> : null}
+            </Card>
+          ) : null}
 
           <InfoCard
             icon="calendar-month-outline"

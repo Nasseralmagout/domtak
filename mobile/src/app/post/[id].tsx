@@ -10,11 +10,12 @@ import { compact } from '../../lib/format';
 import { useApp, useFeedPosts } from '../../store/useApp';
 import { colors } from '../../theme';
 
-// Comment likes last for the app session (sample comments are read-only data).
-const likedComments = new Set<string>();
-
-/** "@handle " for replies: the profile handle, else the first name. */
+/**
+ * "@handle " for replies. Venues come first (every venue also has a stand-in profile) and are
+ * addressed by their shown name; otherwise the profile handle, else the first name.
+ */
 function mentionFor(authorId: string, name: string) {
+  if (venueById(authorId)) return `@${name.toLowerCase().replace(/[^a-z0-9._]/g, '')} `;
   const handle = profileById(authorId)?.handle ?? `@${name.split(' ')[0]}`;
   return `${handle.startsWith('@') ? handle : `@${handle}`} `;
 }
@@ -34,8 +35,10 @@ export default function PostDetail() {
   const venueListing = useApp((s) => s.venueListing);
   const extra = useApp((s) => (id ? s.extraComments[id] : undefined));
   const addComment = useApp((s) => s.addComment);
+  // Comment hearts are saved in the store (shared with event discussions), so they persist across visits and restarts.
+  const liked = useApp((s) => s.likedComments);
+  const toggleCommentLike = useApp((s) => s.toggleCommentLike);
   const [text, setText] = useState('');
-  const [liked, setLiked] = useState<Record<string, boolean>>(() => Object.fromEntries([...likedComments].map((k) => [k, true])));
   const input = useRef<TextInput>(null);
   const scroll = useRef<ScrollView>(null);
 
@@ -62,12 +65,6 @@ export default function PostDetail() {
       setText((cur) => `${mention}${cur.replace(/^@\S+\s+/, '')}`);
     }
     input.current?.focus();
-  };
-  const toggleCommentLike = (commentId: string) => {
-    const on = !liked[commentId];
-    if (on) likedComments.add(commentId);
-    else likedComments.delete(commentId);
-    setLiked((m) => ({ ...m, [commentId]: on }));
   };
 
   return (

@@ -5,10 +5,31 @@ import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { authorFor } from '../../components/PostCard';
 import { Avatar, Button, EmptyState, Icon, IconButton, Photo, Pill, Row, T } from '../../components/ui';
-import { eventDiscussion, profileById } from '../../data/mock';
+import { eventDiscussion, profileById, venueById } from '../../data/mock';
 import { eventWhen } from '../../lib/format';
-import { useApp, useEvent } from '../../store/useApp';
+import { overlayVenue, useApp, useEvent, type VenueListing } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
+
+/**
+ * "@handle" used when replying. Venues come first: every venue also has a stand-in profile,
+ * but a venue is addressed by its (possibly renamed) venue name.
+ */
+function handleFor(authorId: string, name: string, listing: VenueListing) {
+  if (authorId === 'me') return '';
+  const venue = venueById(authorId);
+  if (venue) return `@${overlayVenue(venue, listing).name.toLowerCase().replace(/[^a-z0-9._]/g, '')}`;
+  const handle = profileById(authorId)?.handle ?? `@${name.split(' ')[0]}`;
+  return handle.startsWith('@') ? handle : `@${handle}`;
+}
+
+/** Where tapping a comment author goes: your profile, a venue page, an artist page or a profile. */
+function authorHref(authorId: string) {
+  if (authorId === 'me') return '/profile/me';
+  if (venueById(authorId)) return `/venue/${authorId}`;
+  const p = profileById(authorId);
+  if (!p) return undefined;
+  return p.kind === 'fan' || p.kind === 'organizer' ? `/profile/${p.id}` : `/artist/${p.id}`;
+}
 
 export default function EventComments() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -17,8 +38,11 @@ export default function EventComments() {
   const extra = useApp((s) => (id ? s.extraComments[`event:${id}`] : undefined));
   const addComment = useApp((s) => s.addComment);
   const tickets = useApp((s) => s.tickets);
+  const venueListing = useApp((s) => s.venueListing);
+  // Hearts are saved with the rest of your activity, so they survive leaving the screen and restarts.
+  const likedComments = useApp((s) => s.likedComments);
+  const toggleCommentLike = useApp((s) => s.toggleCommentLike);
   const [text, setText] = useState('');
-  const [liked, setLiked] = useState<Record<string, boolean>>({});
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<ScrollView>(null);
   const justSent = useRef(false);
@@ -49,19 +73,16 @@ export default function EventComments() {
     setText('');
   };
 
-  const toggleLike = (cid: string) => setLiked((l) => ({ ...l, [cid]: !l[cid] }));
-
   const reply = (name: string, authorId: string) => {
-    const handle = authorId === 'me' ? '' : profileById(authorId)?.handle ?? `@${name}`;
-    setText(handle ? `${handle} ` : '');
+    const handle = handleFor(authorId, name, venueListing);
+    // Replace a leading @mention from an earlier Reply instead of stacking them.
+    setText((cur) => (handle ? `${handle} ${cur.replace(/^@\S+\s+/, '')}` : cur));
     inputRef.current?.focus();
   };
 
   const openAuthor = (authorId: string) => {
-    if (authorId === 'me') return router.push('/profile/me');
-    const p = profileById(authorId);
-    if (!p) return;
-    router.push(p.kind === 'fan' || p.kind === 'organizer' ? `/profile/${p.id}` : `/artist/${p.id}`);
+    const href = authorHref(authorId);
+    if (href) router.push(href as never);
   };
 
   return (
@@ -127,21 +148,30 @@ export default function EventComments() {
         ) : (
           <View style={{ gap: 14 }}>
             {comments.map((c) => {
-              const a = authorFor(c.authorId, user);
+              const a = authorFor(c.authorId, user, venueListing);
               const name = a?.name ?? 'Guest';
-              const on = !!liked[c.id];
+              const isVenue = a?.kind === 'venue';
+              const on = !!likedComments[c.id];
               const likes = c.likes + (on ? 1 : 0);
               const isOrganizer = c.authorId === event.organizerId;
+              const isHost = isVenue && c.authorId === event.venueId;
+              const canOpen = !!authorHref(c.authorId);
               return (
                 <Row key={c.id} gap={10} align="flex-start">
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Open ${name}’s profile`} onPress={() => openAuthor(c.authorId)} hitSlop={6}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={c.authorId === 'me' ? 'Open your profile' : isVenue ? `Open ${name} venue page` : `Open ${name}’s profile`}
+                    disabled={!canOpen}
+                    onPress={() => openAuthor(c.authorId)}
+                    hitSlop={6}
+                  >
                     <Avatar src={a?.avatar} size={40} label={name} verified={a?.verified} />
                   </Pressable>
                   <View style={{ flex: 1, gap: 4 }}>
                     <View style={{ backgroundColor: c.authorId === 'me' ? colors.brandTint : colors.surface, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, ...shadow(1) }}>
                       <Row gap={6} style={{ marginBottom: 2, flexWrap: 'wrap' }}>
                         <T v="smallBold">{c.authorId === 'me' ? 'You' : name}</T>
-                        {isOrganizer ? <Pill label="Organizer" tone="brand" /> : null}
+                        {isOrganizer ? <Pill label="Organizer" tone="brand" /> : isHost ? <Pill label="Venue" tone="brand" icon="map-marker-outline" /> : null}
                       </Row>
                       <T v="body">{c.text}</T>
                     </View>
@@ -157,9 +187,9 @@ export default function EventComments() {
                   </View>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={on ? 'Unlike comment' : 'Like comment'}
+                    accessibilityLabel={`${on ? 'Unlike' : 'Like'} comment by ${c.authorId === 'me' ? 'you' : name}, ${likes} ${likes === 1 ? 'like' : 'likes'}`}
                     accessibilityState={{ selected: on }}
-                    onPress={() => toggleLike(c.id)}
+                    onPress={() => toggleCommentLike(c.id)}
                     style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
                   >
                     <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.dangerBg : 'transparent' }}>
