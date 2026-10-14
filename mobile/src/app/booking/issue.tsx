@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -6,6 +6,7 @@ import { ActionSheet } from '../../components/ActionSheet';
 import { BottomBar, Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, Icon, type IconName, KeyValue, Pill, Row, T } from '../../components/ui';
 import { profileById, venueById } from '../../data/mock';
+import { isException } from '../../lib/booking';
 import { euro, shortDate } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp } from '../../store/useApp';
@@ -29,10 +30,15 @@ export default function BookingIssue() {
       </Screen>
     );
   }
+  if (!isException(booking.status)) {
+    // Requests sent again and withdrawn reports are live bookings again: show the normal status screen.
+    return <Redirect href={{ pathname: '/booking/[id]', params: { id: booking.id } }} />;
+  }
   const name = (booking.type === 'musician' ? profileById(booking.targetId)?.name : venueById(booking.targetId)?.name) ?? '';
   const browse = booking.type === 'musician' ? '/artists/all' : '/venues';
   const ref = `#${booking.id.slice(-4).toUpperCase()}`;
   const message = () => router.push(`/chat/${ensureConversation(booking.targetId)}`);
+  const bookAgain = () => router.replace({ pathname: '/booking/new', params: { type: booking.type, id: booking.targetId } });
   const addEvidence = (kind: string) => {
     setEvidence((e) => [...e, kind]);
     toast(`${kind} added to case ${ref}`);
@@ -49,24 +55,25 @@ export default function BookingIssue() {
     expired: {
       chip: 'Expired', tone: 'warning', icon: 'clock-outline', title: 'No response in 48 hours',
       body: 'Your request expired before they replied. Send it again or try someone else.', money: 'Not charged', moneyColor: colors.success,
-      primary: ['Send request again', () => { setStatus(booking.id, 'pending'); toast(`Request sent to ${name} again`); router.replace(`/booking/${booking.id}`); }],
+      primary: ['Send request again', () => { setStatus(booking.id, 'pending'); toast(`Request sent to ${name} again`); }],
       secondary: ['Browse others', () => router.replace(browse)],
     },
     cancelled: {
-      chip: 'Cancelled · refund', tone: 'brand', icon: 'cash-refund', title: 'Booking cancelled',
-      body: 'Any payment held in escrow is refunded in full to your original payment method.', money: 'Refund · 3–5 days', moneyColor: colors.brand,
-      primary: ['Back to discovery', () => router.replace('/(tabs)')],
-      secondary: ['View refund details', () => router.push('/help?section=refunds')],
+      // Requests and offers can only be cancelled before payment, so nothing was ever charged.
+      chip: 'Cancelled', tone: 'brand', icon: 'calendar-remove-outline', title: 'Booking cancelled',
+      body: 'This booking was cancelled before any payment, so you weren’t charged. You can send a new request any time.', money: 'Not charged', moneyColor: colors.success,
+      primary: [`Book ${name} again`, bookAgain],
+      secondary: [booking.type === 'musician' ? 'Find other artists' : 'Find other venues', () => router.replace(browse)],
     },
     disputed: {
       chip: 'In dispute', tone: 'warning', icon: 'flag-outline', title: 'We’re looking into it',
       body: 'You reported a problem. Funds stay frozen in escrow while our team reviews both sides, usually within 3 working days.', money: 'Held in escrow', moneyColor: colors.warning,
       primary: ['Add evidence', () => setEvidenceSheet(true)],
       secondary: [`Message ${name}`, message],
-      tertiary: ['Withdraw report', () => { setStatus(booking.id, 'completed'); toast('Report withdrawn. Funds will be released.'); router.replace(`/booking/${booking.id}`); }],
+      tertiary: ['Withdraw report', () => { setStatus(booking.id, 'completed'); toast('Report withdrawn. Funds will be released.'); }],
     },
   };
-  const v = V[booking.status] ?? V.cancelled;
+  const v = V[booking.status];
   const toneBg = v.tone === 'danger' ? colors.dangerBg : v.tone === 'warning' ? colors.warningBg : colors.brandSoft;
   const toneFg = v.tone === 'danger' ? colors.danger : v.tone === 'warning' ? colors.warning : colors.brand;
 
@@ -90,7 +97,10 @@ export default function BookingIssue() {
       <T v="body" color={colors.muted} center>{v.body}</T>
       <Card style={{ alignSelf: 'stretch', gap: 6, marginTop: 8 }}>
         <KeyValue k="Booking" v={`${name} · ${shortDate(booking.date)}`} />
-        <KeyValue k="Event" v={booking.eventTitle} />
+        <Row justify="space-between" align="flex-start" gap={12} style={{ paddingVertical: 4 }}>
+          <T v="body" color={colors.muted}>Event</T>
+          <T v="bodyBold" style={{ flex: 1, textAlign: 'right' }}>{booking.eventTitle}</T>
+        </Row>
         <KeyValue k="Amount" v={euro(booking.amount, true)} />
         <KeyValue k="Money status" v={v.money} color={v.moneyColor} />
       </Card>

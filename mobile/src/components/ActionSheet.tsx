@@ -13,13 +13,13 @@ export interface SheetAction {
   onPress: () => void;
 }
 
-/** Bottom sheet with a list of actions (the "•••" menus). */
-export function ActionSheet({ visible, title, actions, onClose }: { visible: boolean; title?: string; actions: SheetAction[]; onClose: () => void }) {
+/** Bottom sheet with a list of actions (the "•••" menus). `cancelLabel` names the dismiss button (default "Cancel"). */
+export function ActionSheet({ visible, title, actions, onClose, cancelLabel = 'Cancel' }: { visible: boolean; title?: string; actions: SheetAction[]; onClose: () => void; cancelLabel?: string }) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
-        <Pressable accessibilityLabel="Close menu" style={{ flex: 1 }} onPress={onClose} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Close menu" style={{ flex: 1 }} onPress={onClose} />
         <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 16 }}>
           <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong, marginBottom: 12 }} />
           {title ? <Text style={{ fontFamily: fonts.displaySemi, fontSize: 17, color: colors.ink, marginBottom: 6 }}>{title}</Text> : null}
@@ -37,8 +37,8 @@ export function ActionSheet({ visible, title, actions, onClose }: { visible: boo
               <Text style={{ fontFamily: fonts.bodyBold, fontSize: 16, color: a.destructive ? colors.danger : colors.ink }}>{a.label}</Text>
             </Pressable>
           ))}
-          <Pressable accessibilityRole="button" onPress={onClose} style={{ minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
-            <Text style={{ fontFamily: fonts.bodyBold, fontSize: 16, color: colors.brand }}>Cancel</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={cancelLabel} onPress={onClose} style={{ minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
+            <Text style={{ fontFamily: fonts.bodyBold, fontSize: 16, color: colors.brand }}>{cancelLabel}</Text>
           </Pressable>
         </View>
       </View>

@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { ImgKey } from '../data/images';
-import { conversations as seedConversations, events as seedEvents, incomingRequests, initialBookings, posts as seedPosts } from '../data/mock';
-import type { Booking, BookingStatus, Comment, Conversation, EventItem, IncomingRequest, Message, Post, Role, Ticket } from '../data/types';
-import { ticketCode, uid } from '../lib/format';
+import { conversations as seedConversations, events as seedEvents, incomingRequests, initialBookings, posts as seedPosts, ratingFor, reviewCountFor, venueById, venues as seedVenues } from '../data/mock';
+import type { Booking, BookingStatus, Comment, Conversation, EventItem, IncomingRequest, Message, Post, PostVisibility, Role, Ticket, Venue } from '../data/types';
+import { isoDay, ticketCode, TODAY, uid } from '../lib/format';
 
 export interface User {
   name: string;
@@ -80,11 +81,21 @@ export interface VenueListing {
   photos: ImgKey[];
 }
 
+export interface Prefs {
+  bookings: boolean;
+  messages: boolean;
+  nearby: boolean;
+  privateAccount: boolean;
+  language: 'English' | 'Deutsch';
+  /** Stay signed in after the app restarts. When false, a reload signs you out. */
+  rememberMe: boolean;
+}
+
 interface State {
   onboarded: boolean;
   authed: boolean;
   user: User;
-  prefs: { bookings: boolean; messages: boolean; nearby: boolean; privateAccount: boolean; language: 'English' | 'Deutsch' };
+  prefs: Prefs;
 
   likes: Record<string, boolean>;
   saves: Record<string, boolean>;
@@ -116,7 +127,8 @@ interface State {
 
   // actions
   completeOnboarding: () => void;
-  signIn: (email: string) => void;
+  /** Pass `remember` to also set prefs.rememberMe (false: signed out again after a reload). */
+  signIn: (email: string, remember?: boolean) => void;
   register: (u: Partial<User>) => void;
   signOut: () => void;
   updateUser: (u: Partial<User>) => void;
@@ -128,7 +140,8 @@ interface State {
   toggleGoing: (eventId: string) => void;
   toggleWish: (kind: keyof State['wishlist'], id: string) => void;
 
-  addPost: (p: Omit<Post, 'id' | 'likes' | 'comments' | 'shares' | 'time' | 'feed' | 'authorId'>) => string;
+  /** Followers-only posts appear in the Following feed only; Public (default) posts in every feed. */
+  addPost: (p: Omit<Post, 'id' | 'likes' | 'comments' | 'shares' | 'time' | 'feed' | 'authorId'>, visibility?: PostVisibility) => string;
   addComment: (postId: string, text: string) => void;
   addEvent: (e: Omit<EventItem, 'id' | 'going' | 'rating' | 'distanceKm' | 'organizerId'>) => string;
 
@@ -139,8 +152,11 @@ interface State {
   createBooking: (b: Omit<Booking, 'id' | 'status' | 'createdAt'>) => string;
   setBookingStatus: (id: string, status: BookingStatus) => void;
   setRequestStatus: (id: string, status: IncomingRequest['status']) => void;
+  /** Sends a counter offer: stores amount and note on the request and leaves its status unchanged ('new' stays 'new'). */
+  counterRequest: (id: string, amount: number, note?: string) => void;
 
   sendMessage: (conversationId: string, msg: Omit<Message, 'id' | 'time' | 'from'>) => void;
+  toggleMessageLike: (conversationId: string, messageId: string) => void;
   ensureConversation: (withId: string) => string;
   markConversationRead: (id: string) => void;
   markNotificationsRead: () => void;
@@ -175,7 +191,7 @@ const initialData = () => ({
   onboarded: false,
   authed: false,
   user: defaultUser,
-  prefs: { bookings: true, messages: true, nearby: false, privateAccount: false, language: 'English' as const },
+  prefs: { bookings: true, messages: true, nearby: false, privateAccount: false, language: 'English', rememberMe: true } as Prefs,
   likes: {},
   saves: {},
   following: { adam: true, nightowls: true, soso: true, sara: true } as Record<string, boolean>,
@@ -252,7 +268,13 @@ export const useApp = create<State>()(
       ...initialData(),
 
       completeOnboarding: () => set({ onboarded: true }),
-      signIn: (email) => set((s) => ({ authed: true, onboarded: true, user: { ...s.user, email: email || s.user.email } })),
+      signIn: (email, remember) =>
+        set((s) => ({
+          authed: true,
+          onboarded: true,
+          user: { ...s.user, email: email || s.user.email },
+          prefs: remember === undefined ? s.prefs : { ...s.prefs, rememberMe: remember },
+        })),
       register: (u) => set((s) => ({ onboarded: true, user: { ...s.user, ...u } })),
       signOut: () => set({ authed: false }),
       updateUser: (u) => set((s) => ({ user: { ...s.user, ...u } })),
@@ -268,9 +290,11 @@ export const useApp = create<State>()(
           return { wishlist: { ...s.wishlist, [kind]: list.includes(id) ? list.filter((x) => x !== id) : [id, ...list] } };
         }),
 
-      addPost: (p) => {
+      addPost: (p, visibility) => {
         const id = uid('post');
-        const post: Post = { ...p, id, authorId: 'me', likes: 0, comments: [], shares: 0, time: 'now', feed: ['forYou', 'following', 'nearby'] };
+        const vis: PostVisibility = visibility ?? p.visibility ?? 'Public';
+        const feed: Post['feed'] = vis === 'Followers' ? ['following'] : ['forYou', 'following', 'nearby'];
+        const post: Post = { ...p, id, authorId: 'me', likes: 0, comments: [], shares: 0, time: 'now', feed, visibility: vis };
         set((s) => ({ myPosts: [post, ...s.myPosts] }));
         return id;
       },
@@ -298,7 +322,7 @@ export const useApp = create<State>()(
           const tickets: Ticket[] = Array.from({ length: c.qty }, () => {
             const id = uid('t');
             ids.push(id);
-            return { id, eventId: c.eventId, typeId: c.typeId, holder: get().user.name, code: ticketCode(), status: 'valid', purchasedAt: new Date().toISOString() };
+            return { id, eventId: c.eventId, typeId: c.typeId, holder: get().user.name, code: ticketCode(), status: 'valid', purchasedAt: TODAY.toISOString() };
           });
           set((s) => ({ tickets: [...tickets, ...s.tickets], going: { ...s.going, [c.eventId]: true }, checkout: undefined }));
           return { kind: 'ticket', ids };
@@ -312,16 +336,26 @@ export const useApp = create<State>()(
 
       createBooking: (b) => {
         const id = uid('b');
-        set((s) => ({ bookings: [{ ...b, id, status: 'pending', createdAt: new Date().toISOString().slice(0, 10) }, ...s.bookings] }));
+        set((s) => ({ bookings: [{ ...b, id, status: 'pending', createdAt: isoDay(TODAY) }, ...s.bookings] }));
         return id;
       },
       setBookingStatus: (id, status) => set((s) => ({ bookings: s.bookings.map((b) => (b.id === id ? { ...b, status } : b)) })),
       setRequestStatus: (id, status) => set((s) => ({ requests: s.requests.map((r) => (r.id === id ? { ...r, status } : r)) })),
+      counterRequest: (id, amount, note) =>
+        set((s) => ({
+          requests: s.requests.map((r) => (r.id === id ? { ...r, counterOffer: amount, counterNote: note?.trim() || undefined } : r)),
+        })),
 
       sendMessage: (cid, msg) =>
         set((s) => ({
           conversations: s.conversations.map((c) =>
             c.id === cid ? { ...c, messages: [...c.messages, { ...msg, id: uid('m'), from: 'me', time: nowTime() }] } : c,
+          ),
+        })),
+      toggleMessageLike: (cid, mid) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === cid ? { ...c, messages: c.messages.map((m) => (m.id === mid ? { ...m, liked: !m.liked } : m)) } : c,
           ),
         })),
       ensureConversation: (withId) => {
@@ -345,7 +379,8 @@ export const useApp = create<State>()(
       setAvailability: (a) => set((s) => ({ availability: { ...s.availability, ...a } })),
       promoteEvent: (p) => {
         const id = uid('promo');
-        set((s) => ({ promotions: [{ ...p, id, createdAt: new Date().toISOString() }, ...s.promotions] }));
+        // Stamped on the demo clock so boosts line up with TODAY everywhere (see lib/promotions).
+        set((s) => ({ promotions: [{ ...p, id, createdAt: TODAY.toISOString() }, ...s.promotions] }));
         return id;
       },
       setPlan: (plan) => set({ plan }),
@@ -353,7 +388,7 @@ export const useApp = create<State>()(
       requestPayout: () => {
         const amount = get().balance;
         if (amount <= 0) return 0;
-        set((s) => ({ balance: 0, payouts: [{ id: uid('po'), amount, date: new Date().toISOString().slice(0, 10), status: 'processing' }, ...s.payouts] }));
+        set((s) => ({ balance: 0, payouts: [{ id: uid('po'), amount, date: isoDay(TODAY), status: 'processing' }, ...s.payouts] }));
         return amount;
       },
     }),
@@ -363,7 +398,21 @@ export const useApp = create<State>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => {
         const { checkout: _checkout, ...rest } = s;
-        return rest;
+        // Without "Remember me" the session is not kept: the next launch starts signed out.
+        return s.prefs.rememberMe === false ? { ...rest, authed: false } : rest;
+      },
+      // Older saved state may miss newer nested keys (e.g. prefs.rememberMe): fill them from the defaults.
+      merge: (persisted, current) => {
+        const p = (persisted && typeof persisted === 'object' ? persisted : {}) as Partial<State>;
+        return {
+          ...current,
+          ...p,
+          user: { ...current.user, ...p.user },
+          prefs: { ...current.prefs, ...p.prefs },
+          wishlist: { ...current.wishlist, ...p.wishlist },
+          availability: { ...current.availability, ...p.availability, days: { ...current.availability.days, ...p.availability?.days } },
+          venueListing: { ...current.venueListing, ...p.venueListing },
+        };
       },
     },
   ),
@@ -384,6 +433,60 @@ export function useEvent(id?: string) {
 export function useFeedPosts() {
   const mine = useApp((s) => s.myPosts);
   return mine.length ? [...mine, ...seedPosts] : seedPosts;
+}
+
+/** The venue the demo venue owner manages; its public page shows the owner's listing edits. */
+export const OWN_VENUE_ID = 'moonclub';
+
+/** A venue with the owner's listing (Pro → Venue listing) applied when it is their own venue. */
+export function overlayVenue(venue: Venue, listing: VenueListing): Venue;
+export function overlayVenue(venue: Venue | undefined, listing: VenueListing): Venue | undefined;
+export function overlayVenue(venue: Venue | undefined, listing: VenueListing): Venue | undefined {
+  if (!venue || venue.id !== OWN_VENUE_ID) return venue;
+  const [cover, ...gallery] = listing.photos;
+  return {
+    ...venue,
+    name: listing.name || venue.name,
+    area: listing.area || venue.area,
+    type: listing.type,
+    capacity: listing.capacity,
+    rooms: listing.rooms,
+    stages: listing.stages,
+    pricePerNight: listing.pricePerNight,
+    parking: listing.parking,
+    equipment: listing.equipment || venue.equipment,
+    occasions: listing.occasions,
+    description: listing.description || venue.description,
+    cover: cover ?? venue.cover,
+    gallery: cover ? gallery : venue.gallery,
+  };
+}
+
+/** The venue for `id`, including the owner's listing edits for their own venue. */
+export function useVenue(id?: string): Venue | undefined {
+  const listing = useApp((s) => s.venueListing);
+  return useMemo(() => (id ? overlayVenue(venueById(id), listing) : undefined), [id, listing]);
+}
+
+/** All venues, with the owner's listing edits applied. */
+export function useVenues(): Venue[] {
+  const listing = useApp((s) => s.venueListing);
+  return useMemo(() => seedVenues.map((v) => overlayVenue(v, listing)), [listing]);
+}
+
+/**
+ * Rating and review count for an artist or venue as the detail pages and /ratings show them:
+ * your own reviews of completed bookings plus sample reviews, without blocked authors.
+ */
+export function useRating(id: string): { rating: number; count: number } {
+  const bookings = useApp((s) => s.bookings);
+  const reviews = useApp((s) => s.reviews);
+  const blocked = useApp((s) => s.blocked);
+  return useMemo(() => {
+    const extra = bookings.filter((b) => b.targetId === id && reviews[b.id]).map((b) => reviews[b.id].rating);
+    const opts = { extra, exclude: blocked };
+    return { rating: ratingFor(id, opts), count: reviewCountFor(id, opts) };
+  }, [id, bookings, reviews, blocked]);
 }
 
 export const ROLE_LABEL: Record<Role, string> = {

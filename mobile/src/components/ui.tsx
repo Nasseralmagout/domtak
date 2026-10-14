@@ -97,6 +97,8 @@ export function Button({ title, variant = 'primary', size = 'lg', icon, loading,
     <Pressable
       accessibilityRole="button"
       disabled={disabled || loading}
+      // sm buttons are 38 px tall; reach a 44 px touch target unless the caller sets its own hitSlop.
+      hitSlop={size === 'sm' ? 4 : undefined}
       {...rest}
       style={({ pressed }) => [
         {

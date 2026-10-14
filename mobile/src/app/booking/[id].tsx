@@ -8,7 +8,7 @@ import { Banner, Button, Card, Divider, Icon, KeyValue, Photo, Pill, Row, T } fr
 import { profileById, venueById } from '../../data/mock';
 import type { BookingStatus } from '../../data/types';
 import { isException, LIFECYCLE, STATUS_LABEL, STATUS_TONE } from '../../lib/booking';
-import { euro, shortDate } from '../../lib/format';
+import { euro, parse, shortDate, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp } from '../../store/useApp';
 import { colors, radius, shadow } from '../../theme';
@@ -47,6 +47,9 @@ export default function BookingStatusScreen() {
   const ref = `#${booking.id.slice(-4).toUpperCase()}`;
   const method = methods.find((m) => m.id === selectedPayment) ?? methods[0];
   const paid = PAID.includes(booking.status);
+  // Problems can be reported up to 48 h after the event (see Help → disputes).
+  const reportable = TODAY.getTime() <= parse(booking.date).getTime() + 2 * 86_400_000;
+  const bookAgain = () => router.push({ pathname: '/booking/new', params: { type: booking.type, id: booking.targetId } });
   const addToCalendar = () => {
     toast(`${booking.eventTitle} is in your calendar`);
     router.push({ pathname: '/(tabs)/calendar', params: { date: booking.date } });
@@ -65,7 +68,7 @@ export default function BookingStatusScreen() {
     completed: {
       hint: reviewed ? `Thanks for reviewing ${name}. You can still update your review.` : `Hope it was great! A review helps other people book ${name}.`,
       primary: [reviewed ? 'Edit review' : 'Leave review', () => router.push(`/review/${booking.id}`)],
-      secondary: ['Report a problem', () => setConfirm('report')],
+      secondary: reportable ? ['Report a problem', () => setConfirm('report')] : [`Book ${name} again`, bookAgain],
     },
   };
   const a = actions[booking.status];
@@ -164,7 +167,13 @@ export default function BookingStatusScreen() {
         </Card>
       ) : null}
 
-      <Banner icon="shield-check-outline">{`Escrow keeps your money safe: it’s only released to ${name} 24 h after the event.`}</Banner>
+      <Banner icon="shield-check-outline">
+        {booking.status === 'completed'
+          ? `The escrow payment was released to ${name} 24 h after the event.${reportable ? ' Something went wrong? Report it within 48 h of the event.' : ''}`
+          : paid
+            ? `Your payment is held in escrow and only released to ${name} 24 h after the event.`
+            : `You pay only after ${name} accepts. The money then waits in escrow until 24 h after the event.`}
+      </Banner>
 
       <ActionSheet
         visible={!!s}

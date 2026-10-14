@@ -90,6 +90,9 @@ export interface Comment {
   likes: number;
 }
 
+/** Who can see a post: everyone, or only your followers (shown in the Following feed only). */
+export type PostVisibility = 'Public' | 'Followers';
+
 export interface Post {
   id: string;
   authorId: string;
@@ -104,6 +107,8 @@ export interface Post {
   eventId?: string;
   track?: string;
   feed: ('forYou' | 'following' | 'nearby')[];
+  /** Missing on sample posts, which are all public. */
+  visibility?: PostVisibility;
 }
 
 export interface Story {
@@ -199,6 +204,10 @@ export interface IncomingRequest {
   offer: number;
   expires: string;
   status: 'new' | 'accepted' | 'declined' | 'past';
+  /** Your counter offer in euro, if you sent one (the request stays 'new' until the booker answers). */
+  counterOffer?: number;
+  /** Optional note sent with the counter offer. */
+  counterNote?: string;
 }
 
 export interface Attendee {

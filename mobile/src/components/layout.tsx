@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { type ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, type StyleProp, Text, View, type ViewStyle } from 'react-native';
 import { type Edge, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -105,7 +105,9 @@ export function ScreenHeader({
 export function DomtakHeader({ showMenu = true }: { showMenu?: boolean }) {
   const read = useApp((s) => s.readNotifications);
   const convs = useApp((s) => s.conversations);
-  const unread = (convs.length ? convs : conversations).reduce((n, c) => n + c.unread, 0);
+  const blocked = useApp((s) => s.blocked);
+  // Messages from blocked accounts never light up the inbox dot.
+  const unread = useMemo(() => (convs.length ? convs : conversations).reduce((n, c) => n + (blocked.includes(c.withId) ? 0 : c.unread), 0), [convs, blocked]);
   return (
     <View style={{ backgroundColor: colors.brandDeep }}>
       <Row style={{ height: 60, paddingLeft: showMenu ? 4 : 18, paddingRight: 4 }} gap={0}>

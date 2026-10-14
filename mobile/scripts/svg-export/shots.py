@@ -92,6 +92,7 @@ add('05', 'your-bookings-venues', '/my-bookings?tab=venue', 'Your bookings — v
 add('05', 'status-pending', '/booking/b1', 'Booking status — pending')
 add('05', 'status-accepted', '/booking/b2', 'Booking status — accepted, pay')
 add('05', 'status-confirmed', '/booking/b3', 'Booking status — confirmed')
+add('05', 'status-completed', '/booking/b5', 'Booking completed — review')
 add('05', 'booking-declined', '/booking/b4', 'Booking declined')
 
 # 06 Calendar & messages
@@ -101,6 +102,7 @@ add('06', 'calendar-overview', '/calendar', 'Your event overview', actions=[clic
 add('06', 'inbox', '/inbox', 'Inbox')
 add('06', 'booking-chats', '/inbox', 'Inbox — booking chats', actions=[click('Booking chats', role='tab')])
 add('06', 'chat', '/chat/adam', 'Chat')
+add('06', 'chat-venue', '/chat/moonvenue', 'Chat — venue')
 
 # 07 Account
 add('07', 'profile', '/profile/me', 'Your profile')
@@ -124,6 +126,7 @@ add('08', 'insights', '/pro/earnings?tab=insights', 'Insights', userRole='musici
 add('08', 'requests', '/pro/requests', 'Booking requests', userRole='musician')
 add('08', 'request-detail', '/pro/request/r1', 'Booking request detail', userRole='musician')
 add('08', 'request-decline', '/pro/request/r1?decline=1', 'Decline request', userRole='musician', noFull=True)
+add('08', 'request-counter', '/pro/request/r1', 'Counter offer', userRole='musician', noFull=True, actions=[click('Counter')])
 add('08', 'create-menu-musician', '/create-menu', 'Create (+) sheet — musician', userRole='musician', noFull=True)
 add('08', 'workspace-organizer', '/pro/workspace', 'Pro workspace — organizer', userRole='organizer')
 add('08', 'my-events', '/pro/events', 'My events', userRole='organizer')

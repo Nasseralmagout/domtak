@@ -1,11 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { profileById, profiles, venueById } from '../data/mock';
 import type { EventItem, Profile, Venue } from '../data/types';
 import { compact, dayOfMonth, euro, eventWhen, monthShort, priceRange, time } from '../lib/format';
-import { useApp } from '../store/useApp';
+import { overlayVenue, useApp, useRating } from '../store/useApp';
 import { colors, fonts, radius, shadow } from '../theme';
 import { Avatar, Button, Icon, IconButton, Photo, RatingBadge, Row, T } from './ui';
 
@@ -179,11 +180,15 @@ export function ArtistCard({ artist }: { artist: Profile }) {
   );
 }
 
-export function VenueCard({ venue }: { venue: Venue }) {
+export function VenueCard({ venue: base }: { venue: Venue }) {
+  // The owner's listing edits show on their own venue everywhere (overlay is a no-op for other venues).
+  const listing = useApp((s) => s.venueListing);
+  const venue = useMemo(() => overlayVenue(base, listing), [base, listing]);
+  const { rating } = useRating(venue.id);
   const wished = useApp((s) => s.wishlist.venues.includes(venue.id));
   const toggleWish = useApp((s) => s.toggleWish);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={venue.name} onPress={() => router.push(`/venue/${venue.id}`)} style={{ borderRadius: radius.xl, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(2) }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${venue.name}, ${venue.area}, rated ${rating.toFixed(1)}`} onPress={() => router.push(`/venue/${venue.id}`)} style={{ borderRadius: radius.xl, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(2) }}>
       <View style={{ height: 190 }}>
         <Photo src={venue.cover} style={{ position: 'absolute', inset: 0 }} />
         <LinearGradient colors={scrim} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 100 }} />
@@ -195,7 +200,7 @@ export function VenueCard({ venue }: { venue: Venue }) {
             <Text style={{ fontFamily: fonts.display, fontSize: 22, color: colors.white }}>{venue.name}</Text>
             <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.lilacLight }}>{venue.city}, {venue.area}</Text>
           </View>
-          <RatingBadge value={venue.rating} />
+          <RatingBadge value={rating} />
         </Row>
       </View>
       <View style={{ padding: 14, gap: 10 }}>
@@ -250,8 +255,21 @@ export function PersonRow({ id, right, subtitle }: { id: string; right?: React.R
 export function FollowButton({ id, size = 'sm' }: { id: string; size?: 'sm' | 'md' }) {
   const following = useApp((s) => !!s.following[id]);
   const toggle = useApp((s) => s.toggleFollow);
-  const name = profileById(id)?.name;
-  return <Button title={following ? 'Following' : 'Follow'} accessibilityLabel={name ? `${following ? 'Unfollow' : 'Follow'} ${name}` : undefined} accessibilityState={{ selected: following }} icon={following ? 'check' : 'account-plus-outline'} variant={following ? 'secondary' : 'primary'} size={size} onPress={() => toggle(id)} />;
+  const name = profileById(id)?.name ?? venueById(id)?.name;
+  const verb = following ? 'Unfollow' : 'Follow';
+  return (
+    <Button
+      title={following ? 'Following' : 'Follow'}
+      accessibilityLabel={name ? `${verb} ${name}` : verb}
+      accessibilityState={{ selected: following }}
+      icon={following ? 'check' : 'account-plus-outline'}
+      variant={following ? 'secondary' : 'primary'}
+      size={size}
+      // sm is 38 px tall: extend the touch target to 44 px.
+      hitSlop={size === 'sm' ? { top: 4, bottom: 4, left: 4, right: 4 } : undefined}
+      onPress={() => toggle(id)}
+    />
+  );
 }
 
 export function BackOverlay({ onPress }: { onPress: () => void }) {

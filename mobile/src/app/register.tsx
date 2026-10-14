@@ -3,9 +3,17 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../components/layout';
-import { Button, Field, Icon, Row, T } from '../components/ui';
+import { Button, Card, Field, Icon, Row, T } from '../components/ui';
 import { useApp } from '../store/useApp';
 import { colors, fonts } from '../theme';
+
+const TERMS = [
+  'You must be 16 or older to use Domtak, and 18+ for events marked 18+.',
+  'Booking payments are held in escrow and released to the provider 24 h after the event.',
+  'Ticket refunds follow the organizer’s policy shown on each event page.',
+  'Be respectful: harassment, fake profiles and ticket touting lead to removal.',
+  'Your data is used only to run your account, payments and notifications.',
+];
 
 export default function Register() {
   const registerUser = useApp((s) => s.register);
@@ -14,6 +22,7 @@ export default function Register() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [agree, setAgree] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const submit = () => {
@@ -48,9 +57,21 @@ export default function Register() {
           By checking the box you agree to our Terms and Conditions.
         </T>
       </Pressable>
-      <Pressable accessibilityRole="link" onPress={() => router.push('/help?section=about')} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: -8 }}>
-        <Text style={{ color: colors.brand, fontFamily: fonts.bodyBold, fontSize: 13 }}>Read the Terms and Conditions</Text>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: showTerms }} onPress={() => setShowTerms(!showTerms)} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: -8, minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Text style={{ color: colors.brand, fontFamily: fonts.bodyBold, fontSize: 13 }}>{showTerms ? 'Hide the Terms and Conditions' : 'Read the Terms and Conditions'}</Text>
+        <Icon name={showTerms ? 'chevron-up' : 'chevron-down'} size={18} color={colors.brand} />
       </Pressable>
+      {showTerms ? (
+        <Card style={{ gap: 8 }}>
+          <T v="title">Terms in short</T>
+          {TERMS.map((t) => (
+            <Row key={t} gap={8} align="flex-start">
+              <Icon name="check" size={16} color={colors.brand} />
+              <T v="small" style={{ flex: 1 }}>{t}</T>
+            </Row>
+          ))}
+        </Card>
+      ) : null}
       {errors.agree ? <T v="small" color={colors.danger}>{errors.agree}</T> : null}
       <Button title="Next" onPress={submit} style={{ borderRadius: 16 }} />
       <Row justify="center" gap={4}>

@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { BackHandler, Pressable, ScrollView, View } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Avatar, Banner, Button, Card, Chip, Divider, Field, KeyValue, Photo, Row, Stepper, T, Toggle } from '../../components/ui';
@@ -16,9 +16,21 @@ function addHours(t: string, h: number) {
   return `${String((hh + h) % 24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+/** Summary line whose value is free text the user typed, so it wraps instead of running off the card. */
+function TextLine({ k, v }: { k: string; v: string }) {
+  return (
+    <Row justify="space-between" align="flex-start" gap={12} style={{ paddingVertical: 4 }}>
+      <T v="body" color={colors.muted}>{k}</T>
+      <T v="bodyBold" style={{ flex: 1, textAlign: 'right' }}>{v}</T>
+    </Row>
+  );
+}
+
 export default function NewBooking() {
   const { type = 'musician', id } = useLocalSearchParams<{ type: 'musician' | 'venue'; id: string }>();
-  const artist = type === 'musician' ? profileById(id ?? '') : undefined;
+  // Only musicians, DJs and bands take bookings; fans and organizers have no fee to book.
+  const profile = type === 'musician' ? profileById(id ?? '') : undefined;
+  const artist = profile && (profile.kind === 'dj' || profile.kind === 'musician' || profile.kind === 'band') ? profile : undefined;
   const venue = type === 'venue' ? venueById(id ?? '') : undefined;
   const user = useApp((s) => s.user);
   const bookings = useApp((s) => s.bookings);
@@ -38,6 +50,16 @@ export default function NewBooking() {
   const [extras, setExtras] = useState('');
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Android back on the summary returns to the form instead of dropping everything typed so far.
+  useEffect(() => {
+    if (step !== 'review') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setStep('form');
+      return true;
+    });
+    return () => sub.remove();
+  }, [step]);
 
   if (!artist && !venue) {
     return (
@@ -109,11 +131,12 @@ export default function NewBooking() {
           </View>
         </Card>
         <Card style={{ gap: 6 }}>
-          <KeyValue k="Event" v={title} />
+          <TextLine k="Event" v={title.trim()} />
           <KeyValue k="Occasion" v={occasion} />
           <KeyValue k="Guests" v={guests} />
-          <KeyValue k={artist ? 'Equipment' : 'Setup'} v={equipment} />
-          <KeyValue k="Extra services" v={extras || 'None'} />
+          <TextLine k={artist ? 'Equipment' : 'Setup'} v={equipment} />
+          <TextLine k="Extra services" v={extras.trim() || 'None'} />
+          {note.trim() ? <TextLine k="Message" v={note.trim()} /> : null}
         </Card>
         <Card style={{ gap: 6 }}>
           <KeyValue k="Full name" v={user.name} />

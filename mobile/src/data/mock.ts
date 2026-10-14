@@ -466,6 +466,36 @@ export const reviews: ReviewItem[] = [
 
 export const reviewsFor = (targetId: string) => reviews.filter((r) => r.targetId === targetId);
 
+/** Options for ratingFor / reviewCountFor so lists can match detail pages exactly. */
+export interface RatingOptions {
+  /** Extra star ratings to include, e.g. your own reviews of completed bookings. */
+  extra?: number[];
+  /** Review authors to leave out, e.g. blocked accounts. */
+  exclude?: string[];
+}
+
+const ratingsOf = (id: string, opts?: RatingOptions) => [
+  ...(opts?.extra ?? []),
+  ...reviewsFor(id)
+    .filter((r) => !opts?.exclude?.includes(r.authorId))
+    .map((r) => r.rating),
+];
+
+/**
+ * Rating shown for an artist or venue: the average of its reviews rounded to one decimal,
+ * else the stored venue/profile rating, else 0. Lists, detail pages and /ratings all use this.
+ */
+export function ratingFor(id: string, opts?: RatingOptions): number {
+  const all = ratingsOf(id, opts);
+  if (all.length) return Math.round((all.reduce((n, r) => n + r, 0) / all.length) * 10) / 10;
+  return venueById(id)?.rating ?? profileById(id)?.rating ?? 0;
+}
+
+/** Number of reviews behind ratingFor (0 when it falls back to the stored rating). */
+export function reviewCountFor(id: string, opts?: RatingOptions): number {
+  return ratingsOf(id, opts).length;
+}
+
 export interface Transaction {
   id: string;
   title: string;
@@ -475,13 +505,14 @@ export interface Transaction {
   status: 'escrow' | 'available' | 'paid out' | 'fee';
 }
 
+/** Available rows (tx2 + tx3 = €2.040) add up to the store's starting balance; older income was paid out. */
 export const transactions: Transaction[] = [
   { id: 'tx1', title: 'NYE Main Floor', sub: 'Moon Club · booking', amount: 2160, date: '2026-10-12', status: 'escrow' },
   { id: 'tx2', title: 'Dance world Vol. 1', sub: 'Dance world · booking', amount: 900, date: '2026-09-28', status: 'available' },
   { id: 'tx3', title: 'Sunset boat party', sub: 'Private · booking', amount: 1140, date: '2026-09-20', status: 'available' },
   { id: 'tx4', title: 'Payout to IBAN ••0391', sub: 'Bank transfer', amount: -1080, date: '2026-10-01', status: 'paid out' },
   { id: 'tx5', title: 'Pro plan', sub: 'Monthly subscription', amount: -9.99, date: '2026-10-01', status: 'fee' },
-  { id: 'tx6', title: 'Bunker Floor Vol. 6', sub: 'OG Collective · booking', amount: 810, date: '2026-09-06', status: 'available' },
+  { id: 'tx6', title: 'Bunker Floor Vol. 6', sub: 'OG Collective · booking', amount: 810, date: '2026-09-06', status: 'paid out' },
 ];
 
 /** Last 14 days, oldest first. */

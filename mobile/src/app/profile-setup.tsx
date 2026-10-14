@@ -87,7 +87,7 @@ export default function ProfileSetup() {
           {Object.keys(errors).length ? <T v="small" color={colors.danger} style={{ marginBottom: 8 }}>{Object.values(errors)[0]}</T> : null}
           <Button title={editing ? 'Save changes' : 'Finish & explore'} onPress={save} />
           {!editing ? (
-            <Pressable accessibilityRole="button" accessibilityHint="Keeps your current details and opens the app" onPress={finish} style={{ alignItems: 'center', paddingTop: 10, minHeight: 40 }}>
+            <Pressable accessibilityRole="button" accessibilityHint="Keeps your current details and opens the app" onPress={finish} style={{ alignItems: 'center', justifyContent: 'center', marginTop: 4, minHeight: 44 }}>
               <T v="smallBold" color={colors.brand}>Skip for now</T>
             </Pressable>
           ) : null}
@@ -153,7 +153,7 @@ export default function ProfileSetup() {
       <Row gap={12}>
         <View style={{ flex: 1 }}>
           <T v="bodyBold">Notify me about nearby events</T>
-          <T v="small">New gigs from people you follow</T>
+          <T v="small">Gigs and parties happening close to you</T>
         </View>
         <Toggle label="Notify me about nearby events" value={nearby} onValueChange={(v) => setPref('nearby', v)} />
       </Row>

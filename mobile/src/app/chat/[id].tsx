@@ -1,15 +1,15 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { ActionSheet } from '../../components/ActionSheet';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Avatar, Banner, Button, Chip, EmptyState, Icon, IconButton, Photo, Row, T } from '../../components/ui';
 import type { ImgKey } from '../../data/images';
-import { profileById, venueById } from '../../data/mock';
+import { profileById } from '../../data/mock';
 import type { Message } from '../../data/types';
 import { toast } from '../../store/toast';
-import { useApp } from '../../store/useApp';
+import { useApp, useVenue } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
 
 const PHOTOS: ImgKey[] = ['feed_crowd', 'feed_friends', 'ev_dancing', 'feed_rooftop', 'ev_selfie', 'feed_decks', 'ev_hands', 'feed_club'];
@@ -19,6 +19,19 @@ const QUICK_REPLIES = ['Hi! Are you available?', 'What’s your fee for 3 hours?
 const mutedChats = new Set<string>();
 
 const fmtDuration = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+/** The other side of a chat: a person (musician, organizer, fan) or a venue. */
+interface ChatParty {
+  id: string;
+  name: string;
+  avatar?: ImgKey;
+  title: string;
+  verified?: boolean;
+  /** Second line under the name in the chat intro. */
+  meta: string;
+  href: string;
+  isVenue: boolean;
+}
 
 function Bubble({ m, liked, onToggleLike }: { m: Message; liked: boolean; onToggleLike: () => void }) {
   const mine = m.from === 'me';
@@ -63,18 +76,41 @@ export default function Chat() {
   const markRead = useApp((s) => s.markConversationRead);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const toggleBlock = useApp((s) => s.toggleBlock);
-  const conv = conversations.find((c) => c.id === id);
-  const other = profileById(conv?.withId ?? id ?? '');
+  const toggleMessageLike = useApp((s) => s.toggleMessageLike);
+  // Links may carry the conversation id or the other party's id.
+  const conv = conversations.find((c) => c.id === id) ?? conversations.find((c) => c.withId === id);
+  const withId = conv?.withId ?? id ?? '';
+  const person = profileById(withId);
+  // Venues chat too (e.g. venue bookings); the owner's own venue shows its listing edits.
+  const venue = useVenue(person ? undefined : withId);
+  const other = useMemo<ChatParty | undefined>(() => {
+    if (person) {
+      const artist = person.kind === 'dj' || person.kind === 'musician' || person.kind === 'band';
+      return {
+        id: person.id,
+        name: person.name,
+        avatar: person.avatar,
+        title: person.title,
+        verified: person.verified,
+        meta: `${person.handle} · ${person.city}`,
+        href: artist ? `/artist/${person.id}` : `/profile/${person.id}`,
+        isVenue: false,
+      };
+    }
+    if (venue) {
+      return { id: venue.id, name: venue.name, avatar: venue.cover, title: `Venue · ${venue.area}`, meta: `${venue.type} · ${venue.area}, ${venue.city}`, href: `/venue/${venue.id}`, isVenue: true };
+    }
+    return undefined;
+  }, [person, venue]);
+  const convId = conv?.id;
   const [text, setText] = useState('');
   const [tray, setTray] = useState(false);
   const [recording, setRecording] = useState<number>();
   const [menu, setMenu] = useState(false);
-  const [muted, setMuted] = useState(() => !!id && mutedChats.has(id));
-  // Likes toggled on this screen, on top of the likes stored with each message.
-  const [likeOverrides, setLikeOverrides] = useState<Record<string, boolean>>({});
+  const [muted, setMuted] = useState(() => mutedChats.has(conv?.id ?? id ?? ''));
   const list = useRef<FlatList>(null);
 
-  useFocusEffect(useCallback(() => { if (id) markRead(id); }, [id, markRead]));
+  useFocusEffect(useCallback(() => { if (convId) markRead(convId); }, [convId, markRead]));
 
   // Voice recorder timer (max 2 minutes).
   useEffect(() => {
@@ -133,13 +169,14 @@ export default function Chat() {
     send(conv.id, { type: 'voice', duration: fmtDuration(secs) });
     scrollDown();
   };
+  // Stored with the message, so likes survive leaving the chat and restarting the app.
   const toggleLike = (m: Message) => {
-    const now = !(likeOverrides[m.id] ?? !!m.liked);
-    setLikeOverrides((o) => ({ ...o, [m.id]: now }));
-    if (now) toast('Liked message');
+    toggleMessageLike(conv.id, m.id);
+    toast(m.liked ? 'Like removed' : 'Liked message');
   };
 
-  const profileHref = venueById(other.id) ? `/venue/${other.id}` : other.kind === 'fan' || other.kind === 'organizer' ? `/profile/${other.id}` : `/artist/${other.id}`;
+  const profileHref = other.href;
+  const profileAction = other.isVenue ? 'View venue' : 'View profile';
 
   return (
     <Screen
@@ -152,7 +189,7 @@ export default function Chat() {
           onBack={() => goBack('/inbox')}
           right={
             <Row gap={0}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Open ${other.name}’s profile`} onPress={() => router.push(profileHref as never)} style={{ paddingRight: 4 }}>
+              <Pressable accessibilityRole="button" accessibilityLabel={other.isVenue ? `Open ${other.name} venue page` : `Open ${other.name}’s profile`} onPress={() => router.push(profileHref as never)} hitSlop={4} style={{ paddingRight: 4 }}>
                 <Avatar src={other.avatar} size={38} verified={other.verified} />
               </Pressable>
               <IconButton name="dots-vertical" label="Chat options" onPress={() => setMenu(true)} />
@@ -228,8 +265,8 @@ export default function Chat() {
           <View style={{ alignItems: 'center', gap: 6, paddingVertical: 16 }}>
             <Avatar src={other.avatar} size={72} verified={other.verified} />
             <T v="title">{other.name}</T>
-            <T v="small">{other.handle} · {other.city}</T>
-            <Button title="View profile" variant="light" size="sm" onPress={() => router.push(profileHref as never)} style={{ marginTop: 4 }} />
+            <T v="small">{other.meta}</T>
+            <Button title={profileAction} variant="light" size="sm" onPress={() => router.push(profileHref as never)} style={{ marginTop: 4 }} />
             {conv.messages.length ? <T v="small" style={{ fontSize: 11, marginTop: 6 }}>Long-press a message to like it</T> : null}
           </View>
         }
@@ -243,14 +280,14 @@ export default function Chat() {
             </View>
           )
         }
-        renderItem={({ item }) => <Bubble m={item} liked={likeOverrides[item.id] ?? !!item.liked} onToggleLike={() => toggleLike(item)} />}
+        renderItem={({ item }) => <Bubble m={item} liked={!!item.liked} onToggleLike={() => toggleLike(item)} />}
       />
 
       <ActionSheet
         visible={menu}
         title={other.name}
         actions={[
-          { label: 'View profile', icon: 'account-outline', onPress: () => router.push(profileHref as never) },
+          { label: profileAction, icon: other.isVenue ? 'storefront-outline' : 'account-outline', onPress: () => router.push(profileHref as never) },
           {
             label: muted ? 'Unmute notifications' : 'Mute notifications',
             icon: muted ? 'bell-outline' : 'bell-off-outline',

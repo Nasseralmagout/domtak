@@ -8,7 +8,7 @@ import { BackOverlay } from '../../components/cards';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Banner, Button, EmptyState, Photo, Radio, Row, Stepper, T } from '../../components/ui';
 import { venueById } from '../../data/mock';
-import { euro, eventWhen } from '../../lib/format';
+import { euro, eventWhen, parse, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 
@@ -43,6 +43,8 @@ export default function ChooseTicket() {
   const total = subtotal + fees;
   const venue = venueById(event.venueId);
   const soldOut = !firstAvailable;
+  // Sales close when doors open.
+  const closed = parse(event.start) <= TODAY;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -59,8 +61,10 @@ export default function ChooseTicket() {
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
         <T v="h3">Choose your ticket</T>
-        {soldOut ? (
-          <Banner icon="ticket-outline" tone="danger">This event is sold out. Save it to your wishlist and we’ll show it there if tickets come back.</Banner>
+        {closed ? (
+          <Banner icon="calendar-remove-outline" tone="warning">Ticket sales for this event have closed.</Banner>
+        ) : soldOut ? (
+          <Banner icon="ticket-outline" tone="danger">This event is sold out. Save it to your wishlist to keep it handy in case tickets come back.</Banner>
         ) : null}
         <View accessibilityRole="radiogroup" style={{ gap: 10 }}>
           {event.ticketTypes.map((t) => {
@@ -97,7 +101,9 @@ export default function ChooseTicket() {
         <Banner icon="information-outline">{`${event.ageLimit ? `${event.ageLimit}+ event. ` : ''}${event.refundPolicy}. Each ticket gets its own QR code.`}</Banner>
       </ScrollView>
       <BottomBar>
-        {soldOut ? (
+        {closed ? (
+          <Button title="Back to event" variant="secondary" onPress={() => goBack(`/event/${event.id}`)} />
+        ) : soldOut ? (
           <Button
             title={wished ? 'Saved to wishlist' : 'Save to wishlist'}
             icon={wished ? 'heart' : 'heart-outline'}

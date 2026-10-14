@@ -36,6 +36,7 @@ export default function ChooseRole() {
             <Pressable
               key={r.id}
               accessibilityRole="radio"
+              accessibilityLabel={`${ROLE_LABEL[r.id]}, ${r.tier}. ${r.desc}`}
               accessibilityState={{ checked: on }}
               onPress={() => setRole(r.id)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 18, borderWidth: on ? 2 : 1, borderColor: on ? colors.brand : colors.border, backgroundColor: on ? colors.brandTint : colors.surface }}

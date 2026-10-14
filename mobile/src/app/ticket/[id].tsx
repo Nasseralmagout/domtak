@@ -1,4 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { useMemo } from 'react';
 import { ScrollView, Share, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { goBack } from '../../components/layout';
 import { Button, IconButton, Photo, Pill, Row, T } from '../../components/ui';
 import { venueById } from '../../data/mock';
-import { isoDay, parse, time } from '../../lib/format';
+import { isoDay, parse, time, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
@@ -20,10 +21,14 @@ function Notch({ side }: { side: 'left' | 'right' }) {
 
 export default function ETicket() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const ticket = useApp((s) => s.tickets.find((t) => t.id === id));
+  const tickets = useApp((s) => s.tickets);
+  const ticket = tickets.find((t) => t.id === id);
+  // Every ticket in the same order has its own QR, so let the holder page through them.
+  const siblings = useMemo(() => (ticket ? tickets.filter((t) => t.eventId === ticket.eventId && t.status === ticket.status) : []), [tickets, ticket]);
   const event = useEvent(ticket?.eventId);
   const going = useApp((s) => (ticket ? !!s.going[ticket.eventId] : false));
   const toggleGoing = useApp((s) => s.toggleGoing);
+  const reviewed = useApp((s) => (ticket ? !!s.reviews[ticket.eventId] : false));
 
   if (!ticket || !event) {
     return (
@@ -47,6 +52,10 @@ export default function ETicket() {
   };
   const type = event.ticketTypes.find((t) => t.id === ticket.typeId);
   const d = parse(event.start);
+  const pos = siblings.findIndex((t) => t.id === ticket.id);
+  // After the night (or once scanned in) the useful next step is a review, not the calendar.
+  const over = parse(event.end) < TODAY || ticket.status === 'used';
+  const showTicket = (i: number) => router.setParams({ id: siblings[i].id });
   const payload = JSON.stringify({ t: ticket.id, e: event.id, c: ticket.code });
 
   return (
@@ -59,7 +68,7 @@ export default function ETicket() {
         <View style={{ backgroundColor: '#F8F7FB', borderRadius: 18 }}>
           <View style={{ alignItems: 'center', padding: 20, gap: 12 }}>
             <Photo src={event.cover} style={{ width: 200, height: 150 }} radius={18} />
-            <Text style={{ fontFamily: fonts.display, fontSize: 26, color: '#7A3BC0' }}>
+            <Text style={{ fontFamily: fonts.display, fontSize: 26, color: '#7A3BC0', textAlign: 'center' }}>
               {event.title}
               {event.subtitle ? <Text style={{ fontSize: 15 }}> {event.subtitle}</Text> : null}
             </Text>
@@ -70,13 +79,13 @@ export default function ETicket() {
             <Notch side="right" />
           </View>
           <View style={{ padding: 20, gap: 16 }}>
-            <Row justify="space-between" align="flex-start">
-              <View style={{ gap: 4 }}><T v="small" color={colors.ink}>Date</T><T v="bodyBold" color={colors.brandDeep}>{DAYS[d.getDay()]}, {MONTHS[d.getMonth()]} {d.getDate()} {d.getFullYear()}</T></View>
-              <View style={{ gap: 4, alignItems: 'flex-end' }}><T v="small" color={colors.ink}>Time</T><T v="bodyBold" color={colors.brandDeep}>Start {time(event.start)}</T></View>
+            <Row justify="space-between" align="flex-start" gap={12}>
+              <View style={{ gap: 4, flex: 1 }}><T v="small" color={colors.ink}>Date</T><T v="bodyBold" color={colors.brandDeep}>{DAYS[d.getDay()]}, {MONTHS[d.getMonth()]} {d.getDate()} {d.getFullYear()}</T></View>
+              <View style={{ gap: 4, flex: 1, alignItems: 'flex-end' }}><T v="small" color={colors.ink}>Time</T><T v="bodyBold" color={colors.brandDeep} style={{ textAlign: 'right' }}>Start {time(event.start)}</T></View>
             </Row>
-            <Row justify="space-between" align="flex-start">
-              <View style={{ gap: 4 }}><T v="small" color={colors.ink}>Venue</T><T v="bodyBold" color={colors.brandDeep}>{venueById(event.venueId)?.name}</T></View>
-              <View style={{ gap: 4, alignItems: 'flex-end' }}><T v="small" color={colors.ink}>Ticket</T><T v="bodyBold" color={colors.brandDeep}>{type?.name ?? 'Entry'} · No seat</T></View>
+            <Row justify="space-between" align="flex-start" gap={12}>
+              <View style={{ gap: 4, flex: 1 }}><T v="small" color={colors.ink}>Venue</T><T v="bodyBold" color={colors.brandDeep}>{venueById(event.venueId)?.name ?? 'To be announced'}</T></View>
+              <View style={{ gap: 4, flex: 1, alignItems: 'flex-end' }}><T v="small" color={colors.ink}>Ticket</T><T v="bodyBold" color={colors.brandDeep} style={{ textAlign: 'right' }}>{type?.name ?? 'Entry'} · No seat</T></View>
             </Row>
           </View>
           <View style={{ height: 2, backgroundColor: colors.brandDeep }}>
@@ -90,12 +99,21 @@ export default function ETicket() {
             </View>
             <T v="smallBold" color={colors.muted} style={{ letterSpacing: 2 }}>{ticket.code}</T>
             <T v="small" center>Holder: {ticket.holder} · show this at the entrance</T>
+            {siblings.length > 1 ? (
+              <Row gap={8}>
+                <IconButton name="chevron-left" label="Previous ticket" disabled={pos <= 0} onPress={() => showTicket(pos - 1)} bg={colors.brandSoft} color={colors.brandDeep} size={44} />
+                <T v="bodyBold" color={colors.brandDeep} accessibilityLiveRegion="polite">Ticket {pos + 1} of {siblings.length}</T>
+                <IconButton name="chevron-right" label="Next ticket" disabled={pos >= siblings.length - 1} onPress={() => showTicket(pos + 1)} bg={colors.brandSoft} color={colors.brandDeep} size={44} />
+              </Row>
+            ) : null}
           </View>
         </View>
       </ScrollView>
       <View style={{ padding: 24, paddingTop: 0 }}>
         {ticket.status === 'cancelled' ? (
           <Button title="Refund details" icon="cash-refund" variant="outlineLight" onPress={() => router.push('/help?section=refunds')} />
+        ) : over ? (
+          <Button title={reviewed ? 'Edit your review' : 'Leave a review'} icon="star-outline" variant="outlineLight" onPress={() => router.push(`/review/${event.id}`)} />
         ) : (
           <Button title={going ? 'View in calendar' : 'Add to calendar'} icon="calendar-plus" variant="outlineLight" onPress={addToCalendar} />
         )}

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { venueById } from '../data/mock';
 import type { EventItem } from '../data/types';
 import { parse, sameDay, TODAY } from '../lib/format';
 
@@ -14,9 +15,21 @@ export interface Filters {
   categories: string[];
   styles: string[];
   freeOnly: boolean;
+  /** Venue area picked under "Search for location" (e.g. 'Kreuzberg'). Only applies while location is 'search'. */
+  area?: string;
 }
 
-export const DEFAULT_FILTERS: Filters = { location: 'current', date: 'any', time: 'any', maxPrice: 250, categories: [], styles: [], freeOnly: false };
+export const DEFAULT_FILTERS: Filters = { location: 'current', date: 'any', time: 'any', maxPrice: 250, categories: [], styles: [], freeOnly: false, area: undefined };
+
+/** The area filter in effect: set and searching by location ("Current location" means near you, so it ignores any area). */
+export const activeArea = (f: Filters) => (f.location === 'search' && f.area ? f.area : undefined);
+
+/** Keeps area and location consistent: picking an area searches by location, going back to current location drops it. */
+function normalize(next: Filters, patch: Partial<Filters>): Filters {
+  if (patch.area && patch.location === undefined) return { ...next, location: 'search' };
+  if (patch.location === 'current' && patch.area === undefined) return { ...next, area: undefined };
+  return next;
+}
 
 interface FilterState {
   filters: Filters;
@@ -26,7 +39,7 @@ interface FilterState {
 
 export const useFilters = create<FilterState>()((set) => ({
   filters: DEFAULT_FILTERS,
-  set: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
+  set: (f) => set((s) => ({ filters: normalize({ ...s.filters, ...f }, f) })),
   reset: () => set({ filters: DEFAULT_FILTERS }),
 }));
 
@@ -36,12 +49,15 @@ export function activeFilterCount(f: Filters) {
   if (f.time !== 'any') n++;
   if (f.maxPrice < 250) n++;
   if (f.freeOnly) n++;
+  if (activeArea(f)) n++;
   n += f.categories.length + f.styles.length;
   return n;
 }
 
 export function applyFilters(events: EventItem[], f: Filters) {
+  const area = activeArea(f);
   return events.filter((e) => {
+    if (area && venueById(e.venueId)?.area !== area) return false;
     const start = parse(e.start);
     const min = Math.min(...e.ticketTypes.map((t) => t.price));
     if (f.freeOnly && min > 0) return false;

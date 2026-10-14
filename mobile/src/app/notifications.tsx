@@ -6,8 +6,9 @@ import { FollowButton } from '../components/cards';
 import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Avatar, Icon, type IconName, Photo, Row, T } from '../components/ui';
 import { notifications, profileById, venueById } from '../data/mock';
-import type { AppNotification, Ticket } from '../data/types';
-import { useApp } from '../store/useApp';
+import type { AppNotification, EventItem, Ticket } from '../data/types';
+import { parse, TODAY } from '../lib/format';
+import { useAllEvents, useApp } from '../store/useApp';
 import { colors, shadow } from '../theme';
 
 const TYPE_ICON: Record<AppNotification['type'], IconName> = {
@@ -26,12 +27,20 @@ function profileHref(id: string) {
   return p && (p.kind === 'dj' || p.kind === 'musician' || p.kind === 'band') ? `/artist/${id}` : `/profile/${id}`;
 }
 
+/** Ticket reminders are about the event with the actor's id; keep their countdown in step with today's date. */
+function ticketText(n: AppNotification, event: EventItem | undefined, hasTicket: boolean) {
+  if (!event) return n.text;
+  const days = Math.round((parse(event.start).getTime() - TODAY.getTime()) / 86_400_000);
+  const when = days <= 0 ? 'starts today' : days === 1 ? 'starts tomorrow' : `starts in ${days} days`;
+  return `${event.title} ${when}. ${hasTicket ? 'Your ticket is ready.' : 'Get your ticket before it sells out.'}`;
+}
+
 /** Where tapping a notification should take you. */
 function targetFor(n: AppNotification, tickets: Ticket[], bookingIds: string[]) {
   if (n.type === 'ticket') {
-    // "Your ticket is ready" opens the matching e-ticket, or your ticket list.
+    // "Your ticket is ready" opens the matching e-ticket, or the ticket shop when you have none.
     const t = tickets.find((x) => x.eventId === n.actorId && x.status === 'valid');
-    return t ? `/ticket/${t.id}` : '/my-bookings?tab=tickets';
+    return t ? `/ticket/${t.id}` : `/tickets/${n.actorId}`;
   }
   if (n.href?.startsWith('/booking/')) {
     return bookingIds.includes(n.href.slice('/booking/'.length)) ? n.href : '/my-bookings?tab=musician';
@@ -47,6 +56,7 @@ export default function Notifications() {
   const tickets = useApp((s) => s.tickets);
   const bookings = useApp((s) => s.bookings);
   const blocked = useApp((s) => s.blocked);
+  const events = useAllEvents();
   useFocusEffect(useCallback(() => markRead(), [markRead]));
   const sections: AppNotification['section'][] = ['Today', 'This week', 'Earlier'];
   const bookingIds = bookings.map((b) => b.id);
@@ -62,11 +72,15 @@ export default function Notifications() {
             <T v="smallBold" color={colors.muted} accessibilityRole="header">{sec}</T>
             {list.map((n) => {
               const actor = profileById(n.actorId);
+              const ticketEvent = n.type === 'ticket' ? events.find((e) => e.id === n.actorId) : undefined;
+              // Ticket reminders read as a sentence on their own, e.g. "Dance world starts in 8 days."
+              const text = n.type === 'ticket' ? ticketText(n, ticketEvent, tickets.some((t) => t.eventId === n.actorId && t.status === 'valid')) : n.text;
+              const name = n.type === 'ticket' && ticketEvent ? '' : actor?.name;
               return (
                 <Pressable
                   key={n.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`${actor?.name ?? ''} ${n.text}, ${n.time} ago`}
+                  accessibilityLabel={`${name ? `${name} ` : ''}${text}, ${n.time} ago`}
                   onPress={() => router.push(targetFor(n, tickets, bookingIds) as never)}
                   style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, backgroundColor: colors.surface, opacity: pressed ? 0.9 : 1, ...shadow(1) })}
                 >
@@ -77,7 +91,7 @@ export default function Notifications() {
                     </View>
                   </Pressable>
                   <View style={{ flex: 1 }}>
-                    <T v="body" numberOfLines={3}><T v="bodyBold">{actor?.name} </T>{n.text}</T>
+                    <T v="body" numberOfLines={3}>{name ? <T v="bodyBold">{name} </T> : null}{text}</T>
                     <T v="small" style={{ fontSize: 12 }}>{n.time}</T>
                   </View>
                   {n.type === 'follow' && actor ? <FollowButton id={actor.id} /> : n.thumb ? <Photo src={n.thumb} style={{ width: 52, height: 52 }} radius={10} /> : <Icon name="chevron-right" size={20} color={colors.subtle} />}

@@ -8,6 +8,17 @@ import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors, fonts } from '../theme';
 
+/** "+49 151 2345 4821" -> "+•• ••• •••• 4821": hide every digit except the last four, keeping the spacing. */
+function maskPhone(p: string) {
+  let seen = 0;
+  return p
+    .split('')
+    .reverse()
+    .map((ch) => (/\d/.test(ch) ? (seen++ < 4 ? ch : '•') : ch))
+    .reverse()
+    .join('');
+}
+
 export default function Verify() {
   const params = useLocalSearchParams<{ email?: string; phone?: string }>();
   const user = useApp((s) => s.user);
@@ -25,7 +36,7 @@ export default function Verify() {
 
   const email = params.email || user.email;
   const phone = params.phone || user.phone;
-  const target = by === 'email' ? email : phone.replace(/\d(?=\d{4})/g, '•');
+  const target = by === 'email' ? email : maskPhone(phone);
 
   const submit = () => {
     if (code.length !== 6) return setError('Enter all 6 digits');

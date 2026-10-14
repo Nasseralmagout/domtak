@@ -6,7 +6,7 @@ import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout
 import { Button, Card, Chip, Field, Icon, IconButton, Photo, Row, Stars, T } from '../../components/ui';
 import type { ImgKey } from '../../data/images';
 import { profileById, venueById } from '../../data/mock';
-import { shortDate } from '../../lib/format';
+import { parse, shortDate, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 import { colors } from '../../theme';
@@ -19,6 +19,7 @@ export default function Review() {
   const event = useEvent(id);
   const booking = useApp((s) => s.bookings.find((b) => b.id === id));
   const existing = useApp((s) => (id ? s.reviews[id] : undefined));
+  const usedTicket = useApp((s) => (id ? s.tickets.some((t) => t.eventId === id && t.status === 'used') : false));
   const submit = useApp((s) => s.submitReview);
   const addPost = useApp((s) => s.addPost);
   const [rating, setRating] = useState(existing?.rating ?? 4);
@@ -61,6 +62,26 @@ export default function Review() {
     );
   }
 
+  // Reviews open once the night is over: a past event or used ticket, or a completed booking.
+  const canReview = !!existing || (event ? parse(event.end) < TODAY || usedTicket : booking?.status === 'completed');
+  if (!canReview) {
+    const when = event ? shortDate(event.start) : booking ? shortDate(booking.date) : '';
+    return (
+      <Screen header={<ScreenHeader title="Leave a review" close onBack={back} />}>
+        <Card style={{ flexDirection: 'row', gap: 14, alignItems: 'center' }}>
+          <Photo src={image} style={{ width: 60, height: 60 }} radius={14} />
+          <View style={{ flex: 1 }}>
+            <T v="title">{title}</T>
+            <T v="small">{sub}</T>
+          </View>
+        </Card>
+        <T v="h3">Reviews open after the event</T>
+        <T v="body" color={colors.muted}>{`Come back after ${when} to rate ${title}.`}</T>
+        <Button title={booking ? 'Back to booking' : 'Your tickets'} variant="secondary" onPress={back} />
+      </Screen>
+    );
+  }
+
   if (done) {
     return (
       <Screen header={<ScreenHeader close onBack={back} />} contentStyle={{ alignItems: 'center', paddingTop: 48, gap: 14, paddingHorizontal: 24 }}>
@@ -68,9 +89,24 @@ export default function Review() {
           <Icon name="star" size={48} color={colors.gold} />
         </View>
         <T v="h2" center>Thanks for the review!</T>
-        <T v="body" color={colors.muted} center>{share ? 'It’s on the page and shared with your followers.' : 'It’s now visible on the page.'}</T>
+        <T v="body" color={colors.muted} center>
+          {booking
+            ? `It’s now on ${title}’s page${share ? ' and shared to your feed' : ''}.`
+            : share
+              ? 'It’s shared to your feed. You can edit it any time from Your bookings.'
+              : 'It’s saved with your tickets. You can edit it any time from Your bookings.'}
+        </T>
         <Button title="Done" full onPress={back} style={{ marginTop: 16 }} />
-        <Button title="Edit review" variant="ghost" full onPress={() => setDone(false)} />
+        <Button
+          title="Edit review"
+          variant="ghost"
+          full
+          onPress={() => {
+            // It's already been shared once; editing shouldn't post it to the feed a second time by default.
+            setShare(false);
+            setDone(false);
+          }}
+        />
       </Screen>
     );
   }
@@ -81,7 +117,7 @@ export default function Review() {
       header={<ScreenHeader title={existing ? 'Edit your review' : 'Leave a review'} close onBack={back} />}
       footer={
         <BottomBar>
-          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: share }} onPress={() => setShare(!share)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, minHeight: 40 }}>
+          <Pressable accessibilityRole="checkbox" accessibilityLabel="Also share to my feed" accessibilityState={{ checked: share }} onPress={() => setShare(!share)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, minHeight: 40 }}>
             <Icon name={share ? 'checkbox-marked' : 'checkbox-blank-outline'} size={22} color={colors.brand} />
             <T v="body">Also share to my feed</T>
           </Pressable>
