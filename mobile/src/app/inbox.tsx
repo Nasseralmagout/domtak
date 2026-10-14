@@ -21,20 +21,23 @@ const rowStyle: ViewStyle = { flexDirection: 'row', alignItems: 'center', gap: 1
 
 interface Party { name: string; avatar?: ImgKey; verified?: boolean; isVenue: boolean }
 
-/** A chat partner can be a person (musician, organizer, fan) or a venue (shown with its cover and the owner's listing edits). */
+/**
+ * A chat partner can be a person (musician, organizer, fan) or a venue (shown with its cover and the owner's listing edits).
+ * Every venue also has a stand-in account in `profiles`, so venues are resolved first.
+ */
 function party(id: string, listing: VenueListing): Party | undefined {
+  const v = overlayVenue(venueById(id), listing);
+  if (v) return { name: v.name, avatar: v.cover, verified: !!profileById(id)?.verified, isVenue: true };
   const p = profileById(id);
   if (p) return { name: p.name, avatar: p.avatar, verified: p.verified, isVenue: false };
-  const v = overlayVenue(venueById(id), listing);
-  if (v) return { name: v.name, avatar: v.cover, isVenue: true };
   return undefined;
 }
 
-function PartyName({ who }: { who?: Party }) {
+function PartyName({ who, venueIcon = true }: { who?: Party; venueIcon?: boolean }) {
   return (
     <Row gap={4} style={{ flex: 1 }}>
       <T v="bodyBold" numberOfLines={1} style={{ flexShrink: 1 }}>{who?.name}</T>
-      {who?.isVenue ? <Icon name="storefront-outline" size={15} color={colors.brandMid} /> : null}
+      {venueIcon && who?.isVenue ? <Icon name="storefront-outline" size={15} color={colors.brandMid} /> : null}
     </Row>
   );
 }
@@ -159,7 +162,8 @@ export default function Inbox() {
                 </View>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Row justify="space-between" gap={8}>
-                    <PartyName who={p} />
+                    {/* The booking line below already carries the venue/musician icon. */}
+                    <PartyName who={p} venueIcon={false} />
                     {last ? <T v="small" style={{ fontSize: 12 }}>{last.time}</T> : null}
                   </Row>
                   <Row gap={6}>

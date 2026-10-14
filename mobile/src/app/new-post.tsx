@@ -67,7 +67,8 @@ export default function NewPost() {
       },
       vis,
     );
-    toast(isStory ? 'Story shared' : vis === 'Public' ? 'Post published' : 'Shared with your followers. Find it in the Following feed.');
+    // Stories are published as a post at the top of your feed and on your profile (the stories row shows sample stories only).
+    toast(isStory ? 'Story shared. It’s at the top of your feed.' : vis === 'Public' ? 'Post published' : 'Shared with your followers. Find it in the Following feed.');
     router.replace(vis === 'Followers' ? '/(tabs)?tab=following' : '/(tabs)');
   };
 

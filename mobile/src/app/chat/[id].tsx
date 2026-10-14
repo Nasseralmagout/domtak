@@ -81,10 +81,23 @@ export default function Chat() {
   const convId = useApp((s) => (s.conversations.find((c) => c.id === id) ?? s.conversations.find((c) => c.withId === id))?.id);
   const conv = conversations.find((c) => c.id === convId);
   const withId = conv?.withId ?? id ?? '';
-  const person = profileById(withId);
-  // Venues chat too (e.g. venue bookings); the owner's own venue shows its listing edits.
-  const venue = useVenue(person ? undefined : withId);
+  // Venues chat too (e.g. venue bookings). Every venue also has a stand-in account in `profiles`, so resolve the
+  // venue first: the header then reads "Venue · <area>" and opens the venue page. The owner's own venue shows its listing edits.
+  const venue = useVenue(withId || undefined);
+  const person = venue ? undefined : profileById(withId);
   const other = useMemo<ChatParty | undefined>(() => {
+    if (venue) {
+      return {
+        id: venue.id,
+        name: venue.name,
+        avatar: venue.cover,
+        title: `Venue · ${venue.area}`,
+        verified: !!profileById(venue.id)?.verified,
+        meta: `${venue.type} · ${venue.area}, ${venue.city}`,
+        href: `/venue/${venue.id}`,
+        isVenue: true,
+      };
+    }
     if (person) {
       const artist = person.kind === 'dj' || person.kind === 'musician' || person.kind === 'band';
       return {
@@ -97,9 +110,6 @@ export default function Chat() {
         href: artist ? `/artist/${person.id}` : `/profile/${person.id}`,
         isVenue: false,
       };
-    }
-    if (venue) {
-      return { id: venue.id, name: venue.name, avatar: venue.cover, title: `Venue · ${venue.area}`, meta: `${venue.type} · ${venue.area}, ${venue.city}`, href: `/venue/${venue.id}`, isVenue: true };
     }
     return undefined;
   }, [person, venue]);

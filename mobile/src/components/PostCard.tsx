@@ -8,7 +8,7 @@ import { profileById, venueById } from '../data/mock';
 import type { Post, ProfileKind } from '../data/types';
 import { compact, shortDate, time } from '../lib/format';
 import { toast } from '../store/toast';
-import { useApp, useEvent } from '../store/useApp';
+import { overlayVenue, useApp, useEvent, type VenueListing } from '../store/useApp';
 import { colors, fonts } from '../theme';
 import { ActionSheet, type SheetAction } from './ActionSheet';
 import { Avatar, Button, Icon, IconButton, Photo, Row, T } from './ui';
@@ -38,13 +38,20 @@ export interface PostAuthor {
   kind: ProfileKind | 'venue';
 }
 
-/** The author of a post or comment: you, a profile, or a venue (venues post too, e.g. Moon Venue). */
-export function authorFor(id: string, me: { name: string; avatar?: ImgKey; role: string }): PostAuthor | undefined {
+/**
+ * The author of a post or comment: you, a venue (venues post too, e.g. Moon Venue) or a profile.
+ * Every venue also has a stand-in account in `profiles`, so venues are resolved first (kind 'venue', links to /venue/<id>).
+ * Pass the owner's `listing` to show their edits on their own venue.
+ */
+export function authorFor(id: string, me: { name: string; avatar?: ImgKey; role: string }, listing?: VenueListing): PostAuthor | undefined {
   if (id === 'me') return { id: 'me', name: me.name, avatar: me.avatar, title: 'You', verified: false, kind: 'fan' };
+  const seedVenue = venueById(id);
+  if (seedVenue) {
+    const v = listing ? overlayVenue(seedVenue, listing) : seedVenue;
+    return { id: v.id, name: v.name, avatar: v.cover, title: `Venue · ${v.area}`, verified: !!profileById(id)?.verified, kind: 'venue' };
+  }
   const p = profileById(id);
   if (p) return { id: p.id, name: p.name, avatar: p.avatar, title: p.title, verified: !!p.verified, kind: p.kind };
-  const v = venueById(id);
-  if (v) return { id: v.id, name: v.name, avatar: v.cover, title: `Venue · ${v.area}`, verified: false, kind: 'venue' };
   return undefined;
 }
 
@@ -52,6 +59,7 @@ export function authorFor(id: string, me: { name: string; avatar?: ImgKey; role:
 export const PostCard = memo(function PostCard({ post, onComment }: { post: Post; onComment?: () => void }) {
   const { width } = useWindowDimensions();
   const user = useApp((s) => s.user);
+  const venueListing = useApp((s) => s.venueListing);
   const liked = useApp((s) => !!s.likes[post.id]);
   const saved = useApp((s) => !!s.saves[post.id]);
   const extra = useApp((s) => s.extraComments[post.id]);
@@ -67,7 +75,7 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const [expanded, setExpanded] = useState(false);
   const lastTap = useRef(0);
 
-  const author = authorFor(post.authorId, user);
+  const author = authorFor(post.authorId, user, venueListing);
   if (!author) return null;
   const mediaH = Math.round(width * 1.12);
   const commentCount = post.comments.length + (extra?.length ?? 0);
@@ -120,7 +128,7 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   return (
     <View style={{ backgroundColor: colors.surface, marginBottom: 10 }}>
       <Row gap={10} style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${author.name}’s profile`} onPress={() => router.push(authorHref as never)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={author.kind === 'venue' ? `Open ${author.name} venue page` : `Open ${author.name}’s profile`} onPress={() => router.push(authorHref as never)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
           <Avatar src={author.avatar} size={40} label={author.name} ring />
           <View style={{ flex: 1 }}>
             <Row gap={4}>
@@ -135,7 +143,15 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
       </Row>
       <ActionSheet visible={menu} title={mine ? 'Your post' : `Post by ${author.name}`} actions={actions} onClose={() => setMenu(false)} />
 
-      <Pressable accessibilityLabel={`Photo by ${author.name}`} accessibilityHint="Double tap quickly to like" onPress={onMediaPress}>
+      <Pressable
+        accessibilityRole="imagebutton"
+        accessibilityLabel={`${post.media.length > 1 ? `${post.media.length} photos` : post.kind === 'video' ? 'Video' : 'Photo'} by ${author.name}${liked ? ', liked' : ''}`}
+        accessibilityHint={liked ? undefined : 'Double tap to like'}
+        // Screen readers turn a double tap into one activation, so activating the photo likes the post (like a quick double tap does).
+        accessibilityActions={[{ name: 'activate', label: 'Like' }]}
+        onAccessibilityAction={() => { if (!liked) toggleLike(post.id); }}
+        onPress={onMediaPress}
+      >
         {post.media.length > 1 ? (
           <FlatList
             data={post.media}
@@ -219,11 +235,11 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
           </Pressable>
         ) : null}
         {commentCount > 0 ? (
-          <Pressable accessibilityRole="button" onPress={() => openComments()} hitSlop={8}>
+          <Pressable accessibilityRole="button" onPress={() => openComments()} hitSlop={{ top: 8, bottom: 8 }} style={{ minHeight: 28, justifyContent: 'center', alignSelf: 'flex-start' }}>
             <T v="small">{commentCount === 1 ? 'View 1 comment' : `View all ${commentCount} comments`}</T>
           </Pressable>
         ) : null}
-        <Pressable accessibilityRole="button" accessibilityLabel="Add a comment" onPress={() => openComments(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, minHeight: 36 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Add a comment" onPress={() => openComments(true)} hitSlop={{ top: 4, bottom: 4 }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, minHeight: 36 }}>
           <Avatar src={user.avatar} size={26} label={user.name} />
           <T v="small" color={colors.subtle}>Add a comment…</T>
         </Pressable>

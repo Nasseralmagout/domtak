@@ -31,6 +31,7 @@ export default function PostDetail() {
   const posts = useFeedPosts();
   const post = posts.find((p) => p.id === id);
   const user = useApp((s) => s.user);
+  const venueListing = useApp((s) => s.venueListing);
   const extra = useApp((s) => (id ? s.extraComments[id] : undefined));
   const addComment = useApp((s) => s.addComment);
   const [text, setText] = useState('');
@@ -54,7 +55,7 @@ export default function PostDetail() {
     setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 80);
   };
   const replyTo = (authorId: string) => {
-    const a = authorFor(authorId, user);
+    const a = authorFor(authorId, user, venueListing);
     if (a && authorId !== 'me') {
       const mention = mentionFor(authorId, a.name);
       // Replace a leading @mention from an earlier Reply instead of stacking them.
@@ -105,19 +106,19 @@ export default function PostDetail() {
             </View>
           ) : null}
           {comments.map((c) => {
-            const a = authorFor(c.authorId, user);
+            const a = authorFor(c.authorId, user, venueListing);
             const on = !!liked[c.id];
             const likes = c.likes + (on ? 1 : 0);
             return (
               <Row key={c.id} gap={12} align="flex-start">
-                <Pressable accessibilityRole="button" accessibilityLabel={`Open ${a?.name ?? 'author'}’s profile`} onPress={() => router.push(profileHref(c.authorId) as never)} hitSlop={4}>
+                <Pressable accessibilityRole="button" accessibilityLabel={a?.kind === 'venue' ? `Open ${a.name} venue page` : `Open ${a?.name ?? 'author'}’s profile`} onPress={() => router.push(profileHref(c.authorId) as never)} hitSlop={4}>
                   <Avatar src={a?.avatar} size={36} label={a?.name} />
                 </Pressable>
                 <View style={{ flex: 1, gap: 2 }}>
                   <T v="body"><T v="bodyBold">{a?.name} </T>{c.text}</T>
                   <Row gap={14}>
                     <T v="small" style={{ fontSize: 12 }}>{c.time === 'now' ? 'Just now' : c.time}</T>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Reply to ${a?.name ?? 'comment'}`} onPress={() => replyTo(c.authorId)} hitSlop={12}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Reply to ${a?.name ?? 'comment'}`} onPress={() => replyTo(c.authorId)} hitSlop={14}>
                       <T v="smallBold" style={{ fontSize: 12 }} color={colors.muted}>Reply</T>
                     </Pressable>
                   </Row>
