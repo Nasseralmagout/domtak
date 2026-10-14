@@ -31,6 +31,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@mdi/js": "^7.4.47",
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
@@ -44,7 +45,8 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "export:android": "expo export --platform android",
-    "build:android": "npx eas-cli@latest build --platform android --profile preview"
+    "build:android": "npx eas-cli@latest build --platform android --profile preview",
+    "icons": "node scripts/gen-icon-paths.mjs"
   },
   "private": true
 }

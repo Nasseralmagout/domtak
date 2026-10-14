@@ -12,6 +12,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useSyncExternalStore } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ToastHost } from '../components/ActionSheet';
 import { useApp } from '../store/useApp';
 import { colors } from '../theme';
 
@@ -54,6 +55,7 @@ export default function RootLayout() {
         <Stack.Screen name="menu" options={{ presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }} />
         <Stack.Screen name="pro/scan" options={{ contentStyle: { backgroundColor: '#120A24' } }} />
       </Stack>
+      <ToastHost />
     </SafeAreaProvider>
   );
 }

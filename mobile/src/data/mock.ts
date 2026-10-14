@@ -269,11 +269,11 @@ export const events: EventItem[] = [
 export const posts: Post[] = [
   {
     id: 'p1', authorId: 'adam', kind: 'photo', media: ['feed_club'], likes: 50210, shares: 340, time: '2h', location: 'Moon Club, Berlin', eventId: 'danceworld',
-    caption: 'Thank you for supporting us with this wonderful night. We will have a concert for the next album soon 🖤', track: 'Adam — Spree Lights (Original Mix)', feed: ['forYou', 'following', 'nearby'],
+    caption: 'Thank you for supporting us with this wonderful night. We will have a concert for the next album soon.', track: 'Adam — Spree Lights (Original Mix)', feed: ['forYou', 'following', 'nearby'],
     comments: [
       { id: 'c1', authorId: 'suzi', text: 'Best set of the year!!', time: '1h', likes: 24 },
       { id: 'c2', authorId: 'toni', text: 'When is the next one?', time: '54m', likes: 8 },
-      { id: 'c3', authorId: 'adam', text: '@toni 22 Oct at Moon Club 🔥', time: '40m', likes: 31 },
+      { id: 'c3', authorId: 'adam', text: '@toni 22 Oct at Moon Club!', time: '40m', likes: 31 },
     ],
   },
   {
@@ -435,3 +435,89 @@ export const OCCASIONS = ['Birthday', 'Wedding', 'Corporate event', 'Club night'
 // Lookups
 export const profileById = (id: string) => profiles.find((p) => p.id === id);
 export const venueById = (id: string) => venues.find((v) => v.id === id);
+
+// ---------- Added for v1.1 screens ----------
+
+export interface ReviewItem {
+  id: string;
+  authorId: string;
+  targetId: string;
+  rating: number;
+  text: string;
+  date: string;
+  context: string;
+}
+
+export const reviews: ReviewItem[] = [
+  { id: 'rv1', authorId: 'maya', targetId: 'adam', rating: 5, text: 'Absolutely made our wedding. Read the room perfectly and kept the floor full until 3am.', date: '2026-09-28', context: 'Wedding · Moon Venue' },
+  { id: 'rv2', authorId: 'ben', targetId: 'adam', rating: 5, text: 'On time, professional, great sound. Booking again for NYE.', date: '2026-09-12', context: 'Club night · Moon Club' },
+  { id: 'rv3', authorId: 'clara', targetId: 'adam', rating: 4, text: 'Amazing set — chat replies were a bit slow before the gig.', date: '2026-08-30', context: 'Birthday · Arcada Rooftop' },
+  { id: 'rv4', authorId: 'nina', targetId: 'adam', rating: 5, text: 'The warm-up into peak time was perfect. Everyone asked who the DJ was.', date: '2026-08-02', context: 'Corporate event · Spree Loft' },
+  { id: 'rv5', authorId: 'toni', targetId: 'adam', rating: 4, text: 'Great music, arrived 20 minutes late but stayed longer to make up for it.', date: '2026-07-19', context: 'Private party · Kreuzberg' },
+  { id: 'rv6', authorId: 'leyla', targetId: 'sara', rating: 5, text: 'Her voice gave everyone goosebumps. Brought her own PA, zero hassle.', date: '2026-09-20', context: 'Garden party · Wannsee' },
+  { id: 'rv7', authorId: 'marc', targetId: 'sara', rating: 5, text: 'Perfect acoustic set for our café opening.', date: '2026-08-11', context: 'Opening · Friedrichshain' },
+  { id: 'rv8', authorId: 'suzi', targetId: 'moonclub', rating: 5, text: 'Best sound system in Kreuzberg. Staff were super helpful with our album release.', date: '2026-09-05', context: 'Album release' },
+  { id: 'rv9', authorId: 'kofi', targetId: 'moonclub', rating: 4, text: 'Great venue, the beach garden is a vibe. Queue management could be better.', date: '2026-08-21', context: 'Club night' },
+  { id: 'rv10', authorId: 'lina', targetId: 'moonvenue', rating: 5, text: 'Dream wedding location. The pergola at sunset is unreal.', date: '2026-09-14', context: 'Wedding' },
+];
+
+export const reviewsFor = (targetId: string) => reviews.filter((r) => r.targetId === targetId);
+
+export interface Transaction {
+  id: string;
+  title: string;
+  sub: string;
+  amount: number;
+  date: string;
+  status: 'escrow' | 'available' | 'paid out' | 'fee';
+}
+
+export const transactions: Transaction[] = [
+  { id: 'tx1', title: 'NYE Main Floor', sub: 'Moon Club · booking', amount: 2160, date: '2026-10-12', status: 'escrow' },
+  { id: 'tx2', title: 'Dance world Vol. 1', sub: 'Dance world · booking', amount: 900, date: '2026-09-28', status: 'available' },
+  { id: 'tx3', title: 'Sunset boat party', sub: 'Private · booking', amount: 1140, date: '2026-09-20', status: 'available' },
+  { id: 'tx4', title: 'Payout to IBAN ••0391', sub: 'Bank transfer', amount: -1080, date: '2026-10-01', status: 'paid out' },
+  { id: 'tx5', title: 'Pro plan', sub: 'Monthly subscription', amount: -9.99, date: '2026-10-01', status: 'fee' },
+  { id: 'tx6', title: 'Bunker Floor Vol. 6', sub: 'OG Collective · booking', amount: 810, date: '2026-09-06', status: 'available' },
+];
+
+/** Last 14 days, oldest first. */
+export const analytics = {
+  profileViews: [62, 70, 58, 81, 94, 120, 143, 88, 76, 91, 102, 133, 158, 171],
+  followersGained: [3, 5, 2, 6, 9, 14, 18, 4, 6, 7, 8, 12, 19, 22],
+  bookingRequests: [0, 1, 0, 0, 1, 2, 1, 0, 1, 0, 1, 2, 2, 1],
+  ticketSales: [4, 6, 9, 5, 12, 31, 44, 8, 10, 14, 17, 36, 52, 61],
+  topSources: [
+    { label: 'Home feed', share: 46 },
+    { label: 'Search', share: 22 },
+    { label: 'Event lineups', share: 18 },
+    { label: 'Map', share: 9 },
+    { label: 'Shared links', share: 5 },
+  ],
+};
+
+export const liveComments = [
+  { id: 'lc1', authorId: 'suzi', text: 'this voice!!!' },
+  { id: 'lc2', authorId: 'toni', text: 'play the new one!' },
+  { id: 'lc3', authorId: 'leyla', text: 'Royal Hall on Sunday, who is coming?' },
+  { id: 'lc4', authorId: 'kofi', text: 'greetings from Neukölln' },
+  { id: 'lc5', authorId: 'maya', text: 'goosebumps' },
+  { id: 'lc6', authorId: 'nina', text: 'can I book you for my wedding?' },
+];
+
+export const eventDiscussion: Record<string, { id: string; authorId: string; text: string; time: string; likes: number }[]> = {
+  danceworld: [
+    { id: 'ed1', authorId: 'kofi', text: 'Is there a cloakroom?', time: '3h', likes: 4 },
+    { id: 'ed2', authorId: 'danceworld', text: '@kofi yes, €2 per item, open all night.', time: '2h', likes: 12 },
+    { id: 'ed3', authorId: 'suzi', text: 'Who else is going for the Beach Garden at sunrise?', time: '1h', likes: 21 },
+    { id: 'ed4', authorId: 'toni', text: 'Last time the bunker floor was insane. Bring earplugs.', time: '40m', likes: 9 },
+  ],
+  bunker7: [
+    { id: 'ed5', authorId: 'ben', text: 'Set times out yet?', time: '5h', likes: 3 },
+    { id: 'ed6', authorId: 'mobolosa', text: 'Adam 23–01, Soso 01–04, 4 Cats closing. See you there!', time: '4h', likes: 28 },
+  ],
+};
+
+/** Followers of a profile, derived from the sample accounts. */
+export const followersOf = (id: string) => profiles.filter((p) => p.id !== id && (p.kind === 'fan' || p.id.length % 2 === id.length % 2)).slice(0, 14);
+export const followingOf = (id: string) => profiles.filter((p) => p.id !== id && p.kind !== 'fan').slice(0, 12);

@@ -37,6 +37,49 @@ export interface Review {
   tags: string[];
 }
 
+export type Weekday = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
+
+export interface Availability {
+  days: Record<Weekday, boolean>;
+  blockedDates: string[]; // ISO days (YYYY-MM-DD)
+  feePerHour: number;
+  minHours: number;
+  radiusKm: number;
+  instantBook: boolean;
+}
+
+export interface Promotion {
+  id: string;
+  eventId: string;
+  budget: number;
+  days: number;
+  radiusKm: number;
+  audience: string[];
+  createdAt: string;
+}
+
+export interface Payout {
+  id: string;
+  amount: number;
+  date: string;
+  status: 'paid' | 'processing';
+}
+
+export interface VenueListing {
+  name: string;
+  area: string;
+  type: 'Club' | 'Open air' | 'Hall' | 'Loft' | 'Garden' | 'Bar';
+  capacity: number;
+  rooms: number;
+  stages: number;
+  pricePerNight: number;
+  parking: boolean;
+  equipment: string;
+  occasions: string[];
+  description: string;
+  photos: ImgKey[];
+}
+
 interface State {
   onboarded: boolean;
   authed: boolean;
@@ -62,6 +105,14 @@ interface State {
   paymentMethods: PaymentMethod[];
   selectedPayment: string;
   checkout?: CheckoutDraft;
+
+  blocked: string[];
+  availability: Availability;
+  promotions: Promotion[];
+  plan: 'free' | 'monthly' | 'yearly';
+  venueListing: VenueListing;
+  payouts: Payout[];
+  balance: number;
 
   // actions
   completeOnboarding: () => void;
@@ -98,6 +149,13 @@ interface State {
   setSelectedPayment: (id: string) => void;
   addPaymentMethod: (m: Omit<PaymentMethod, 'id'>) => void;
   resetDemo: () => void;
+
+  toggleBlock: (profileId: string) => void;
+  setAvailability: (a: Partial<Availability>) => void;
+  promoteEvent: (p: Omit<Promotion, 'id' | 'createdAt'>) => string;
+  setPlan: (plan: State['plan']) => void;
+  updateVenueListing: (v: Partial<VenueListing>) => void;
+  requestPayout: () => number;
 }
 
 const defaultUser: User = {
@@ -143,6 +201,37 @@ const initialData = () => ({
   ],
   selectedPayment: 'visa',
   checkout: undefined,
+  blocked: [] as string[],
+  availability: {
+    days: { Mon: false, Tue: false, Wed: true, Thu: true, Fri: true, Sat: true, Sun: false },
+    blockedDates: ['2026-10-31', '2026-11-14'],
+    feePerHour: 300,
+    minHours: 2,
+    radiusKm: 50,
+    instantBook: false,
+  } as Availability,
+  promotions: [] as Promotion[],
+  plan: 'free' as 'free' | 'monthly' | 'yearly',
+  venueListing: {
+    name: 'Moon Club',
+    area: 'Kreuzberg',
+    type: 'Club',
+    capacity: 350,
+    rooms: 3,
+    stages: 2,
+    pricePerNight: 800,
+    parking: true,
+    equipment: 'Full equipment',
+    occasions: ['Club night', 'Concert / Musical', 'Birthday', 'Corporate event'],
+    description: 'Two dark rooms, a Funktion-One main floor and a beach garden for chill-out sets.',
+    photos: ['ven_neon', 'ev_club_dark', 'ev_lasers2', 'feed_club'],
+  } as VenueListing,
+  payouts: [
+    { id: 'po3', amount: 1080, date: '2026-10-01', status: 'paid' },
+    { id: 'po2', amount: 2160, date: '2026-09-15', status: 'paid' },
+    { id: 'po1', amount: 900, date: '2026-09-01', status: 'paid' },
+  ] as Payout[],
+  balance: 2040,
 });
 
 const toggleIn = (rec: Record<string, boolean>, id: string) => {
@@ -251,6 +340,22 @@ export const useApp = create<State>()(
         set((s) => ({ paymentMethods: [...s.paymentMethods, { ...m, id }], selectedPayment: id }));
       },
       resetDemo: () => set({ ...initialData() }),
+
+      toggleBlock: (id) => set((s) => ({ blocked: s.blocked.includes(id) ? s.blocked.filter((x) => x !== id) : [...s.blocked, id] })),
+      setAvailability: (a) => set((s) => ({ availability: { ...s.availability, ...a } })),
+      promoteEvent: (p) => {
+        const id = uid('promo');
+        set((s) => ({ promotions: [{ ...p, id, createdAt: new Date().toISOString() }, ...s.promotions] }));
+        return id;
+      },
+      setPlan: (plan) => set({ plan }),
+      updateVenueListing: (v) => set((s) => ({ venueListing: { ...s.venueListing, ...v } })),
+      requestPayout: () => {
+        const amount = get().balance;
+        if (amount <= 0) return 0;
+        set((s) => ({ balance: 0, payouts: [{ id: uid('po'), amount, date: new Date().toISOString().slice(0, 10), status: 'processing' }, ...s.payouts] }));
+        return amount;
+      },
     }),
     {
       name: 'domtak-app',
