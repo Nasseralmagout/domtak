@@ -165,7 +165,7 @@ export default function RequestReview() {
             <View style={{ gap: 8 }}>
               <View style={{ gap: 2 }}>
                 <T v="bodyBold" color={COUNTER_INK}>Counter offer {euro(countered)} sent</T>
-                <T v="small" color={COUNTER_INK}>{`${first} offered ${euro(req.offer)} and can accept your counter or reply in ${contact ? 'chat' : 'their inbox'}. Tap Accept to take the original offer instead.`}</T>
+                <T v="small" color={COUNTER_INK}>{`${first} offered ${euro(req.offer)} and can accept your counter or reply${contact ? ' in chat' : ''}. Tap Accept to take the original offer instead.`}</T>
                 {req.counterNote ? <T v="small" color={COUNTER_INK}>{`Your note: “${req.counterNote}”`}</T> : null}
               </View>
               <Button title="Edit counter offer" icon="pencil-outline" variant="secondary" size="sm" accessibilityLabel={`Edit your counter offer of ${euro(countered)}`} style={{ alignSelf: 'flex-start' }} onPress={startCounter} />
