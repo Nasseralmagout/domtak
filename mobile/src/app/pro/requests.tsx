@@ -35,15 +35,20 @@ export default function Requests() {
       ) : null}
       {list.map((r) => {
         const contact = contactOf(r);
+        // A counter offer stays open until the booker answers; once the request is decided it no longer applies.
+        const counter = r.status === 'new' ? r.counterOffer : undefined;
         return (
-        <Card key={r.id} style={{ gap: 12 }} accessibilityLabel={`${r.title} from ${r.requester}, ${euro(r.offer)}`} onPress={() => router.push(`/pro/request/${r.id}`)}>
+        <Card key={r.id} style={{ gap: 12 }} accessibilityLabel={`${r.title} from ${r.requester}, ${euro(r.offer)}${counter !== undefined ? `, you countered with ${euro(counter)}` : ''}`} onPress={() => router.push(`/pro/request/${r.id}`)}>
           <Row gap={12}>
             <Avatar src={contact?.avatar} label={r.initials} size={44} />
             <View style={{ flex: 1 }}>
               <T v="bodyBold">{r.requester}</T>
               <T v="small" style={{ fontSize: 12 }}>{r.requesterRole}</T>
             </View>
-            {chip(r)}
+            <View style={{ alignItems: 'flex-end', gap: 4 }}>
+              {chip(r)}
+              {counter !== undefined ? <Pill label={`Counter ${euro(counter)}`} icon="swap-horizontal" tone="brand" /> : null}
+            </View>
           </Row>
           <View style={{ gap: 2 }}>
             <T v="h3">{r.title}</T>

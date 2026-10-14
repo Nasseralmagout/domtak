@@ -7,24 +7,26 @@ import { goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, EmptyState, Icon, Photo, Pill, Row, Segmented, T } from '../../components/ui';
 import { events as seedEvents, venueById } from '../../data/mock';
 import type { EventItem } from '../../data/types';
-import { euro, eventWhen, parse, TODAY } from '../../lib/format';
+import { euro, eventWhen, isoDay, parse, shortDate, TODAY } from '../../lib/format';
+import { DAY_MS, doorsOpenAt, isPromoted, promotionChain, promotionEnd } from '../../lib/promotions';
 import { type Promotion, useApp } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
 
 /** For the demo, these seed organizers count as "you". */
 const DEMO_ORGANIZERS = ['mobolosa', 'og'];
-const DAY = 86_400_000;
 
-/** End of an event's promotion chain (extensions start when the previous boost ends). */
-function promotionEnd(list: Promotion[], eventId: string) {
-  return list
-    .filter((p) => p.eventId === eventId)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .reduce((end, p) => Math.max(end, Date.parse(p.createdAt)) + p.days * DAY, 0);
+type PromoState = { kind: 'none' } | { kind: 'running' | 'covered'; until: Date };
+
+/**
+ * Boost state on the demo clock (same rules as /pro/promote): 'covered' when the running boost
+ * already lasts until doors open, so there is nothing left to extend.
+ */
+function promoState(promotions: Promotion[], e: EventItem): PromoState {
+  const until = promotionEnd(promotions, e);
+  if (!until || !isPromoted(promotions, e, TODAY)) return { kind: 'none' };
+  const covered = promotionChain(promotions, e.id).end >= doorsOpenAt(e).getTime();
+  return { kind: covered ? 'covered' : 'running', until };
 }
-
-/** Boosts stop when doors open, so a promotion never outlasts the event start. */
-const promotedUntil = (list: Promotion[], e: EventItem) => Math.min(promotionEnd(list, e.id), parse(e.start).getTime());
 
 function stats(e: EventItem) {
   const sold = e.ticketTypes.reduce((n, t) => n + t.sold, 0);
@@ -34,23 +36,27 @@ function stats(e: EventItem) {
 }
 
 function daysUntil(iso: string) {
-  const d = Math.ceil((parse(iso).getTime() - TODAY.getTime()) / DAY);
+  const d = Math.ceil((parse(iso).getTime() - TODAY.getTime()) / DAY_MS);
   if (d <= 0) return 'Today';
   if (d === 1) return 'Tomorrow';
   return `In ${d} days`;
 }
 
-function ManageCard({ event, promoted, past, mine }: { event: EventItem; promoted: boolean; past: boolean; mine: boolean }) {
+function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: PromoState; past: boolean; mine: boolean }) {
   const venue = venueById(event.venueId);
   const { sold, capacity, revenue, pct } = stats(event);
   const soldOut = capacity > 0 && sold >= capacity;
+  const promoted = promo.kind !== 'none';
+  // Boosts run until doors open; private events are invite-only.
+  const canPromote = !past && !event.isPrivate && doorsOpenAt(event) > TODAY;
+  const until = promo.kind === 'none' ? '' : shortDate(isoDay(promo.until));
   return (
     <Card padded={false} style={{ overflow: 'hidden' }}>
       <View style={{ height: 136 }}>
         <Photo src={event.cover} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} accessibilityLabel={`${event.title} cover`} />
         <LinearGradient colors={['transparent', 'rgba(20,10,40,0.85)']} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 96 }} />
         <Row gap={6} style={{ position: 'absolute', top: 12, left: 12, right: 12, flexWrap: 'wrap' }}>
-          {promoted ? <Pill label="Promoted" icon="rocket-launch" tone="brand" /> : null}
+          {promoted ? <Pill label={`Promoted until ${until}`} icon="rocket-launch" tone="brand" /> : null}
           {event.isPrivate ? <Pill label="Private" icon="lock-outline" tone="neutral" /> : null}
           {mine ? <Pill label="New" tone="success" /> : null}
           {past ? <Pill label="Ended" tone="neutral" /> : null}
@@ -98,13 +104,19 @@ function ManageCard({ event, promoted, past, mine }: { event: EventItem; promote
 
         <Row gap={8}>
           <Button title="Manage" size="md" variant="primary" style={{ flex: 1, paddingHorizontal: 8 }} accessibilityLabel={`Manage ${event.title}`} onPress={() => router.push(`/pro/attendees/${event.id}`)} />
-          {!past && !event.isPrivate ? (
+          {canPromote ? (
             <Button
-              title={promoted ? 'Extend' : 'Promote'}
+              title={promo.kind === 'covered' ? 'Promoted' : promo.kind === 'running' ? 'Extend' : 'Promote'}
               size="md"
               variant="light"
               style={{ flex: 1, paddingHorizontal: 8 }}
-              accessibilityLabel={promoted ? `Extend promotion for ${event.title}` : `Promote ${event.title}`}
+              accessibilityLabel={
+                promo.kind === 'covered'
+                  ? `${event.title} is promoted until doors open on ${until}. View promotion`
+                  : promo.kind === 'running'
+                    ? `Extend promotion for ${event.title}, promoted until ${until}`
+                    : `Promote ${event.title}`
+              }
               onPress={() => router.push(`/pro/promote/${event.id}`)}
             />
           ) : null}
@@ -129,9 +141,9 @@ export default function ProEvents() {
   }, [myEvents]);
 
   const myIds = useMemo(() => new Set(myEvents.map((e) => e.id)), [myEvents]);
-  // Captured once per visit; new boosts start after this, so they always count as running.
-  const [now] = useState(() => Date.now());
-  const isPromoted = (e: EventItem) => promotedUntil(promotions, e) > now;
+  // Boost state per upcoming event, on the demo clock (boosts are stamped with TODAY).
+  const promos = useMemo(() => new Map(upcoming.map((e) => [e.id, promoState(promotions, e)])), [upcoming, promotions]);
+  const promoOf = (e: EventItem): PromoState => promos.get(e.id) ?? { kind: 'none' };
 
   const list = tab === 'upcoming' ? upcoming : past;
   const totals = upcoming.reduce(
@@ -141,7 +153,7 @@ export default function ProEvents() {
     },
     { sold: 0, revenue: 0 },
   );
-  const promotedCount = upcoming.filter(isPromoted).length;
+  const promotedCount = upcoming.filter((e) => promoOf(e).kind !== 'none').length;
 
   return (
     <Screen
@@ -185,7 +197,7 @@ export default function ProEvents() {
           <EmptyState icon="history" title="No past events yet" body="Once an event has ended, its final ticket sales and revenue show up here." />
         )
       ) : (
-        list.map((e) => <ManageCard key={e.id} event={e} promoted={tab === 'upcoming' && isPromoted(e)} past={tab === 'past'} mine={myIds.has(e.id)} />)
+        list.map((e) => <ManageCard key={e.id} event={e} promo={tab === 'upcoming' ? promoOf(e) : { kind: 'none' }} past={tab === 'past'} mine={myIds.has(e.id)} />)
       )}
     </Screen>
   );

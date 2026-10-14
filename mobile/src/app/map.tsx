@@ -88,7 +88,7 @@ export default function MapScreen() {
       <SafeAreaView edges={['bottom']} style={{ position: 'absolute', left: 16, right: 16, bottom: 12 }}>
         {quick !== 'venues' && sel ? (
           <View style={{ gap: 6 }}>
-            {promoted.has(sel.id) ? <Pill label="Sponsored" icon="star-four-points" /> : null}
+            {promoted.has(sel.id) ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
             <View style={promoted.has(sel.id) ? { borderRadius: radius.lg + 2, borderWidth: 2, borderColor: colors.gold } : undefined}>
               <EventRow event={sel} />
             </View>

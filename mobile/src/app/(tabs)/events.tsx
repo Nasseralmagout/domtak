@@ -1,27 +1,40 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventRow } from '../../components/cards';
 import { DomtakHeader } from '../../components/layout';
-import { Button, Icon, Photo, Row, T } from '../../components/ui';
-import { eventCategories, venueById } from '../../data/mock';
+import { Button, Icon, Photo, Pill, Row, T } from '../../components/ui';
+import { eventCategories } from '../../data/mock';
 import { parse, shortDate, time, TODAY } from '../../lib/format';
+import { isPromoted } from '../../lib/promotions';
 import { activeFilterCount, useFilters } from '../../store/filters';
-import { useAllEvents } from '../../store/useApp';
+import { useAllEvents, useApp, useVenues } from '../../store/useApp';
 import { colors, fonts, shadow } from '../../theme';
 
 export default function EventsTab() {
   const { width } = useWindowDimensions();
   const all = useAllEvents();
+  const venues = useVenues();
+  const promotions = useApp((s) => s.promotions);
   const filterCount = useFilters((s) => activeFilterCount(s.filters));
-  // Private events are invite-only, and past events don't belong in discovery.
-  const events = all.filter((e) => !e.isPrivate && parse(e.end) >= TODAY);
-  const featured = events.filter((e) => e.sponsored || e.going > 200).slice(0, 4);
+  const { featured, comingUp, promoted } = useMemo(() => {
+    // Private events are invite-only, and past events don't belong in discovery.
+    const open = all.filter((e) => !e.isPrivate && parse(e.end) >= TODAY);
+    const byDate = [...open].sort((a, b) => a.start.localeCompare(b.start));
+    // Boosted events (Pro → Promote) lead both lists in date order, marked as Sponsored.
+    const boosted = new Set(open.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
+    const sponsoredFirst = byDate.filter((e) => boosted.has(e.id));
+    return {
+      featured: [...sponsoredFirst, ...open.filter((e) => !boosted.has(e.id) && (e.sponsored || e.going > 200))].slice(0, 4),
+      comingUp: [...sponsoredFirst, ...byDate.filter((e) => !boosted.has(e.id))].slice(0, 4),
+      promoted: boosted,
+    };
+  }, [all, promotions]);
+  const venueName = (id: string) => venues.find((v) => v.id === id)?.name;
   const [slide, setSlide] = useState(0);
-  const thisWeek = [...events].sort((a, b) => a.start.localeCompare(b.start)).slice(0, 4);
   const tile = (width - 32 - 12) / 2;
 
   return (
@@ -37,13 +50,17 @@ export default function EventsTab() {
             keyExtractor={(e) => e.id}
             onMomentumScrollEnd={(e) => setSlide(Math.round(e.nativeEvent.contentOffset.x / width))}
             renderItem={({ item }) => (
-              <Pressable accessibilityRole="button" accessibilityLabel={item.title} onPress={() => router.push(`/event/${item.id}`)} style={{ width, height: 260 }}>
+              <Pressable accessibilityRole="button" accessibilityLabel={promoted.has(item.id) ? `Sponsored: ${item.title}` : item.title} onPress={() => router.push(`/event/${item.id}`)} style={{ width, height: 260 }}>
                 <Photo src={item.cover} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
                 <LinearGradient colors={['transparent', 'rgba(20,10,40,0.9)']} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 160 }} />
                 <View style={{ position: 'absolute', left: 20, right: 20, bottom: 28, gap: 4 }}>
-                  <Text style={{ color: colors.gold, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 1 }}>{item.sponsored ? 'FEATURED' : 'TRENDING IN BERLIN'}</Text>
+                  {promoted.has(item.id) ? (
+                    <Pill label="Sponsored" icon="star-four-points-outline" />
+                  ) : (
+                    <Text style={{ color: colors.gold, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 1 }}>{item.sponsored ? 'FEATURED' : 'TRENDING IN BERLIN'}</Text>
+                  )}
                   <Text style={{ color: colors.white, fontFamily: fonts.display, fontSize: 26 }} numberOfLines={1}>{item.title}</Text>
-                  <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }}>{shortDate(item.start)} · {time(item.start)} · {venueById(item.venueId)?.name}</Text>
+                  <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }} numberOfLines={1}>{[shortDate(item.start), time(item.start), venueName(item.venueId)].filter(Boolean).join(' · ')}</Text>
                 </View>
               </Pressable>
             )}
@@ -87,7 +104,12 @@ export default function EventsTab() {
             <T v="h3" color={colors.brandDeep}>Coming up</T>
             <Pressable accessibilityRole="button" accessibilityLabel="See all events" onPress={() => router.push('/events/all')} hitSlop={12}><T v="smallBold" color={colors.brand}>All events</T></Pressable>
           </Row>
-          {thisWeek.map((e) => <EventRow key={e.id} event={e} />)}
+          {comingUp.map((e) => (
+            <View key={e.id} style={{ gap: 6 }}>
+              {promoted.has(e.id) ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
+              <EventRow event={e} />
+            </View>
+          ))}
           <Button title="Browse venues" variant="secondary" icon="storefront-outline" onPress={() => router.push('/venues')} />
         </View>
       </ScrollView>

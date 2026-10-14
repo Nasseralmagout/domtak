@@ -11,10 +11,12 @@ import { colors, fonts } from '../theme';
 export default function Login() {
   const signIn = useApp((s) => s.signIn);
   const savedEmail = useApp((s) => s.user.email);
+  // Saved right away: without it, the next app launch starts signed out.
+  const remember = useApp((s) => s.prefs.rememberMe);
+  const setPref = useApp((s) => s.setPref);
   const [email, setEmail] = useState(savedEmail);
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string>();
 
   const submit = () => {
@@ -22,12 +24,12 @@ export default function Login() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return setError('Enter a valid email address');
     if (password.length < 6) return setError('Password must be at least 6 characters');
     setError(undefined);
-    signIn(e);
-    toast(remember ? 'Welcome back! You’ll stay signed in on this device.' : 'Welcome back!');
+    signIn(e, remember);
+    toast(remember ? 'Welcome back! You’ll stay signed in on this device.' : 'Welcome back! You’ll be signed out when you close the app.');
     router.replace('/(tabs)');
   };
   const social = (provider: 'Google' | 'Apple') => {
-    signIn(email.includes('@') ? email.trim() : savedEmail);
+    signIn(email.includes('@') ? email.trim() : savedEmail, remember);
     toast(`Signed in with ${provider}`);
     router.replace('/(tabs)');
   };
@@ -56,7 +58,7 @@ export default function Login() {
       {error ? <T v="small" color={colors.danger} accessibilityLiveRegion="polite">{error}</T> : null}
 
       <Row justify="space-between">
-        <Pressable accessibilityRole="checkbox" accessibilityLabel="Remember me" accessibilityState={{ checked: remember }} onPress={() => setRemember(!remember)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}>
+        <Pressable accessibilityRole="checkbox" accessibilityLabel="Remember me" accessibilityHint="Keeps you signed in after the app restarts" accessibilityState={{ checked: remember }} onPress={() => setPref('rememberMe', !remember)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
           <View style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 2, borderColor: colors.brand, backgroundColor: remember ? colors.brand : colors.surface, alignItems: 'center', justifyContent: 'center' }}>
             {remember ? <Icon name="check" size={14} color={colors.white} /> : null}
           </View>

@@ -5,8 +5,9 @@ import { View } from 'react-native';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/layout';
 import { Avatar, Button, Card, Chip, EmptyState, Field, Pill, Row, T } from '../../../components/ui';
 import { attendees as seedAttendees } from '../../../data/mock';
-import { euro, shortDate, time } from '../../../lib/format';
-import { useEvent } from '../../../store/useApp';
+import { euro, isoDay, shortDate, time, TODAY } from '../../../lib/format';
+import { doorsOpenAt, isPromoted, promotionChain, promotionEnd } from '../../../lib/promotions';
+import { useApp, useEvent } from '../../../store/useApp';
 import { colors } from '../../../theme';
 
 const NO_GUESTS: typeof seedAttendees = [];
@@ -14,12 +15,16 @@ const NO_GUESTS: typeof seedAttendees = [];
 export default function Attendees() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const event = useEvent(eventId);
+  const promotions = useApp((s) => s.promotions);
+  // Codes scanned at the door (shared with /pro/scan).
+  const scanned = useApp((s) => s.checkIns[eventId ?? '']);
   const [filter, setFilter] = useState<'all' | 'in' | 'out'>('all');
   const [q, setQ] = useState('');
 
   const sold = event ? event.ticketTypes.reduce((n, t) => n + t.sold, 0) : 0;
   // Demo attendee sample; an event with no tickets sold has nobody to list or check in.
-  const guests = sold > 0 ? seedAttendees : NO_GUESTS;
+  const sample = sold > 0 ? seedAttendees : NO_GUESTS;
+  const guests = useMemo(() => (scanned?.length ? sample.map((a) => (a.checkedIn || !scanned.includes(a.code) ? a : { ...a, checkedIn: true })) : sample), [sample, scanned]);
   const list = useMemo(
     () =>
       guests.filter((a) => (filter === 'all' || (filter === 'in' ? a.checkedIn : !a.checkedIn)) && (!q || `${a.name} ${a.code}`.toLowerCase().includes(q.toLowerCase()))),
@@ -34,7 +39,15 @@ export default function Attendees() {
   }
   const cap = event.ticketTypes.reduce((n, t) => n + t.capacity, 0);
   const revenue = event.ticketTypes.reduce((n, t) => n + t.sold * t.price, 0);
-  const checked = guests.filter((a) => a.checkedIn).length;
+  // Guests on the sample list plus any other ticket scanned at the door (e.g. your own), as /pro/scan counts them.
+  const checked = new Set([...guests.filter((a) => a.checkedIn).map((a) => a.code), ...(scanned ?? [])]).size;
+
+  // Same boost states as /pro/events: Promote, Extend while a boost runs, Promoted once it lasts until doors open.
+  const promoted = isPromoted(promotions, event, TODAY);
+  const promotedUntil = promotionEnd(promotions, event);
+  const covered = promoted && promotionChain(promotions, event.id).end >= doorsOpenAt(event).getTime();
+  const canPromote = !event.isPrivate && doorsOpenAt(event) > TODAY;
+  const until = promotedUntil ? shortDate(isoDay(promotedUntil)) : '';
 
   return (
     <Screen
@@ -44,16 +57,35 @@ export default function Attendees() {
           subtitle={`${shortDate(event.start)} · ${time(event.start)}`}
           onBack={() => goBack('/pro/events')}
           right={
-            <Button
-              title="Promote"
-              icon="rocket-launch-outline"
-              size="sm"
-              variant="light"
-              hitSlop={6}
-              style={{ marginRight: 12 }}
-              accessibilityLabel={`Promote ${event.title}`}
-              onPress={() => router.push(`/pro/promote/${event.id}`)}
-            />
+            canPromote ? (
+              <Button
+                title={covered ? 'Promoted' : promoted ? 'Extend' : 'Promote'}
+                icon={promoted ? 'rocket-launch' : 'rocket-launch-outline'}
+                size="sm"
+                variant="light"
+                hitSlop={6}
+                style={{ marginRight: 12 }}
+                accessibilityLabel={
+                  covered
+                    ? `${event.title} is promoted until doors open on ${until}. View promotion`
+                    : promoted
+                      ? `Extend promotion for ${event.title}, promoted until ${until}`
+                      : `Promote ${event.title}`
+                }
+                onPress={() => router.push(`/pro/promote/${event.id}`)}
+              />
+            ) : event.isPrivate ? (
+              <Button
+                title="Invite"
+                icon="account-plus-outline"
+                size="sm"
+                variant="light"
+                hitSlop={6}
+                style={{ marginRight: 12 }}
+                accessibilityLabel={`Invite guests to ${event.title}`}
+                onPress={() => router.push(`/invite?event=${event.id}`)}
+              />
+            ) : undefined
           }
         />
       }
@@ -87,8 +119,16 @@ export default function Attendees() {
         <EmptyState
           icon="ticket-outline"
           title={event.isPrivate ? 'No guests yet' : 'No tickets sold yet'}
-          body={event.isPrivate ? 'Guests show up here once they register with your invite link.' : 'Guests show up here as soon as they get a ticket. Promote the event to reach fans nearby.'}
-          action={event.isPrivate ? 'Invite guests' : 'Promote event'}
+          body={
+            event.isPrivate
+              ? 'Guests show up here once they register with your invite link.'
+              : promoted
+                ? `Guests show up here as soon as they get a ticket. Your boost runs until ${covered ? 'doors open on ' : ''}${until}.`
+                : canPromote
+                  ? 'Guests show up here as soon as they get a ticket. Promote the event to reach fans nearby.'
+                  : 'Guests show up here as soon as they get a ticket.'
+          }
+          action={event.isPrivate ? 'Invite guests' : canPromote && !covered ? (promoted ? 'Extend promotion' : 'Promote event') : undefined}
           onAction={() => router.push(event.isPrivate ? `/invite?event=${event.id}` : `/pro/promote/${event.id}`)}
         />
       ) : (

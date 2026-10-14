@@ -15,9 +15,8 @@ import { colors } from '../../../theme';
 const REASONS = ['Already booked that date', 'Offer below my fee', 'Not my music style', 'Other reason'];
 const FEE_RATE = 0.1;
 const WEEKDAY: Weekday[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-/** Counter offers sent during this session, by request id (the booker sees them in chat). */
-const sentCounters = new Map<string, number>();
+/** Text colour on brand-tinted banners (same as Banner's own text). */
+const COUNTER_INK = '#2E1D5E';
 
 /** "Thu 24 Dec 2026" -> Date */
 function requestDate(label: string) {
@@ -49,12 +48,12 @@ export default function RequestReview() {
   const setStatus = useApp((s) => s.setRequestStatus);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const sendMessage = useApp((s) => s.sendMessage);
+  const counterRequest = useApp((s) => s.counterRequest);
   const [sheet, setSheet] = useState(decline === '1');
   const [reason, setReason] = useState(REASONS[0]);
   const [counterOpen, setCounterOpen] = useState(false);
-  const [counter, setCounter] = useState(() => (id ? sentCounters.get(id) : undefined) ?? 0);
+  const [counter, setCounter] = useState(0);
   const [counterNote, setCounterNote] = useState('');
-  const [countered, setCountered] = useState(() => (id ? sentCounters.get(id) : undefined));
 
   if (!req) {
     return (
@@ -64,6 +63,8 @@ export default function RequestReview() {
       </Screen>
     );
   }
+  // A saved counter offer is pending until the booker answers; accepting takes their original offer.
+  const countered = req.status === 'new' ? req.counterOffer : undefined;
   const amount = countered ?? req.offer;
   const fee = amount * FEE_RATE;
   const first = req.requester.split(' ')[0];
@@ -73,21 +74,23 @@ export default function RequestReview() {
   const openChat = () => (contact ? router.push(`/chat/${ensureConversation(contact.id)}`) : router.push('/inbox'));
   const startCounter = () => {
     setCounter(countered ?? Math.max(availability.feePerHour * req.hours, req.offer + 100));
+    setCounterNote(req.counterNote ?? '');
     setCounterOpen(true);
   };
   const sendCounter = () => {
-    sentCounters.set(req.id, counter);
-    setCountered(counter);
+    const note = counterNote.trim();
+    const edited = countered !== undefined;
+    counterRequest(req.id, counter, note);
     setCounterOpen(false);
     if (contact) {
       const cid = ensureConversation(contact.id);
-      sendMessage(cid, { type: 'text', text: `Counter offer for ${req.title} (${req.date}): ${euro(counter)} for ${req.hours} h.${counterNote.trim() ? ` ${counterNote.trim()}` : ''}` });
+      sendMessage(cid, { type: 'text', text: `${edited ? 'Updated counter offer' : 'Counter offer'} for ${req.title} (${req.date}): ${euro(counter)} for ${req.hours} h.${note ? ` ${note}` : ''}` });
     }
-    toast(`Counter offer of ${euro(counter)} sent to ${first}`);
+    toast(`${edited ? 'Updated counter offer' : 'Counter offer'} of ${euro(counter)} sent to ${first}`);
   };
   const accept = () => {
     setStatus(req.id, 'accepted');
-    toast(`Accepted ${req.title}. ${first} has 24 h to pay.`);
+    toast(`Accepted ${req.title} for ${euro(req.offer)}. ${first} has 24 h to pay.`);
   };
 
   if (req.status === 'accepted' && !sheet) {
@@ -106,11 +109,12 @@ export default function RequestReview() {
           <Icon name="check" size={48} color={colors.white} />
         </View>
         <T v="h2" center>Booking accepted</T>
-        <T v="body" color={colors.muted} center>{req.requester} has 24 h to pay. We’ll notify you when {euro(amount)} is held in escrow and the date is locked in your calendar.</T>
+        <T v="body" color={colors.muted} center>{req.requester} has 24 h to pay. We’ll notify you when {euro(req.offer)} is held in escrow and the date is locked in your calendar.</T>
         <Card style={{ alignSelf: 'stretch', gap: 6, marginTop: 8 }}>
           <KeyValue k="Date" v={req.date} />
           <KeyValue k="Time" v={req.time} />
-          <KeyValue k="You receive" v={euro(amount - fee, true)} color={colors.brand} />
+          <KeyValue k="Offer" v={euro(req.offer, true)} />
+          <KeyValue k="You receive" v={euro(req.offer * (1 - FEE_RATE), true)} color={colors.brand} />
         </Card>
       </Screen>
     );
@@ -126,7 +130,7 @@ export default function RequestReview() {
               <Row gap={8}>
                 <Button title="Decline" variant="secondary" size="md" style={{ flex: 1, borderColor: colors.borderStrong }} onPress={() => setSheet(true)} />
                 <Button title="Counter" accessibilityLabel={countered ? `Edit your counter offer of ${euro(countered)}` : 'Make a counter offer'} variant="secondary" size="md" style={{ flex: 1, paddingHorizontal: 12 }} onPress={startCounter} />
-                <Button title="Accept" size="md" style={{ flex: 1 }} onPress={accept} />
+                <Button title="Accept" accessibilityLabel={`Accept ${first}’s offer of ${euro(req.offer)}`} size="md" style={{ flex: 1 }} onPress={accept} />
               </Row>
             </BottomBar>
           ) : null
@@ -156,14 +160,24 @@ export default function RequestReview() {
             <Banner icon="calendar-check" tone="success">You’re free that night. No calendar conflicts.</Banner>
           )
         ) : null}
-        {countered ? (
-          <Banner icon="swap-horizontal" tone="brand">{`You countered with ${euro(countered)}${req.offer !== countered ? ` (offer was ${euro(req.offer)})` : ''}. ${first} can accept or reply in chat.`}</Banner>
+        {countered !== undefined ? (
+          <Banner icon="swap-horizontal" tone="brand">
+            <View style={{ gap: 8 }}>
+              <View style={{ gap: 2 }}>
+                <T v="bodyBold" color={COUNTER_INK}>Counter offer {euro(countered)} sent</T>
+                <T v="small" color={COUNTER_INK}>{`${first} offered ${euro(req.offer)} and can accept your counter or reply in ${contact ? 'chat' : 'their inbox'}. Tap Accept to take the original offer instead.`}</T>
+                {req.counterNote ? <T v="small" color={COUNTER_INK}>{`Your note: “${req.counterNote}”`}</T> : null}
+              </View>
+              <Button title="Edit counter offer" icon="pencil-outline" variant="secondary" size="sm" accessibilityLabel={`Edit your counter offer of ${euro(countered)}`} style={{ alignSelf: 'flex-start' }} onPress={startCounter} />
+            </View>
+          </Banner>
         ) : null}
         <Card style={{ gap: 6 }}>
-          <KeyValue k={countered ? 'Your counter offer' : 'Offer'} v={euro(amount, true)} />
+          {countered !== undefined ? <KeyValue k="Their offer" v={euro(req.offer, true)} /> : null}
+          <KeyValue k={countered !== undefined ? 'Your counter offer' : 'Offer'} v={euro(amount, true)} />
           <KeyValue k="Domtak fee (10%)" v={`−${euro(fee, true)}`} />
           <Divider style={{ marginVertical: 6 }} />
-          <KeyValue k="You receive" v={euro(amount - fee, true)} strong color={colors.brand} />
+          <KeyValue k={countered !== undefined ? `You receive if ${first} accepts` : 'You receive'} v={euro(amount - fee, true)} strong color={colors.brand} />
           <T v="small" style={{ fontSize: 12 }}>Paid into escrow when the booker pays, released 24 h after the gig.</T>
         </Card>
         {req.status === 'declined' ? <Banner icon="close" tone="danger">You declined this request. The booker was notified and not charged.</Banner> : null}
@@ -210,7 +224,7 @@ export default function RequestReview() {
             <Pressable accessibilityRole="button" accessibilityLabel="Close counter offer" style={{ flex: 1 }} onPress={() => setCounterOpen(false)} />
             <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: insets.bottom + 20, gap: 14 }}>
               <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
-              <T v="h3">Counter offer</T>
+              <T v="h3">{countered !== undefined ? 'Edit counter offer' : 'Counter offer'}</T>
               <T v="small">{req.title} · {req.date} · {req.hours} h. {first} offered {euro(req.offer)}; your usual fee is {euro(availability.feePerHour)}/h ({euro(availability.feePerHour * req.hours)}).</T>
               <Row justify="space-between">
                 <View>
@@ -228,7 +242,7 @@ export default function RequestReview() {
               <KeyValue k="You’d receive" v={euro(counter * (1 - FEE_RATE), true)} color={colors.brand} />
               <Row gap={10}>
                 <Button title="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setCounterOpen(false)} />
-                <Button title="Send counter" style={{ flex: 1 }} disabled={counter === req.offer} onPress={sendCounter} />
+                <Button title={countered !== undefined ? 'Update counter' : 'Send counter'} style={{ flex: 1 }} disabled={counter === req.offer} onPress={sendCounter} />
               </Row>
               {counter === req.offer ? <T v="small" center>That’s the same as the offer. Tap Accept instead.</T> : null}
             </View>

@@ -29,15 +29,16 @@ const net = (offer: number) => Math.round(offer * 0.9);
 /** Gigs that already have a mock transaction; newly accepted ones are booked into escrow today (same rule as /pro/earnings). */
 const KNOWN_TITLES = new Set(transactions.map((t) => t.title));
 
-type QuickAction = { key: string; icon: IconName; label: string; href: string; badge?: number };
+type QuickAction = { key: string; icon: IconName; label: string; href: string; badge?: number; a11y?: string };
 
+/** Role-aware entry points: everyone gets Requests and Earnings; musicians Availability, venue owners their listing, organizers their events. */
 function quickActions(role: Role, newRequests: number): QuickAction[] {
   const list: QuickAction[] = [
-    { key: 'requests', icon: 'inbox-arrow-down', label: 'Requests', href: '/pro/requests', badge: newRequests },
+    { key: 'requests', icon: 'inbox-arrow-down', label: 'Requests', href: '/pro/requests', badge: newRequests, a11y: 'Booking requests' },
     { key: 'earnings', icon: 'wallet-outline', label: 'Earnings', href: '/pro/earnings' },
   ];
   if (role === 'musician') list.push({ key: 'availability', icon: 'calendar-check', label: 'Availability', href: '/pro/availability' });
-  if (role === 'venue') list.push({ key: 'venue', icon: 'storefront-outline', label: 'My venue', href: '/pro/venue-listing' });
+  if (role === 'venue') list.push({ key: 'venue', icon: 'storefront-outline', label: 'My venue', href: '/pro/venue-listing', a11y: 'My venue listing' });
   if (role === 'organizer') {
     list.push({ key: 'events', icon: 'calendar-star', label: 'My events', href: '/pro/events' });
     list.push({ key: 'new-event', icon: 'calendar-plus', label: 'New event', href: '/create-event' });
@@ -46,11 +47,11 @@ function quickActions(role: Role, newRequests: number): QuickAction[] {
   return list;
 }
 
-function Action({ icon, label, badge, onPress }: { icon: IconName; label: string; badge?: number; onPress: () => void }) {
+function Action({ icon, label, badge, a11y, onPress }: { icon: IconName; label: string; badge?: number; a11y?: string; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${label}${badge ? `, ${badge} new` : ''}`}
+      accessibilityLabel={`${a11y ?? label}${badge ? `, ${badge} new` : ''}`}
       onPress={onPress}
       style={({ pressed }) => ({ flex: 1, alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 2, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.85 : 1 })}
     >
@@ -135,7 +136,7 @@ export default function Workspace() {
 
         <Row gap={6} align="stretch">
           {actions.map((a) => (
-            <Action key={a.key} icon={a.icon} label={a.label} badge={a.badge} onPress={() => router.push(a.href as never)} />
+            <Action key={a.key} icon={a.icon} label={a.label} badge={a.badge} a11y={a.a11y} onPress={() => router.push(a.href as never)} />
           ))}
         </Row>
 

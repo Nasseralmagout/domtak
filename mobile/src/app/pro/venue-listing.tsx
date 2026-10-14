@@ -9,10 +9,11 @@ import type { ImgKey } from '../../data/images';
 import { OCCASIONS, venueById } from '../../data/mock';
 import { euro } from '../../lib/format';
 import { toast } from '../../store/toast';
-import { useApp, type VenueListing } from '../../store/useApp';
+import { OWN_VENUE_ID, useApp, type VenueListing } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
 
-const PUBLIC_VENUE_ID = 'moonclub';
+/** Your public venue page (/venue/moonclub) shows the saved listing. */
+const PUBLIC_VENUE_ID = OWN_VENUE_ID;
 const PHOTO_OPTIONS: ImgKey[] = ['ven_neon', 'ven_moon', 'ven_hall', 'ven_loft', 'ven_garden', 'ven_forest', 'ev_club_dark', 'ev_lasers2', 'feed_club', 'feed_rooftop'];
 const TYPES: VenueListing['type'][] = ['Club', 'Open air', 'Hall', 'Loft', 'Garden', 'Bar'];
 const EQUIPMENT = ['Full equipment', 'Sound & light', 'Sound system', 'Stage only', 'No equipment'];
@@ -81,8 +82,12 @@ export default function VenueListingEditor() {
     if (draft.occasions.length === 0) return setError('Pick at least one occasion');
     setError(undefined);
     updateVenueListing({ ...draft, name: draft.name.trim(), area: draft.area.trim(), description: draft.description.trim() });
-    toast('Venue listing saved');
+    toast('Saved. Your changes are live on your public venue page.');
     goBack('/pro/workspace');
+  };
+  const viewPublic = () => {
+    if (dirty) toast('Your public page shows your last saved listing. Save to publish these changes.');
+    router.push(`/venue/${PUBLIC_VENUE_ID}`);
   };
 
   const facts: { icon: IconName; label: string }[] = [
@@ -98,9 +103,9 @@ export default function VenueListingEditor() {
       header={
         <ScreenHeader
           title="My venue listing"
-          subtitle={dirty ? 'Unsaved changes' : 'Visible to organizers and fans'}
+          subtitle={dirty ? 'Unsaved changes · not live yet' : 'Live on your public page'}
           onBack={() => goBack('/pro/workspace')}
-          right={<IconButton name="open-in-new" label="View public page" color={colors.brand} onPress={() => router.push(`/venue/${PUBLIC_VENUE_ID}`)} />}
+          right={<IconButton name="open-in-new" label={dirty ? 'View public page, last saved version' : 'View public page'} color={colors.brand} onPress={viewPublic} />}
         />
       }
       footer={
@@ -116,11 +121,22 @@ export default function VenueListingEditor() {
       {/* Live preview */}
       <View style={{ gap: 8 }}>
         <Row justify="space-between">
-          <T v="caption">LIVE PREVIEW</T>
-          <Pressable accessibilityRole="link" onPress={() => router.push(`/venue/${PUBLIC_VENUE_ID}`)} hitSlop={10} style={{ minHeight: 32, justifyContent: 'center' }}>
+          <T v="caption">{dirty ? 'PREVIEW · NOT SAVED' : 'PREVIEW · LIVE'}</T>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={dirty ? 'View public page, last saved version' : 'View public page'}
+            onPress={viewPublic}
+            hitSlop={10}
+            style={{ minHeight: 32, justifyContent: 'center' }}
+          >
             <T v="smallBold" color={colors.brand}>View public page</T>
           </Pressable>
         </Row>
+        <T v="small">
+          {dirty
+            ? 'Save to publish these edits. Until then, organizers and fans see your last saved listing.'
+            : 'This is what organizers and fans see on your venue page, in search and on the map. Edits go live as soon as you save.'}
+        </T>
         <Card padded={false} style={{ overflow: 'hidden' }}>
           <View style={{ height: 170 }}>
             <Photo src={cover} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} accessibilityLabel="Cover photo" />

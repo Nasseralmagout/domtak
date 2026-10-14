@@ -6,15 +6,10 @@ import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, Divider, Field, Icon, KeyValue, Photo, Radio, Row, T } from '../components/ui';
 import { profileById, venueById } from '../data/mock';
 import { euro, eventWhen, shortDate } from '../lib/format';
+import { applyPromo, findPromo } from '../lib/promos';
 import { toast } from '../store/toast';
-import { useApp, useEvent } from '../store/useApp';
+import { overlayVenue, useApp, useEvent } from '../store/useApp';
 import { colors, fonts } from '../theme';
-
-/** Ticket promo codes (same list as Help → Promo code). */
-const PROMOS: Record<string, { label: string; off: (subtotal: number) => number }> = {
-  BERLIN10: { label: '10% off tickets', off: (n) => n * 0.1 },
-  DOMTAK5: { label: '€5 off your order', off: (n) => Math.min(5, n) },
-};
 
 /** Demo bank: this code is always declined so the failure path can be tried. */
 const DECLINE_CODE = '0000';
@@ -27,6 +22,7 @@ export default function Checkout() {
   const selected = useApp((s) => s.selectedPayment);
   const setSelected = useApp((s) => s.setSelectedPayment);
   const complete = useApp((s) => s.completeCheckout);
+  const venueListing = useApp((s) => s.venueListing);
   const event = useEvent(draft?.kind === 'ticket' ? draft.eventId : undefined);
   const booking = draft?.kind === 'booking' ? bookings.find((b) => b.id === draft.bookingId) : undefined;
   const [step, setStep] = useState<'review' | 'verify' | 'failed'>('review');
@@ -66,29 +62,34 @@ export default function Checkout() {
   if (draft.kind === 'ticket' && event && ticketType) {
     const type = ticketType;
     title = event.title;
-    sub = `${eventWhen(event.start, event.end)} · ${venueById(event.venueId)?.name}`;
+    const venueName = overlayVenue(venueById(event.venueId), venueListing)?.name;
+    sub = venueName ? `${eventWhen(event.start, event.end)} · ${venueName}` : eventWhen(event.start, event.end);
     lines = [{ k: `${draft.qty}× ${type.name}`, v: type.price * draft.qty }, ...(type.price > 0 ? [{ k: 'Service fee', v: 1.5 * draft.qty }] : [])];
   } else if (booking) {
-    const target = booking.type === 'musician' ? profileById(booking.targetId) : venueById(booking.targetId);
-    title = target?.name ?? 'Booking';
-    image = booking.type === 'musician' ? (profileById(booking.targetId)?.avatar ?? image) : (venueById(booking.targetId)?.cover ?? image);
+    // A venue shows as its public page does, including the owner's listing edits.
+    const venue = booking.type === 'musician' ? undefined : overlayVenue(venueById(booking.targetId), venueListing);
+    const artist = booking.type === 'musician' ? profileById(booking.targetId) : undefined;
+    title = (artist ?? venue)?.name ?? 'Booking';
+    image = artist?.avatar ?? venue?.cover ?? image;
     sub = `${booking.eventTitle} · ${shortDate(booking.date)} · ${booking.startTime}–${booking.endTime}`;
     lines = [{ k: booking.type === 'musician' ? `${booking.hours} hours` : '1 night', v: booking.amount }, { k: 'Escrow protection', v: 0 }];
   }
   const subtotal = lines.reduce((n, l) => n + l.v, 0);
-  const discount = promo && draft.kind === 'ticket' ? Math.round(PROMOS[promo].off(lines[0]?.v ?? 0) * 100) / 100 : 0;
+  // Promo codes apply to the tickets themselves, not the service fee.
+  const applied = promo && draft.kind === 'ticket' ? applyPromo(promo, lines[0]?.v ?? 0) : null;
+  const discount = applied?.discount ?? 0;
   const total = Math.max(0, subtotal - discount);
   const vat = total - total / 1.19;
   const free = subtotal === 0;
   const method = methods.find((m) => m.id === selected);
 
-  const applyPromo = () => {
-    const c = promoInput.trim().toUpperCase();
-    if (!c) return setPromoError('Enter a code');
-    if (!PROMOS[c]) return setPromoError('This code isn’t valid. Check the spelling or expiry date.');
-    setPromo(c);
+  const submitPromo = () => {
+    if (!promoInput.trim()) return setPromoError('Enter a code');
+    const found = findPromo(promoInput);
+    if (!found) return setPromoError('This code isn’t valid. Check the spelling or expiry date.');
+    setPromo(found.code);
     setPromoError(undefined);
-    toast(`${c} applied: ${PROMOS[c].label}`);
+    toast(`${found.code} applied: ${found.label}`);
   };
 
   const confirm = () => {
@@ -196,14 +197,14 @@ export default function Checkout() {
             <Row justify="space-between">
               <Row gap={8} style={{ flex: 1 }}>
                 <Icon name="ticket-percent-outline" size={20} color={colors.success} />
-                <T v="bodyBold" color={colors.success} style={{ flex: 1 }}>{promo} · {PROMOS[promo].label}</T>
+                <T v="bodyBold" color={colors.success} style={{ flex: 1 }}>{promo} · {findPromo(promo)?.label}</T>
               </Row>
               <Button title="Remove" variant="ghost" size="sm" onPress={() => { setPromo(undefined); setPromoInput(''); toast('Promo code removed'); }} />
             </Row>
           ) : (
             <Row gap={10} align="flex-start">
-              <Field placeholder="e.g. BERLIN10" value={promoInput} onChangeText={(t) => { setPromoInput(t.toUpperCase()); setPromoError(undefined); }} autoCapitalize="characters" accessibilityLabel="Promo code" error={promoError} onSubmitEditing={applyPromo} style={{ flex: 1 }} />
-              <Button title="Apply" size="md" style={{ marginTop: 4 }} onPress={applyPromo} />
+              <Field placeholder="e.g. BERLIN10" value={promoInput} onChangeText={(t) => { setPromoInput(t.toUpperCase()); setPromoError(undefined); }} autoCapitalize="characters" accessibilityLabel="Promo code" error={promoError} onSubmitEditing={submitPromo} style={{ flex: 1 }} />
+              <Button title="Apply" size="md" style={{ marginTop: 4 }} onPress={submitPromo} />
             </Row>
           )}
         </Card>

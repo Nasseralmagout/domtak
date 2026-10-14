@@ -6,7 +6,7 @@ import { Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, Divider, Icon, type IconName, KeyValue, Pill, Row, SectionTitle, Segmented, T } from '../../components/ui';
 import { analytics, transactions, type Transaction } from '../../data/mock';
 import type { IncomingRequest } from '../../data/types';
-import { euro, isoDay, shortDate, TODAY } from '../../lib/format';
+import { euro, isoDay, parse, shortDate, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { type Payout, useApp } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
@@ -21,11 +21,15 @@ const money = (n: number) => euro(Math.abs(n), !Number.isInteger(n));
 /** ISO days for the 14 analytics points, oldest first, ending on TODAY. */
 const DAYS = analytics.profileViews.map((_, i, all) => isoDay(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() - (all.length - 1 - i), 12)));
 
-const TX_STATUS: Record<Transaction['status'], { label: string; tone: 'success' | 'warning' | 'neutral' | 'brand'; icon: IconName }> = {
+/** A ledger row: a mock transaction, an accepted gig in escrow, or a payout you requested (processing). */
+type LedgerRow = Omit<Transaction, 'status'> & { status: Transaction['status'] | 'processing' };
+
+const TX_STATUS: Record<LedgerRow['status'], { label: string; tone: 'success' | 'warning' | 'neutral' | 'brand'; icon: IconName }> = {
   escrow: { label: 'In escrow', tone: 'warning', icon: 'lock-clock' },
   available: { label: 'Available', tone: 'success', icon: 'arrow-down-bold-circle-outline' },
   'paid out': { label: 'Paid out', tone: 'neutral', icon: 'bank-transfer-out' },
   fee: { label: 'Fee', tone: 'neutral', icon: 'receipt-text-outline' },
+  processing: { label: 'Processing', tone: 'warning', icon: 'bank-transfer-out' },
 };
 
 const PAYOUT_STATUS: Record<Payout['status'], { label: string; tone: 'success' | 'warning' }> = {
@@ -34,19 +38,41 @@ const PAYOUT_STATUS: Record<Payout['status'], { label: string; tone: 'success' |
 };
 
 const KNOWN_TITLES = new Set(transactions.map((t) => t.title));
+/** Seed payouts ("po1"…) are already in the mock history; payouts requested in the app get ids like "po_…". */
+const isSeedPayout = (p: Payout) => /^po\d+$/.test(p.id);
+
+/** The day a transfer requested on `from` arrives: `n` business days later (demo clock, never the device clock). */
+function businessDaysAfter(from: Date, n: number) {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 12);
+  for (let left = n; left > 0; ) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) left--;
+  }
+  return isoDay(d);
+}
+const arrivesBy = (iso: string) => shortDate(businessDaysAfter(parse(iso), 2));
+
+/** "DE•• •••• 0391" -> "Payout to IBAN ••0391" (same wording as the mock history). */
+const payoutTitle = (account: string) => {
+  const tail = /(\d{4})\s*$/.exec(account)?.[1];
+  return tail ? `Payout to IBAN ••${tail}` : 'Payout to your bank';
+};
 
 /**
  * Mock transactions plus an escrow row for every accepted request that has none yet
- * (offer minus the 10% Domtak fee), so a gig accepted in Requests shows up here the
- * same way it does in the workspace escrow total. Once the balance has been paid out,
- * "available" income is shown as paid out.
+ * (offer minus the 10% Domtak fee, same as the workspace escrow total) and a row for each
+ * payout you requested. "Available" rows add up to the balance; once it has been paid out,
+ * they show as paid out.
  */
-function ledger(requests: IncomingRequest[], balance: number): Transaction[] {
-  const accepted: Transaction[] = requests
+function ledger(requests: IncomingRequest[], balance: number, payouts: Payout[], account: string): LedgerRow[] {
+  const accepted: LedgerRow[] = requests
     .filter((r) => r.status === 'accepted' && !KNOWN_TITLES.has(r.title))
     .map((r) => ({ id: `req_${r.id}`, title: r.title, sub: `${r.requester} · booking`, amount: Math.round(r.offer * 0.9), date: isoDay(TODAY), status: 'escrow' }));
-  return [...accepted, ...transactions]
-    .map((t) => (t.status === 'available' && balance <= 0 ? { ...t, status: 'paid out' as const } : t))
+  const requested: LedgerRow[] = payouts
+    .filter((p) => !isSeedPayout(p))
+    .map((p) => ({ id: `pay_${p.id}`, title: payoutTitle(account), sub: 'Bank transfer', amount: -p.amount, date: p.date, status: p.status === 'processing' ? 'processing' : 'paid out' }));
+  return [...accepted, ...requested, ...transactions]
+    .map((t): LedgerRow => (t.status === 'available' && balance <= 0 ? { ...t, status: 'paid out' } : t))
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
@@ -112,14 +138,19 @@ function EarningsTab() {
   const requests = useApp((s) => s.requests);
 
   const account = methods.find((m) => m.badge === 'SEPA')?.sub ?? 'your bank account';
-  const txs = ledger(requests, balance);
+  const txs = ledger(requests, balance, payouts, account);
   const escrow = sum(txs.filter((t) => t.status === 'escrow').map((t) => t.amount));
-  const paidOut = sum(payouts.map((p) => p.amount));
+  const available = txs.filter((t) => t.status === 'available');
+  const paidOut = sum(payouts.filter((p) => p.status === 'paid').map((p) => p.amount));
+  const processing = payouts.filter((p) => p.status === 'processing');
+  const processingTotal = sum(processing.map((p) => p.amount));
+  const today = isoDay(TODAY);
 
   const payout = () => {
     const amount = requestPayout();
-    toast(amount > 0 ? `${euro(amount)} payout on its way to ${account}` : 'Nothing to pay out yet');
+    toast(amount > 0 ? `${euro(amount)} payout on its way to ${account}, arrives by ${arrivesBy(today)}` : 'Nothing to pay out yet');
   };
+  const gigs = available.length === 1 ? '1 completed gig' : `${available.length} completed gigs`;
 
   return (
     <>
@@ -134,14 +165,22 @@ function EarningsTab() {
           </View>
         </Row>
         <T v="small" color={colors.lilacLight}>
-          {balance > 0 ? `To ${account} · arrives in 1–2 business days` : 'All caught up. New earnings land here 24 h after each gig.'}
+          {balance > 0
+            ? `${available.length && sum(available.map((t) => t.amount)) === balance ? `From ${gigs}. ` : ''}Pay out to ${account} and it arrives by ${arrivesBy(today)}.`
+            : processing.length
+              ? `${euro(processingTotal)} is on its way to ${account} and arrives by ${arrivesBy(processing[0].date)}. New earnings land here 24 h after each gig.`
+              : 'All caught up. New earnings land here 24 h after each gig.'}
         </T>
         <Button title={balance > 0 ? `Pay out ${euro(balance)}` : 'Pay out'} icon="bank-transfer-out" variant="light" size="md" disabled={balance <= 0} onPress={payout} />
       </View>
 
       <Row gap={10} align="stretch">
         <StatTile label="Held in escrow" value={euro(escrow)} sub="Released 24 h after the gig" />
-        <StatTile label="Paid out" value={euro(paidOut)} sub={`${payouts.length} ${payouts.length === 1 ? 'payout' : 'payouts'}`} />
+        <StatTile
+          label="Paid out"
+          value={euro(paidOut)}
+          sub={processing.length ? `${euro(processingTotal)} processing` : `${payouts.length} ${payouts.length === 1 ? 'payout' : 'payouts'}`}
+        />
       </Row>
 
       <Card
@@ -206,13 +245,17 @@ function EarningsTab() {
               return (
                 <View key={p.id}>
                   {i > 0 ? <Divider style={{ marginLeft: 68 }} /> : null}
-                  <Row gap={12} style={{ paddingHorizontal: 16, paddingVertical: 12 }} accessibilityLabel={`Payout of ${euro(p.amount)} on ${shortDate(p.date)}, ${st.label}`}>
+                  <Row
+                    gap={12}
+                    style={{ paddingHorizontal: 16, paddingVertical: 12 }}
+                    accessibilityLabel={`Payout of ${euro(p.amount)} on ${shortDate(p.date)}, ${st.label}${p.status === 'processing' ? `, arrives by ${arrivesBy(p.date)}` : ''}`}
+                  >
                     <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.chipIdle, alignItems: 'center', justifyContent: 'center' }}>
                       <Icon name="bank-transfer-out" size={20} color={colors.label} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <T v="bodyBold">{euro(p.amount)}</T>
-                      <T v="small">{shortDate(p.date)} · to {account}</T>
+                      <T v="small">{p.status === 'processing' ? `${shortDate(p.date)} · arrives by ${arrivesBy(p.date)}` : `${shortDate(p.date)} · to ${account}`}</T>
                     </View>
                     <Pill label={st.label} tone={st.tone} />
                   </Row>

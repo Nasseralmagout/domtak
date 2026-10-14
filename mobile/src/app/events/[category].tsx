@@ -80,7 +80,7 @@ export default function EventList() {
         }
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 6 }}>
-            {promoted.has(item.id) ? <Pill label="Sponsored" icon="star-four-points" /> : null}
+            {promoted.has(item.id) ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
             <EventCard event={item} />
           </View>
         )}

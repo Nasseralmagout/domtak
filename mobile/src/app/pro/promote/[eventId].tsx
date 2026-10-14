@@ -6,10 +6,9 @@ import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/lay
 import { Banner, Button, Card, Chip, Divider, EmptyState, Icon, type IconName, KeyValue, Photo, Pill, Radio, Row, T } from '../../../components/ui';
 import { GENRES, venueById } from '../../../data/mock';
 import { compact, euro, isoDay, parse, shortDate, time, TODAY } from '../../../lib/format';
+import { activePromotion, DAY_MS, doorsOpenAt, isPromoted, type PromotionChain, promotionChain, promotionEnd } from '../../../lib/promotions';
 import { type Promotion, useApp, useEvent } from '../../../store/useApp';
 import { colors, radius, shadow } from '../../../theme';
-
-const DAY = 86_400_000;
 
 /** Featured listings: €49–€199 per week (revenue model). Reach is per week at a 10 km radius. */
 const BUDGETS: { amount: number; name: string; reach: number; blurb: string; icon: IconName; popular?: boolean }[] = [
@@ -28,27 +27,6 @@ const reachFor = (p: Pick<Promotion, 'budget' | 'days' | 'radiusKm' | 'audience'
   const tier = BUDGETS.find((b) => b.amount === p.budget) ?? BUDGETS[0];
   return roundReach((weeklyReach(tier.reach, p.radiusKm, p.audience.length) * p.days) / 7);
 };
-
-/**
- * Promotions for one event in order, each extension starting when the previous boost ends.
- * `run` holds only the latest unbroken stretch of boosts (what is running now, if anything).
- */
-function promotionChain(list: Promotion[], eventId: string) {
-  const own = list.filter((p) => p.eventId === eventId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  let run: Promotion[] = [];
-  let start = 0;
-  let end = 0;
-  for (const p of own) {
-    const created = Date.parse(p.createdAt);
-    if (created > end) {
-      run = [];
-      start = created;
-    }
-    run.push(p);
-    end = Math.max(end, created) + p.days * DAY;
-  }
-  return { run, start, end };
-}
 
 const fmtDay = (ms: number) => shortDate(isoDay(new Date(ms)));
 
@@ -72,8 +50,8 @@ export default function PromoteEvent() {
   const methods = useApp((s) => s.paymentMethods);
   const selectedPayment = useApp((s) => s.selectedPayment);
 
-  // An extension starts from the settings of the latest boost for this event (newest promotions come first).
-  const last = promotions.find((p) => p.eventId === eventId);
+  // An extension starts from the settings of the running boost, else the latest one for this event (newest come first).
+  const last = (event ? activePromotion(promotions, event) : null) ?? promotions.find((p) => p.eventId === eventId);
   const [budget, setBudget] = useState(() => last?.budget ?? 99);
   const [days, setDays] = useState(7);
   const [radiusKm, setRadiusKm] = useState(() => last?.radiusKm ?? 10);
@@ -84,7 +62,8 @@ export default function PromoteEvent() {
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const chain = useMemo(() => promotionChain(promotions, eventId ?? ''), [promotions, eventId]);
-  const [now, setNow] = useState(() => Date.now());
+  // Boosts are stamped on the demo clock, so "now" is the demo day too.
+  const now = TODAY.getTime();
 
   if (!event) {
     return (
@@ -96,11 +75,11 @@ export default function PromoteEvent() {
 
   const venue = venueById(event.venueId);
   const ended = parse(event.end) < TODAY;
-  const doorsAt = parse(event.start).getTime();
-  const doorsOpen = doorsAt <= TODAY.getTime();
+  const doorsAt = doorsOpenAt(event).getTime();
+  const doorsOpen = doorsAt <= now;
   // Boosts stop automatically when doors open, so the visible end date is capped there.
-  const runEnd = Math.min(chain.end, doorsAt);
-  const active = !doorsOpen && runEnd > now;
+  const runEnd = promotionEnd(promotions, event)?.getTime() ?? 0;
+  const active = isPromoted(promotions, event, TODAY);
   // The running boost already lasts until doors open: extending would only buy refunded days.
   const covered = active && chain.end >= doorsAt;
   const canPromote = !doorsOpen && !event.isPrivate && !covered;
@@ -109,7 +88,7 @@ export default function PromoteEvent() {
   const tier = BUDGETS.find((b) => b.amount === budget) ?? BUDGETS[1];
   const total = Math.round((budget * days) / 7);
   const reach = reachFor({ budget, days, radiusKm, audience });
-  const requestedEnd = (active ? chain.end : now) + days * DAY;
+  const requestedEnd = (active ? chain.end : now) + days * DAY_MS;
   const runsPastEvent = requestedEnd > doorsAt;
   const newEnd = Math.min(requestedEnd, doorsAt);
 
@@ -120,7 +99,6 @@ export default function PromoteEvent() {
     setPaying(true);
     timer.current = setTimeout(() => {
       promoteEvent({ eventId: event.id, budget, days, radiusKm, audience });
-      setNow(Date.now());
       setPaying(false);
       setDone({ total, reach, extended: active });
     }, 700);
@@ -327,14 +305,14 @@ export default function PromoteEvent() {
 }
 
 /** `end` is the visible end of the boost (the chain end, capped at doors open). */
-function ActivePromotion({ chain, end, now }: { chain: ReturnType<typeof promotionChain>; end: number; now: number }) {
+function ActivePromotion({ chain, end, now }: { chain: PromotionChain; end: number; now: number }) {
   const span = Math.max(1, end - chain.start);
   const pct = Math.min(1, Math.max(0, (now - chain.start) / span));
   const totalReach = chain.run.reduce((n, p) => n + reachFor(p), 0);
   const spent = chain.run.reduce((n, p) => n + Math.round((p.budget * p.days) / 7), 0);
   const seen = roundReach(totalReach * Math.max(0.04, pct));
   const clicks = Math.round(seen * 0.045);
-  const daysLeft = Math.max(1, Math.ceil((end - now) / DAY));
+  const daysLeft = Math.max(1, Math.ceil((end - now) / DAY_MS));
   return (
     <View style={{ borderRadius: radius.xl, padding: 16, gap: 14, backgroundColor: colors.brandDeep }}>
       <Row justify="space-between">

@@ -4,6 +4,7 @@ import { Linking, Pressable, View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, Field, Icon, Row, T } from '../components/ui';
+import { applyPromo } from '../lib/promos';
 import { toast } from '../store/toast';
 import { colors } from '../theme';
 
@@ -25,12 +26,6 @@ const FAQ_LINKS: Record<string, { label: string; href: string }> = {
   disputes: { label: 'Your bookings', href: '/my-bookings?tab=musician' },
   tickets: { label: 'Your tickets', href: '/my-bookings?tab=tickets' },
   safety: { label: 'Blocked accounts', href: '/blocked' },
-};
-
-/** Codes accepted at ticket checkout (same list as checkout). */
-const PROMOS: Record<string, string> = {
-  BERLIN10: '10% off tickets',
-  DOMTAK5: '€5 off your order',
 };
 
 const SUPPORT_EMAIL = 'support@domtak.de';
@@ -71,9 +66,10 @@ export default function Help() {
   }
 
   const check = () => {
-    const c = promo.trim().toUpperCase();
-    if (!c) return setPromoMsg({ ok: false, text: 'Enter a code first.' });
-    if (PROMOS[c]) setPromoMsg({ ok: true, text: `${c} is valid: ${PROMOS[c]}. Enter it at ticket checkout.` });
+    if (!promo.trim()) return setPromoMsg({ ok: false, text: 'Enter a code first.' });
+    // Same codes as ticket checkout; checking without a basket just tells whether the code is valid.
+    const valid = applyPromo(promo, 0);
+    if (valid) setPromoMsg({ ok: true, text: `${valid.code} is valid: ${valid.label}. Enter it at ticket checkout.` });
     else setPromoMsg({ ok: false, text: 'That code isn’t valid. Check the spelling or expiry date.' });
   };
 

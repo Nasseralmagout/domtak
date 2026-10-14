@@ -7,10 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArtistTile, BackOverlay, FollowButton, GoingFaces, HeartToggle } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
 import { Avatar, Button, EmptyState, Icon, type IconName, Photo, RatingBadge, Row, SectionTitle, T } from '../../components/ui';
-import { eventDiscussion, profileById, venueById } from '../../data/mock';
+import { eventDiscussion, profileById } from '../../data/mock';
 import { compact, eventWhen, isoDay, parse, priceRange } from '../../lib/format';
 import { toast } from '../../store/toast';
-import { useApp, useEvent } from '../../store/useApp';
+import { useApp, useEvent, useVenue } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 function InfoCard({ icon, title, sub, action, actionIcon, actionVariant = 'light', actionLabel, onAction }: { icon: IconName; title: string; sub: string; action?: string; actionIcon?: IconName; actionVariant?: 'light' | 'secondary'; actionLabel?: string; onAction?: () => void }) {
@@ -59,6 +59,8 @@ export default function EventDetail() {
   const toggleWish = useApp((s) => s.toggleWish);
   const tickets = useApp((s) => s.tickets);
   const extraComments = useApp((s) => (id ? s.extraComments[`event:${id}`] : undefined));
+  // The venue as its public page shows it, including the owner's listing edits.
+  const venue = useVenue(event?.venueId);
   const [more, setMore] = useState(false);
 
   if (!event) {
@@ -71,7 +73,6 @@ export default function EventDetail() {
       </SafeAreaView>
     );
   }
-  const venue = venueById(event.venueId);
   const organizer = event.organizerId === 'me' ? undefined : profileById(event.organizerId);
   const lineup = event.lineup.map((l) => profileById(l)).filter((p): p is NonNullable<typeof p> => !!p);
   const prices = event.ticketTypes.map((t) => t.price);
@@ -98,14 +99,15 @@ export default function EventDetail() {
     const staysInCalendar = hasTicket || event.organizerId === 'me';
     toast(going ? (staysInCalendar ? 'No longer marked as going' : 'Removed from your calendar') : 'You’re going! Added to your calendar');
   };
+  // Opens the calendar tab on the event's day.
+  const openCalendar = () => router.push({ pathname: '/(tabs)/calendar', params: { date: isoDay(parse(event.start)) } });
   const addToCalendar = () => {
-    if (inCalendar) {
-      // Open the calendar on the event's day.
-      router.push(`/(tabs)/calendar?date=${isoDay(parse(event.start))}`);
-      return;
+    if (!inCalendar) {
+      // Going is what puts an event in your Domtak calendar.
+      toggleGoing(event.id);
+      toast('Added to your calendar');
     }
-    toggleGoing(event.id);
-    toast('Added to your calendar');
+    openCalendar();
   };
 
   return (
@@ -162,9 +164,9 @@ export default function EventDetail() {
             icon="calendar-month-outline"
             title={eventWhen(event.start, event.end)}
             sub={inCalendar ? 'In your Domtak calendar' : 'Add to your Domtak calendar'}
-            action={inCalendar ? 'Added' : 'Add'}
-            actionLabel={inCalendar ? 'Added to your calendar, open calendar' : 'Add to your calendar'}
-            actionIcon={inCalendar ? 'check' : 'calendar-plus'}
+            action={inCalendar ? 'View' : 'Add'}
+            actionLabel={inCalendar ? 'View in calendar' : 'Add to calendar'}
+            actionIcon={inCalendar ? 'calendar-check' : 'calendar-plus'}
             actionVariant={inCalendar ? 'secondary' : 'light'}
             onAction={addToCalendar}
           />

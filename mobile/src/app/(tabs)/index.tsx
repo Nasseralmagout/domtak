@@ -119,7 +119,7 @@ function UpcomingEvents() {
             <MiniEventCard event={e} />
             {promoted.has(e.id) ? (
               <View pointerEvents="none" style={{ position: 'absolute', top: 8, left: 8 }}>
-                <Pill label="Sponsored" icon="star-four-points" />
+                <Pill label="Sponsored" icon="star-four-points-outline" />
               </View>
             ) : null}
           </View>
@@ -136,7 +136,7 @@ function Sponsored() {
   if (!ev) return null;
   return (
     <View style={{ paddingHorizontal: 12, marginBottom: 10, gap: 6 }}>
-      {promoted.has(ev.id) ? <Pill label="Sponsored" icon="star-four-points" /> : null}
+      {promoted.has(ev.id) ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
       <EventCard event={ev} />
     </View>
   );

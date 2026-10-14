@@ -140,7 +140,7 @@ export default function Search() {
             {r.sponsored ? (
               <Row gap={6}>
                 <T v="caption">EVENT</T>
-                <Pill label="Sponsored" icon="star-four-points" />
+                <Pill label="Sponsored" icon="star-four-points-outline" />
               </Row>
             ) : (
               <T v="caption">{r.kind === 'musician' ? 'ARTIST' : r.kind.toUpperCase()}</T>
