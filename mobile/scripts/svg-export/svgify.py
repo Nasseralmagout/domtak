@@ -28,6 +28,17 @@ FAMILY = {
     'Lilita One': ('Lilita One', 400),
 }
 WS = re.compile(r'\s+')
+MAX_PX = 760  # phone frame is 412 pt wide; 760 px keeps photos sharp at ~2x
+D_ATTR = re.compile(r'\sd="([^"]*)"')
+NUM = re.compile(r'-?\d*\.\d+')
+
+
+def round_paths(svg):
+    """Round path coordinates to 0.01 units (transforms keep full precision)."""
+    def num(m):
+        v = f'{round(float(m.group(0)), 2):.2f}'.rstrip('0').rstrip('.')
+        return '0' if v in ('-0', '') else v
+    return D_ATTR.sub(lambda m: ' d="' + NUM.sub(num, m.group(1)) + '"', svg)
 
 
 def recompress(svg):
@@ -38,15 +49,15 @@ def recompress(svg):
             im.load()
         except Exception:
             return m.group(0)
-        if max(im.size) > 900:
-            im.thumbnail((900, 900), Image.LANCZOS)
+        if max(im.size) > MAX_PX:
+            im.thumbnail((MAX_PX, MAX_PX), Image.LANCZOS)
         buf = io.BytesIO()
         rgba = im.convert('RGBA')
         if rgba.getchannel('A').getextrema()[0] < 255:
             rgba.save(buf, 'PNG', optimize=True)
             kind = 'png'
         else:
-            im.convert('RGB').save(buf, 'JPEG', quality=80, optimize=True, progressive=True)
+            im.convert('RGB').save(buf, 'JPEG', quality=78, optimize=True, progressive=True)
             kind = 'jpeg'
         new = base64.b64encode(buf.getvalue()).decode()
         return f'data:image/{kind};base64,{new}' if len(new) < len(data) else m.group(0)
@@ -84,7 +95,7 @@ subprocess.run(['pdftocairo', '-svg', '-f', '1', '-l', '1', pdf, out_outlined], 
 with open(out_outlined, encoding='utf-8') as fh:
     s = fh.read()
 with open(out_outlined, 'w', encoding='utf-8') as fh:
-    fh.write(size_and_title(recompress(s)))
+    fh.write(size_and_title(round_paths(recompress(s))))
 
 # Editable text
 doc = pymupdf.open(pdf)
@@ -93,4 +104,4 @@ s = re.sub(r'<text\b[^>]*>', fix_text_tag, s)
 s = s.replace('xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ', '')
 s = re.sub(r'(<svg\b[^>]*?>)', rf'\1\n<style>{FONTS_CSS}</style>', s, count=1)
 with open(out_editable, 'w', encoding='utf-8') as fh:
-    fh.write(size_and_title(recompress(s)))
+    fh.write(size_and_title(round_paths(recompress(s))))

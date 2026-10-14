@@ -33,6 +33,46 @@ async function extraScroll(page) {
   });
 }
 
+// Re-encode every photo at 2x its on-screen size (object-fit cover, centred) so the PDF/SVG
+// carries only the pixels that are visible instead of the full source image for each thumbnail.
+async function downscaleImages(page) {
+  await page.evaluate(async () => {
+    const jobs = [...document.images].map(async (img) => {
+      const r = img.getBoundingClientRect();
+      if (!img.complete || !img.naturalWidth || r.width < 1 || r.height < 1 || img.src.startsWith('data:')) return;
+      const W = Math.round(r.width * 2);
+      const H = Math.round(r.height * 2);
+      if (img.naturalWidth <= W * 1.15 && img.naturalHeight <= H * 1.15) return;
+      const cs = getComputedStyle(img);
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      const fit = cs.objectFit === 'contain' ? Math.min : Math.max;
+      const scale = fit(W / img.naturalWidth, H / img.naturalHeight);
+      const dw = img.naturalWidth * scale;
+      const dh = img.naturalHeight * scale;
+      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      // Keep PNG only when the result really has transparency (e.g. contain-fit logos).
+      const px = ctx.getImageData(0, 0, W, H).data;
+      let png = false;
+      for (let i = 3; i < px.length; i += 4 * 13) if (px[i] < 250) { png = true; break; }
+      // Swap in a static copy: changing the src of the app-managed <img> would restart its fade-in.
+      const copy = img.cloneNode(false);
+      copy.removeAttribute('srcset');
+      copy.style.objectFit = 'fill';
+      copy.style.opacity = '1';
+      copy.style.transition = 'none';
+      copy.src = canvas.toDataURL(png ? 'image/png' : 'image/jpeg', 0.86);
+      await copy.decode().catch(() => {});
+      img.style.display = 'none';
+      img.after(copy);
+    });
+    await Promise.all(jobs);
+  }).catch(() => {});
+}
+
 async function setRole(page, role) {
   await page.evaluate((r) => {
     const raw = localStorage.getItem('domtak-app');
@@ -107,6 +147,7 @@ const ACTIONS = {
       for (const a of shot.actions ?? []) await ACTIONS[a.do](page, a);
       if (shot.actions?.length) await settle(page, 600);
 
+      await downscaleImages(page);
       const phonePdf = `${outDir}/${shot.name}.pdf`;
       await page.pdf({ path: phonePdf, width: `${W}px`, height: `${H}px`, printBackground: true, pageRanges: '1' });
       const entry = { ...shot, phonePdf, fullPdf: null, fullHeight: H };
@@ -121,6 +162,7 @@ const ACTIONS = {
             await settle(page, 700);
             extra = await extraScroll(page);
           }
+          await downscaleImages(page);
           const fullPdf = `${outDir}/${shot.name}--full.pdf`;
           await page.pdf({ path: fullPdf, width: `${W}px`, height: `${h}px`, printBackground: true, pageRanges: '1' });
           entry.fullPdf = fullPdf;
