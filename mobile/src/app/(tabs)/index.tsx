@@ -61,8 +61,10 @@ function StoriesRow() {
 function NextGigs() {
   const events = useAllEvents();
   const artists = profiles.filter((p) => ['dj', 'musician', 'band'].includes(p.kind));
+  // "Next" means not ended yet, and only events you can open (others' private events are invite-only).
+  const upcoming = events.filter((e) => (!e.isPrivate || e.organizerId === 'me') && parse(e.end) >= TODAY);
   const rows = artists
-    .map((a) => ({ a, next: events.filter((e) => e.lineup.includes(a.id)).sort((x, y) => x.start.localeCompare(y.start))[0] }))
+    .map((a) => ({ a, next: upcoming.filter((e) => e.lineup.includes(a.id)).sort((x, y) => x.start.localeCompare(y.start))[0] }))
     .filter((r) => r.next)
     .slice(0, 8);
   return (
@@ -118,7 +120,7 @@ function UpcomingEvents() {
           <View key={e.id}>
             <MiniEventCard event={e} />
             {promoted.has(e.id) ? (
-              <View pointerEvents="none" style={{ position: 'absolute', top: 8, left: 8 }}>
+              <View style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none' }}>
                 <Pill label="Sponsored" icon="star-four-points-outline" />
               </View>
             ) : null}
@@ -136,7 +138,8 @@ function Sponsored() {
   if (!ev) return null;
   return (
     <View style={{ paddingHorizontal: 12, marginBottom: 10, gap: 6 }}>
-      {promoted.has(ev.id) ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
+      {/* EventCard already draws its own SPONSORED badge for partner events, so don't label them twice. */}
+      {promoted.has(ev.id) && !ev.sponsored ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
       <EventCard event={ev} />
     </View>
   );

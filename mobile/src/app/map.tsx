@@ -26,9 +26,18 @@ export default function MapScreen() {
   const [quick, setQuick] = useState<Quick>('all');
   // Without a focus the card shows the first event on the map, which is a sponsored one when there is one.
   const [selected, setSelected] = useState<string | undefined>(focus);
+  // "Show on map" from an event page keeps that event on the map even when the filters would hide it,
+  // until you pick a quick filter or change the filters yourself.
+  const [keepFocus, setKeepFocus] = useState(!!focus);
+  const [filtersAtFocus] = useState(filters);
+  const pinFocus = keepFocus && filters === filtersAtFocus;
+  const pickQuick = (k: Quick) => {
+    setQuick(k);
+    setKeepFocus(false);
+  };
 
   const { shown, promoted } = useMemo(() => {
-    const list = applyFilters(events, filters).filter((e) => {
+    const filtered = applyFilters(events, filters).filter((e) => {
       if (e.isPrivate && e.organizerId !== 'me') return false;
       const d = parse(e.start);
       const days = (d.getTime() - TODAY.getTime()) / 86_400_000;
@@ -38,10 +47,12 @@ export default function MapScreen() {
       if (quick === 'live') return e.category === 'Concerts' || e.category === 'Acoustic';
       return quick !== 'venues';
     });
+    const focused = pinFocus && quick !== 'venues' ? events.find((e) => e.id === focus && (!e.isPrivate || e.organizerId === 'me')) : undefined;
+    const list = focused && !filtered.some((e) => e.id === focused.id) ? [focused, ...filtered] : filtered;
     // Boosted events (Pro → Promote) come first and get highlighted pins.
     const boosted = new Set(list.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
     return { shown: [...list.filter((e) => boosted.has(e.id)), ...list.filter((e) => !boosted.has(e.id))], promoted: boosted };
-  }, [events, promotions, quick, filters]);
+  }, [events, promotions, quick, filters, focus, pinFocus]);
 
   // The map artwork is square and drawn with "cover", so convert % positions to screen points.
   const side = Math.max(size.w, size.h);
@@ -80,7 +91,7 @@ export default function MapScreen() {
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, paddingVertical: 8 }}>
           {([['all', 'All'], ['today', 'Today'], ['weekend', 'Weekend'], ['free', 'Free'], ['live', 'Live music'], ['venues', 'Venues']] as const).map(([k, l]) => (
-            <Chip key={k} label={l} selected={quick === k} onPress={() => setQuick(k)} />
+            <Chip key={k} label={l} selected={quick === k} onPress={() => pickQuick(k)} />
           ))}
         </ScrollView>
       </SafeAreaView>
@@ -97,12 +108,12 @@ export default function MapScreen() {
         {quick !== 'venues' && !shown.length ? (
           <View style={{ backgroundColor: colors.surface, padding: 16, borderRadius: 16, gap: 10 }}>
             <T v="body">No events on the map for this filter.</T>
-            <Button title={filterCount ? 'Clear filters' : 'Show all events'} size="md" variant="light" onPress={() => { if (filterCount) resetFilters(); setQuick('all'); }} />
+            <Button title={filterCount ? 'Clear filters' : 'Show all events'} size="md" variant="light" onPress={() => { if (filterCount) resetFilters(); pickQuick('all'); }} />
           </View>
         ) : null}
         {quick === 'venues' ? (
           <View style={{ backgroundColor: colors.surface, padding: 14, borderRadius: 16 }}>
-            <T v="small">{venues.length} venues · tap a pin to see rooms, prices and availability</T>
+            <T v="small">{venues.length} venues · tap a pin to see rooms, prices and reviews</T>
           </View>
         ) : null}
       </SafeAreaView>

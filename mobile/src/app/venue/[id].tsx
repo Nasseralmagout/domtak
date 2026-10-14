@@ -9,7 +9,7 @@ import { BottomBar, goBack } from '../../components/layout';
 import { Avatar, Button, Icon, Photo, RatingBadge, Row, SectionTitle, Stars, T } from '../../components/ui';
 import { followersOf, profileById, reviewsFor } from '../../data/mock';
 import { compact, euro, parse, shortDate, TODAY } from '../../lib/format';
-import { useAllEvents, useApp, useRating, useVenue } from '../../store/useApp';
+import { OWN_VENUE_ID, useAllEvents, useApp, useRating, useVenue } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 export default function VenueDetail() {
@@ -47,6 +47,8 @@ export default function VenueDetail() {
   const fans = followersOf(venue.id).filter((p) => !blocked.includes(p.id)).slice(0, 5);
   const half = Math.ceil(venue.occasions.length / 2);
   const followerCount = venue.followers + (following ? 1 : 0);
+  // The venue owner previewing their own public page edits it instead of following, messaging or booking themselves.
+  const isOwner = user.role === 'venue' && venue.id === OWN_VENUE_ID;
 
   // Reviews: your own (from completed bookings) first, then guests, newest first.
   const mine = bookings
@@ -93,14 +95,16 @@ export default function VenueDetail() {
               <Pressable accessibilityRole="button" accessibilityLabel={`Rated ${ratingText} out of 5${reviewCount ? ` from ${reviewsLabel}` : ''}. See reviews`} onPress={openRatings} hitSlop={8}>
                 <RatingBadge value={rating} />
               </Pressable>
-              <Button
-                title={following ? 'Following' : 'Follow'}
-                accessibilityLabel={following ? `Unfollow ${venue.name}` : `Follow ${venue.name}`}
-                icon={following ? 'check' : 'plus'}
-                size="sm"
-                hitSlop={4}
-                onPress={() => toggleFollow(venue.id)}
-              />
+              {isOwner ? null : (
+                <Button
+                  title={following ? 'Following' : 'Follow'}
+                  accessibilityLabel={following ? `Unfollow ${venue.name}` : `Follow ${venue.name}`}
+                  icon={following ? 'check' : 'plus'}
+                  size="sm"
+                  hitSlop={4}
+                  onPress={() => toggleFollow(venue.id)}
+                />
+              )}
             </Row>
           </Row>
           <Row gap={5} style={{ position: 'absolute', top: 70, alignSelf: 'center' }}>
@@ -192,10 +196,17 @@ export default function VenueDetail() {
         </View>
       </ScrollView>
       <BottomBar>
-        <Row gap={12}>
-          <Button title="Message" variant="secondary" style={{ flex: 1 }} onPress={() => router.push(`/chat/${ensureConversation(venue.id)}`)} />
-          <Button title="Book" style={{ flex: 1.4 }} onPress={() => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id } })} />
-        </Row>
+        {isOwner ? (
+          <View style={{ gap: 8 }}>
+            <T v="small" center>This is how guests see your venue.</T>
+            <Button title="Edit listing" icon="storefront-edit-outline" onPress={() => router.navigate('/pro/venue-listing')} />
+          </View>
+        ) : (
+          <Row gap={12}>
+            <Button title="Message" variant="secondary" style={{ flex: 1 }} onPress={() => router.push(`/chat/${ensureConversation(venue.id)}`)} />
+            <Button title="Book" style={{ flex: 1.4 }} onPress={() => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id } })} />
+          </Row>
+        )}
       </BottomBar>
     </View>
   );

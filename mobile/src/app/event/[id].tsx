@@ -76,7 +76,8 @@ export default function EventDetail() {
   const organizer = event.organizerId === 'me' ? undefined : profileById(event.organizerId);
   const lineup = event.lineup.map((l) => profileById(l)).filter((p): p is NonNullable<typeof p> => !!p);
   const prices = event.ticketTypes.map((t) => t.price);
-  const myTicket = tickets.find((t) => t.eventId === event.id && t.status === 'valid');
+  // A ticket that was already scanned at the door still counts (and stays in the calendar, as there).
+  const myTicket = tickets.find((t) => t.eventId === event.id && t.status === 'valid') ?? tickets.find((t) => t.eventId === event.id && t.status === 'used');
   const hasTicket = !!myTicket;
   const goingCount = event.going + (going ? 1 : 0);
   const commentCount = (eventDiscussion[event.id]?.length ?? 0) + (extraComments?.length ?? 0);

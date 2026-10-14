@@ -15,7 +15,7 @@ const FAQ = [
   { id: 'disputes', q: 'Something went wrong at my event', a: 'Open the booking and tap “Report a problem” within 48 hours. Funds stay frozen while our team reviews evidence from both sides.' },
   { id: 'tickets', q: 'My QR code won’t scan', a: 'Turn your screen brightness up and make sure the ticket says “Valid”. Door staff can also type the 8-character code under the QR.' },
   { id: 'safety', q: 'How do I block or report someone?', a: 'Open their profile or chat, tap ••• and choose Block or Report. Blocked users can’t message you or see your posts.' },
-  { id: 'promo', q: 'How do promo codes work?', a: 'Check a code below, then enter it in the Promo code box at ticket checkout. Codes from organizers apply to their events only; Domtak codes apply to any ticket.' },
+  { id: 'promo', q: 'How do promo codes work?', a: 'Check a code below, then enter it in the Promo code box at ticket checkout. Codes work on any paid ticket and come off the ticket price; the service fee stays the same.' },
 ];
 
 /** Where each answer can take you next. */

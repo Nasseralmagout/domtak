@@ -123,7 +123,7 @@ export default function Search() {
           </Row>
         </View>
       ) : null}
-      <T v="small" accessibilityLiveRegion="polite">{results.length} result{results.length === 1 ? '' : 's'}{q ? ` for “${q.trim()}”` : ' near Kreuzberg'}</T>
+      <T v="small" accessibilityLiveRegion="polite">{results.length} result{results.length === 1 ? '' : 's'}{q ? ` for “${q.trim()}”` : ' in Berlin'}</T>
       {results.map((r) => (
         <Pressable
           key={`${r.kind}-${r.key}`}

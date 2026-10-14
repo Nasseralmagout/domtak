@@ -199,7 +199,7 @@ export default function Checkout() {
                 <Icon name="ticket-percent-outline" size={20} color={colors.success} />
                 <T v="bodyBold" color={colors.success} style={{ flex: 1 }}>{promo} · {findPromo(promo)?.label}</T>
               </Row>
-              <Button title="Remove" variant="ghost" size="sm" onPress={() => { setPromo(undefined); setPromoInput(''); toast('Promo code removed'); }} />
+              <Button title="Remove" accessibilityLabel={`Remove promo code ${promo}`} variant="ghost" size="sm" onPress={() => { setPromo(undefined); setPromoInput(''); toast('Promo code removed'); }} />
             </Row>
           ) : (
             <Row gap={10} align="flex-start">

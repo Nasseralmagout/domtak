@@ -62,7 +62,7 @@ export default function EventList() {
               right={<IconButton name="tune-variant" label={`Filters${count ? `, ${count} active` : ''}`} badge={count || undefined} onPress={() => router.push('/filters')} />}
             />
             <View style={{ paddingHorizontal: 16 }}>
-              <Field placeholder="Search by name, genre…" value={q} onChangeText={setQ} icon="magnify" />
+              <Field placeholder="Search by name, genre…" value={q} onChangeText={setQ} icon="magnify" accessibilityLabel={`Search ${title.toLowerCase()}`} returnKeyType="search" />
             </View>
             <T v="h3" style={{ paddingHorizontal: 16 }}>Categories</T>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
@@ -80,7 +80,8 @@ export default function EventList() {
         }
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 6 }}>
-            {promoted.has(item.id) ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
+            {/* EventCard already draws its own SPONSORED badge for partner events, so don't label them twice. */}
+            {promoted.has(item.id) && !item.sponsored ? <Pill label="Sponsored" icon="star-four-points-outline" /> : null}
             <EventCard event={item} />
           </View>
         )}
