@@ -9,16 +9,21 @@ import { euro, shortDate, time } from '../../../lib/format';
 import { useEvent } from '../../../store/useApp';
 import { colors } from '../../../theme';
 
+const NO_GUESTS: typeof seedAttendees = [];
+
 export default function Attendees() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const event = useEvent(eventId);
   const [filter, setFilter] = useState<'all' | 'in' | 'out'>('all');
   const [q, setQ] = useState('');
 
+  const sold = event ? event.ticketTypes.reduce((n, t) => n + t.sold, 0) : 0;
+  // Demo attendee sample; an event with no tickets sold has nobody to list or check in.
+  const guests = sold > 0 ? seedAttendees : NO_GUESTS;
   const list = useMemo(
     () =>
-      seedAttendees.filter((a) => (filter === 'all' || (filter === 'in' ? a.checkedIn : !a.checkedIn)) && (!q || `${a.name} ${a.code}`.toLowerCase().includes(q.toLowerCase()))),
-    [filter, q],
+      guests.filter((a) => (filter === 'all' || (filter === 'in' ? a.checkedIn : !a.checkedIn)) && (!q || `${a.name} ${a.code}`.toLowerCase().includes(q.toLowerCase()))),
+    [guests, filter, q],
   );
   if (!event) {
     return (
@@ -27,10 +32,9 @@ export default function Attendees() {
       </Screen>
     );
   }
-  const sold = event.ticketTypes.reduce((n, t) => n + t.sold, 0);
   const cap = event.ticketTypes.reduce((n, t) => n + t.capacity, 0);
   const revenue = event.ticketTypes.reduce((n, t) => n + t.sold * t.price, 0);
-  const checked = seedAttendees.filter((a) => a.checkedIn).length;
+  const checked = guests.filter((a) => a.checkedIn).length;
 
   return (
     <Screen
@@ -79,22 +83,39 @@ export default function Attendees() {
           </View>
         ))}
       </Card>
-      <Field placeholder="Search name or ticket ID" value={q} onChangeText={setQ} icon="magnify" />
-      <Row gap={8}>
-        <Chip label={`All ${sold}`} selected={filter === 'all'} onPress={() => setFilter('all')} />
-        <Chip label="Checked in" selected={filter === 'in'} onPress={() => setFilter('in')} />
-        <Chip label="Not yet" selected={filter === 'out'} onPress={() => setFilter('out')} />
-      </Row>
-      {list.map((a) => (
-        <Row key={a.id} gap={12} style={{ backgroundColor: colors.surface, padding: 10, borderRadius: 14 }}>
-          <Avatar src={a.avatar} size={40} label={a.name} />
-          <View style={{ flex: 1 }}>
-            <T v="bodyBold">{a.name}</T>
-            <T v="small" style={{ fontSize: 12 }}>{a.ticketType} · #{a.code}</T>
-          </View>
-          <Pill label={a.checkedIn ? 'Checked in' : 'Not yet'} tone={a.checkedIn ? 'success' : 'neutral'} />
-        </Row>
-      ))}
+      {sold === 0 ? (
+        <EmptyState
+          icon="ticket-outline"
+          title={event.isPrivate ? 'No guests yet' : 'No tickets sold yet'}
+          body={event.isPrivate ? 'Guests show up here once they register with your invite link.' : 'Guests show up here as soon as they get a ticket. Promote the event to reach fans nearby.'}
+          action={event.isPrivate ? 'Invite guests' : 'Promote event'}
+          onAction={() => router.push(event.isPrivate ? `/invite?event=${event.id}` : `/pro/promote/${event.id}`)}
+        />
+      ) : (
+        <>
+          <Field placeholder="Search name or ticket ID" value={q} onChangeText={setQ} icon="magnify" />
+          <Row gap={8} style={{ flexWrap: 'wrap' }}>
+            <Chip label={`All ${sold}`} selected={filter === 'all'} onPress={() => setFilter('all')} />
+            <Chip label="Checked in" selected={filter === 'in'} onPress={() => setFilter('in')} />
+            <Chip label="Not yet" selected={filter === 'out'} onPress={() => setFilter('out')} />
+          </Row>
+          {list.length === 0 ? (
+            <T v="body" color={colors.muted} center style={{ paddingVertical: 24 }}>
+              {q ? `No attendees match “${q}”.` : filter === 'in' ? 'Nobody has checked in yet.' : 'Everyone on this list has checked in.'}
+            </T>
+          ) : null}
+          {list.map((a) => (
+            <Row key={a.id} gap={12} style={{ backgroundColor: colors.surface, padding: 10, borderRadius: 14 }}>
+              <Avatar src={a.avatar} size={40} label={a.name} />
+              <View style={{ flex: 1 }}>
+                <T v="bodyBold">{a.name}</T>
+                <T v="small" style={{ fontSize: 12 }}>{a.ticketType} · #{a.code}</T>
+              </View>
+              <Pill label={a.checkedIn ? 'Checked in' : 'Not yet'} tone={a.checkedIn ? 'success' : 'neutral'} />
+            </Row>
+          ))}
+        </>
+      )}
     </Screen>
   );
 }

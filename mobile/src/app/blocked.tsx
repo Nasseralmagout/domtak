@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { PersonRow } from '../components/cards';
 import { Screen, ScreenHeader } from '../components/layout';
@@ -24,7 +24,7 @@ export default function Blocked() {
   };
 
   const unblockButton = (id: string) => (
-    <Button title="Unblock" size="sm" variant="secondary" accessibilityLabel={`Unblock ${nameOf(id)}`} onPress={() => unblock(id)} />
+    <Button title="Unblock" size="sm" variant="secondary" hitSlop={6} accessibilityLabel={`Unblock ${nameOf(id)}`} onPress={() => unblock(id)} />
   );
 
   return (
@@ -39,11 +39,13 @@ export default function Blocked() {
                   {i > 0 ? <Divider style={{ marginVertical: 4 }} /> : null}
                   {venue ? (
                     <Row gap={12} style={{ paddingVertical: 6 }}>
-                      <Avatar src={venue.cover} size={48} label={venue.name} />
-                      <View style={{ flex: 1 }}>
-                        <T v="bodyBold" numberOfLines={1}>{venue.name}</T>
-                        <T v="small" numberOfLines={1}>Venue · {venue.area}</T>
-                      </View>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`${venue.name}, venue in ${venue.area}`} onPress={() => router.push(`/venue/${venue.id}`)} style={{ flexDirection: 'row', flex: 1, alignItems: 'center', gap: 12 }}>
+                        <Avatar src={venue.cover} size={48} />
+                        <View style={{ flex: 1 }}>
+                          <T v="bodyBold" numberOfLines={1}>{venue.name}</T>
+                          <T v="small" numberOfLines={1}>Venue · {venue.area}</T>
+                        </View>
+                      </Pressable>
                       {unblockButton(id)}
                     </Row>
                   ) : (
@@ -69,8 +71,8 @@ export default function Blocked() {
         <T v="h3">How blocking works</T>
         <Card style={{ gap: 12 }}>
           {[
-            { icon: 'message-off-outline' as const, text: 'They can’t send you messages or booking requests.' },
-            { icon: 'eye-off-outline' as const, text: 'Your posts, stories and events are hidden from them, and theirs from you.' },
+            { icon: 'message-off-outline' as const, text: 'They can’t message you, and your chat with them leaves your inbox.' },
+            { icon: 'eye-off-outline' as const, text: 'Their notifications, reviews and follows are hidden from you, and you stop following them.' },
             { icon: 'bell-off-outline' as const, text: 'They aren’t notified. Block or unblock anytime from their profile.' },
           ].map((r) => (
             <Row key={r.icon} gap={12} align="flex-start">

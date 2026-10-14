@@ -4,7 +4,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
-import { Button, Card, Chip, Field, Icon, type IconName, IconButton, Photo, Row, T, Toggle } from '../../components/ui';
+import { Button, Card, Chip, Field, Icon, type IconName, IconButton, Photo, Row, Stepper, T, Toggle } from '../../components/ui';
 import type { ImgKey } from '../../data/images';
 import { OCCASIONS, venueById } from '../../data/mock';
 import { euro } from '../../lib/format';
@@ -41,11 +41,7 @@ function NumberRow({ icon, label, hint, value, onChange, step = 1, min, max }: {
         <T v="bodyBold">{label}</T>
         {hint ? <T v="small">{hint}</T> : null}
       </View>
-      <Row gap={6}>
-        <IconButton name="minus" label={`Decrease ${label.toLowerCase()}`} onPress={() => onChange(Math.max(min, value - step))} bg={colors.chipIdle} color={value <= min ? colors.disabled : colors.ink} size={44} iconSize={20} />
-        <Text accessibilityLiveRegion="polite" style={{ minWidth: 44, textAlign: 'center', fontFamily: fonts.displaySemi, fontSize: 18, color: colors.ink }}>{value}</Text>
-        <IconButton name="plus" label={`Increase ${label.toLowerCase()}`} onPress={() => onChange(Math.min(max, value + step))} bg={colors.brand} color={colors.white} size={44} iconSize={20} />
-      </Row>
+      <Stepper value={value} onChange={onChange} step={step} min={min} max={max} label={label.toLowerCase()} />
     </Row>
   );
 }
@@ -57,7 +53,10 @@ export default function VenueListingEditor() {
   const [draft, setDraft] = useState<VenueListing>(listing);
   const [error, setError] = useState<string>();
 
-  const patch = (p: Partial<VenueListing>) => setDraft((d) => ({ ...d, ...p }));
+  const patch = (p: Partial<VenueListing>) => {
+    setDraft((d) => ({ ...d, ...p }));
+    setError(undefined);
+  };
   const dirty = JSON.stringify(draft) !== JSON.stringify(listing);
 
   const cover = draft.photos[0] ?? 'ven_neon';
@@ -158,10 +157,10 @@ export default function VenueListingEditor() {
 
       <Section title="Cover photo" hint="The first photo organizers see in search.">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {photoOptions.map((k) => {
+          {photoOptions.map((k, i) => {
             const on = k === cover;
             return (
-              <Pressable key={k} accessibilityRole="button" accessibilityLabel={on ? 'Current cover photo' : 'Use as cover photo'} accessibilityState={{ selected: on }} onPress={() => setCover(k)}>
+              <Pressable key={k} accessibilityRole="button" accessibilityLabel={on ? `Photo ${i + 1}, current cover` : `Use photo ${i + 1} as cover`} accessibilityState={{ selected: on }} onPress={() => setCover(k)}>
                 <Photo src={k} style={{ width: 96, height: 72, borderRadius: 14, borderWidth: on ? 3 : 0, borderColor: colors.brand }} />
                 {on ? (
                   <View style={{ position: 'absolute', left: 6, bottom: 6, backgroundColor: colors.brand, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
@@ -176,14 +175,14 @@ export default function VenueListingEditor() {
 
       <Section title="Gallery" hint={`${draft.photos.length} photo${draft.photos.length === 1 ? '' : 's'} on your page. Tap to add or remove.`}>
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
-          {photoOptions.map((k) => {
+          {photoOptions.map((k, i) => {
             const isCover = k === cover;
             const on = draft.photos.includes(k);
             return (
               <Pressable
                 key={k}
                 accessibilityRole="checkbox"
-                accessibilityLabel={isCover ? 'Cover photo, always shown' : on ? 'Remove from gallery' : 'Add to gallery'}
+                accessibilityLabel={isCover ? `Photo ${i + 1}, cover photo, always shown` : `Photo ${i + 1}, ${on ? 'in gallery' : 'not in gallery'}`}
                 accessibilityState={{ checked: on, disabled: isCover }}
                 onPress={() => toggleGallery(k)}
                 style={{ width: tile, height: tile * 0.78 }}

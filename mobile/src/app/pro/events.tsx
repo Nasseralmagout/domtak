@@ -23,6 +23,9 @@ function promotionEnd(list: Promotion[], eventId: string) {
     .reduce((end, p) => Math.max(end, Date.parse(p.createdAt)) + p.days * DAY, 0);
 }
 
+/** Boosts stop when doors open, so a promotion never outlasts the event start. */
+const promotedUntil = (list: Promotion[], e: EventItem) => Math.min(promotionEnd(list, e.id), parse(e.start).getTime());
+
 function stats(e: EventItem) {
   const sold = e.ticketTypes.reduce((n, t) => n + t.sold, 0);
   const capacity = e.ticketTypes.reduce((n, t) => n + t.capacity, 0);
@@ -97,7 +100,7 @@ function ManageCard({ event, promoted, past, mine }: { event: EventItem; promote
           <Button title="Manage" size="md" variant="primary" style={{ flex: 1, paddingHorizontal: 8 }} accessibilityLabel={`Manage ${event.title}`} onPress={() => router.push(`/pro/attendees/${event.id}`)} />
           {!past && !event.isPrivate ? (
             <Button
-              title={promoted ? 'Boosted' : 'Promote'}
+              title={promoted ? 'Extend' : 'Promote'}
               size="md"
               variant="light"
               style={{ flex: 1, paddingHorizontal: 8 }}
@@ -128,7 +131,7 @@ export default function ProEvents() {
   const myIds = useMemo(() => new Set(myEvents.map((e) => e.id)), [myEvents]);
   // Captured once per visit; new boosts start after this, so they always count as running.
   const [now] = useState(() => Date.now());
-  const isPromoted = (id: string) => promotionEnd(promotions, id) > now;
+  const isPromoted = (e: EventItem) => promotedUntil(promotions, e) > now;
 
   const list = tab === 'upcoming' ? upcoming : past;
   const totals = upcoming.reduce(
@@ -138,7 +141,7 @@ export default function ProEvents() {
     },
     { sold: 0, revenue: 0 },
   );
-  const promotedCount = upcoming.filter((e) => isPromoted(e.id)).length;
+  const promotedCount = upcoming.filter(isPromoted).length;
 
   return (
     <Screen
@@ -182,7 +185,7 @@ export default function ProEvents() {
           <EmptyState icon="history" title="No past events yet" body="Once an event has ended, its final ticket sales and revenue show up here." />
         )
       ) : (
-        list.map((e) => <ManageCard key={e.id} event={e} promoted={isPromoted(e.id)} past={tab === 'past'} mine={myIds.has(e.id)} />)
+        list.map((e) => <ManageCard key={e.id} event={e} promoted={tab === 'upcoming' && isPromoted(e)} past={tab === 'past'} mine={myIds.has(e.id)} />)
       )}
     </Screen>
   );

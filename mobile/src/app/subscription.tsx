@@ -189,7 +189,7 @@ export default function Subscription() {
             </Row>
           </View>
           <Divider />
-          <T v="small">No charge if you cancel before {longDate(renewal)}. After that you keep Pro until the end of the billing period.</T>
+          <T v="small">Cancel before {longDate(renewal)} and you won’t be charged. Cancelling moves you back to Standard right away.</T>
           <Button title="Cancel plan" variant="ghost" size="md" icon="close-circle-outline" onPress={() => setConfirmCancel(true)} style={{ alignSelf: 'flex-start', paddingHorizontal: 8 }} />
         </Card>
       ) : null}
@@ -233,7 +233,7 @@ export default function Subscription() {
 
       <Banner icon="shield-check-outline">Payments are handled securely by our payment provider. Cancel anytime in Settings → Subscription.</Banner>
 
-      <ActionSheet visible={confirmCancel} title="Cancel Domtak Pro?" actions={cancelActions} onClose={() => setConfirmCancel(false)} />
+      <ActionSheet visible={confirmCancel} title="Cancel Domtak Pro? Uploads, live streaming, analytics and in-app payouts stop right away." actions={cancelActions} onClose={() => setConfirmCancel(false)} />
     </Screen>
   );
 }

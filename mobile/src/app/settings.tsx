@@ -1,9 +1,13 @@
 import { router } from 'expo-router';
-import { Alert, Platform, Pressable, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, View } from 'react-native';
 
+import { ActionSheet } from '../components/ActionSheet';
 import { Screen, ScreenHeader } from '../components/layout';
 import { Button, Icon, Row, Segmented, T, Toggle } from '../components/ui';
+import { profileById, venueById } from '../data/mock';
 import type { Role } from '../data/types';
+import { toast } from '../store/toast';
 import { ROLE_LABEL, useApp } from '../store/useApp';
 import { colors, radius } from '../theme';
 
@@ -44,16 +48,17 @@ export default function Settings() {
   const selected = useApp((s) => s.selectedPayment);
   const signOut = useApp((s) => s.signOut);
   const resetDemo = useApp((s) => s.resetDemo);
-  const blockedCount = useApp((s) => s.blocked.length);
+  const blocked = useApp((s) => s.blocked);
   const plan = useApp((s) => s.plan);
+  const [confirm, setConfirm] = useState<'reset' | 'delete'>();
   const planLabel = plan === 'free' ? 'Standard (free)' : plan === 'monthly' ? 'Pro · monthly' : 'Pro · yearly';
+  // Same rule as the Blocked users screen: only ids that still resolve to an account.
+  const blockedCount = blocked.filter((id) => profileById(id) || venueById(id)).length;
 
-  const confirm = (title: string, msg: string, onYes: () => void) => {
-    if (Platform.OS === 'web') {
-      onYes();
-      return;
-    }
-    Alert.alert(title, msg, [{ text: 'Cancel', style: 'cancel' }, { text: 'Continue', style: 'destructive', onPress: onYes }]);
+  const startOver = (message: string) => {
+    resetDemo();
+    toast(message);
+    router.replace('/');
   };
 
   return (
@@ -110,10 +115,21 @@ export default function Settings() {
 
       <Row gap={10}>
         <Button title="Log out" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => { signOut(); router.replace('/login'); }} />
-        <Button title="Reset demo" variant="ghost" size="md" style={{ flex: 1 }} onPress={() => confirm('Reset demo data?', 'Tickets, bookings, posts and settings return to the sample data.', () => { resetDemo(); router.replace('/'); })} />
+        <Button title="Reset demo" variant="ghost" size="md" style={{ flex: 1 }} onPress={() => setConfirm('reset')} />
       </Row>
-      <Button title="Delete account" variant="ghost" size="sm" style={{ alignSelf: 'center' }} onPress={() => confirm('Delete account?', 'This permanently removes your profile, tickets and bookings.', () => { resetDemo(); router.replace('/'); })} />
+      <Button title="Delete account" variant="ghost" size="sm" hitSlop={6} style={{ alignSelf: 'center' }} onPress={() => setConfirm('delete')} />
       <T v="small" center>Domtak · Version 1.0.0</T>
+
+      <ActionSheet
+        visible={!!confirm}
+        title={confirm === 'delete' ? 'Delete account? This permanently removes your profile, tickets and bookings.' : 'Reset demo data? Tickets, bookings, posts and settings return to the sample data.'}
+        actions={[
+          confirm === 'delete'
+            ? { label: 'Delete my account', icon: 'delete-outline', destructive: true, onPress: () => startOver('Your account was deleted') }
+            : { label: 'Reset demo data', icon: 'restore', destructive: true, onPress: () => startOver('Demo data reset') },
+        ]}
+        onClose={() => setConfirm(undefined)}
+      />
     </Screen>
   );
 }

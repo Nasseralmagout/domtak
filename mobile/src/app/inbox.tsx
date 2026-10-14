@@ -65,14 +65,18 @@ export default function Inbox() {
     .sort((a, b) => Number(a.status === 'completed') - Number(b.status === 'completed'));
   const bookingChats = bookingChatsAll.filter((b) => matches(party(b.targetId)?.name, b.eventTitle));
 
-  const newRequests = allRequests.filter((r) => r.status === 'new');
+  // Requests carry the requester's name only; match it to a profile to honour blocks.
+  const newRequests = allRequests.filter((r) => {
+    const requester = profiles.find((p) => p.name === r.requester);
+    return r.status === 'new' && !(requester && isBlocked(requester.id));
+  });
   const requests = newRequests.filter((r) => matches(r.requester, r.title));
 
   const noResults = <EmptyState icon="magnify-close" title="No matches" body={`Nothing in your inbox matches “${q.trim()}”.`} action="Clear search" onAction={() => setQ('')} />;
 
   return (
     <Screen header={<ScreenHeader title="Inbox" />} contentStyle={{ gap: 14 }}>
-      <Field placeholder="Search here" value={q} onChangeText={setQ} icon="magnify" />
+      <Field placeholder="Search here" accessibilityLabel="Search inbox" value={q} onChangeText={setQ} icon="magnify" returnKeyType="search" />
       {online.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
           {online.map((p) => (

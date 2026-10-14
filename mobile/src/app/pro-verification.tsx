@@ -103,7 +103,8 @@ export default function ProVerification() {
         return (
           <Pressable
             key={s.id}
-            accessibilityRole="button"
+            accessibilityRole="checkbox"
+            accessibilityLabel={`${s.name}: ${s.sub}`}
             accessibilityState={{ checked: ok }}
             onPress={() => setDone(ok ? done.filter((x) => x !== s.id) : [...done, s.id])}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderStyle: ok ? 'solid' : 'dashed', borderColor: ok ? colors.border : '#9C8FC2' }}

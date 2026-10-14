@@ -48,7 +48,7 @@ export default function Menu() {
     <View style={{ flex: 1, flexDirection: 'row', backgroundColor: colors.scrim }}>
       <SafeAreaView edges={['top', 'bottom']} style={{ width: '78%', maxWidth: 340, backgroundColor: colors.bg }}>
         <ScrollView contentContainerStyle={{ padding: 16, gap: 4 }}>
-          <Pressable accessibilityRole="button" onPress={() => go('/profile/me')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 16 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Your profile: ${user.name}, ${ROLE_LABEL[user.role]}`} onPress={() => go('/profile/me')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 16 }}>
             <Avatar src={user.avatar} size={52} label={user.name} verified={user.pro === 'verified'} />
             <View style={{ flex: 1 }}>
               <T v="bodyBold" numberOfLines={1}>{user.name}</T>
@@ -82,7 +82,7 @@ export default function Menu() {
           </Pressable>
         </ScrollView>
       </SafeAreaView>
-      <Pressable accessibilityLabel="Close menu" style={{ flex: 1 }} onPress={() => router.back()} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Close menu" style={{ flex: 1 }} onPress={() => router.back()} />
     </View>
   );
 }

@@ -72,10 +72,12 @@ export default function PromoteEvent() {
   const methods = useApp((s) => s.paymentMethods);
   const selectedPayment = useApp((s) => s.selectedPayment);
 
-  const [budget, setBudget] = useState(99);
+  // An extension starts from the settings of the latest boost for this event (newest promotions come first).
+  const last = promotions.find((p) => p.eventId === eventId);
+  const [budget, setBudget] = useState(() => last?.budget ?? 99);
   const [days, setDays] = useState(7);
-  const [radiusKm, setRadiusKm] = useState(10);
-  const [audience, setAudience] = useState<string[]>(() => (event && GENRES.includes(event.genre) ? [event.genre] : []));
+  const [radiusKm, setRadiusKm] = useState(() => last?.radiusKm ?? 10);
+  const [audience, setAudience] = useState<string[]>(() => last?.audience ?? (event && GENRES.includes(event.genre) ? [event.genre] : []));
   const [paying, setPaying] = useState(false);
   const [done, setDone] = useState<{ total: number; reach: number; extended: boolean }>();
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -94,17 +96,22 @@ export default function PromoteEvent() {
 
   const venue = venueById(event.venueId);
   const ended = parse(event.end) < TODAY;
-  const canPromote = !ended && !event.isPrivate;
-  const active = chain.end > now;
+  const doorsAt = parse(event.start).getTime();
+  const doorsOpen = doorsAt <= TODAY.getTime();
+  // Boosts stop automatically when doors open, so the visible end date is capped there.
+  const runEnd = Math.min(chain.end, doorsAt);
+  const active = !doorsOpen && runEnd > now;
+  // The running boost already lasts until doors open: extending would only buy refunded days.
+  const covered = active && chain.end >= doorsAt;
+  const canPromote = !doorsOpen && !event.isPrivate && !covered;
   const method = methods.find((m) => m.id === selectedPayment) ?? methods[0];
 
   const tier = BUDGETS.find((b) => b.amount === budget) ?? BUDGETS[1];
   const total = Math.round((budget * days) / 7);
   const reach = reachFor({ budget, days, radiusKm, audience });
-  const daysToEvent = Math.max(0, Math.ceil((parse(event.start).getTime() - TODAY.getTime()) / DAY));
-  const remainingDays = active ? Math.ceil((chain.end - now) / DAY) : 0;
-  const runsPastEvent = remainingDays + days > daysToEvent;
-  const newEnd = (active ? chain.end : now) + days * DAY;
+  const requestedEnd = (active ? chain.end : now) + days * DAY;
+  const runsPastEvent = requestedEnd > doorsAt;
+  const newEnd = Math.min(requestedEnd, doorsAt);
 
   const toggleGenre = (g: string) => setAudience((a) => (a.includes(g) ? a.filter((x) => x !== g) : [...a, g]));
 
@@ -131,7 +138,7 @@ export default function PromoteEvent() {
           {`${event.title} is now a featured listing for fans within ${radiusKm} km of ${venue?.name ?? 'the venue'}. Watch ticket sales on your events page.`}
         </T>
         <Card style={{ alignSelf: 'stretch', gap: 2, marginTop: 8 }}>
-          <KeyValue k="Runs until" v={fmtDay(chain.end)} />
+          <KeyValue k="Runs until" v={fmtDay(runEnd)} />
           <KeyValue k="Estimated reach" v={`${compact(done.reach)} people`} />
           <KeyValue k="Paid with" v={method?.label ?? 'Card'} />
           <Divider style={{ marginVertical: 8 }} />
@@ -145,7 +152,7 @@ export default function PromoteEvent() {
 
   return (
     <Screen
-      header={<ScreenHeader title={active ? 'Extend promotion' : 'Promote event'} subtitle="Featured listing" onBack={() => goBack('/pro/events')} />}
+      header={<ScreenHeader title={covered ? 'Promotion' : active ? 'Extend promotion' : 'Promote event'} subtitle="Featured listing" onBack={() => goBack('/pro/events')} />}
       footer={
         canPromote ? (
           <BottomBar>
@@ -168,16 +175,18 @@ export default function PromoteEvent() {
       }
     >
       {/* Event preview */}
-      <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 }} onPress={() => router.push(`/event/${event.id}`)}>
+      <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 }} accessibilityLabel={`${event.title}, ${shortDate(event.start)}. Open event page`} onPress={() => router.push(`/event/${event.id}`)}>
         <Photo src={event.cover} style={{ width: 68, height: 68 }} radius={14} accessibilityLabel={`${event.title} cover`} />
         <View style={{ flex: 1, gap: 2 }}>
           <T v="title" numberOfLines={1}>{event.title}</T>
           <T v="small" numberOfLines={1}>{shortDate(event.start)} · {time(event.start)} · {venue?.name ?? 'TBA'}</T>
           <View style={{ marginTop: 4 }}>
             {active ? (
-              <Pill label={`Promoted until ${fmtDay(chain.end)}`} icon="rocket-launch" tone="success" />
+              <Pill label={`Promoted until ${fmtDay(runEnd)}`} icon="rocket-launch" tone="success" />
             ) : ended ? (
               <Pill label="Ended" tone="neutral" />
+            ) : doorsOpen ? (
+              <Pill label="Doors open" tone="neutral" />
             ) : event.isPrivate ? (
               <Pill label="Private" icon="lock-outline" tone="neutral" />
             ) : (
@@ -188,14 +197,26 @@ export default function PromoteEvent() {
         <Icon name="chevron-right" size={22} color={colors.subtle} />
       </Card>
 
-      {ended ? (
-        <EmptyState icon="calendar-check-outline" title="This event has ended" body="Promotions run before doors open. Boost one of your upcoming events instead." action="Back to my events" onAction={() => router.dismissTo('/pro/events')} />
+      {doorsOpen ? (
+        <EmptyState
+          icon="calendar-check-outline"
+          title={ended ? 'This event has ended' : 'Doors are already open'}
+          body="Promotions run before doors open. Boost one of your upcoming events instead."
+          action="Back to my events"
+          onAction={() => router.dismissTo('/pro/events')}
+        />
       ) : event.isPrivate ? (
         <EmptyState icon="lock-outline" title="Private events are invite-only" body="Featured listings show events to fans nearby, so only public events can be promoted. Invite your guests directly instead." action="Invite guests" onAction={() => router.push(`/invite?event=${event.id}`)} />
+      ) : covered ? (
+        <>
+          <ActivePromotion chain={chain} end={runEnd} now={now} />
+          <Banner icon="check-decagram" tone="success">{`Your boost already runs until doors open on ${fmtDay(doorsAt)} at ${time(event.start)}, so there is nothing left to extend.`}</Banner>
+          <Button title="Back to my events" variant="secondary" full onPress={() => router.dismissTo('/pro/events')} />
+        </>
       ) : (
         <>
           {active ? (
-            <ActivePromotion chain={chain} now={now} />
+            <ActivePromotion chain={chain} end={runEnd} now={now} />
           ) : (
             <Banner icon="star-four-points-outline">Featured events appear at the top of Discover, Map and Search for fans near the venue, marked as Sponsored.</Banner>
           )}
@@ -229,7 +250,7 @@ export default function PromoteEvent() {
                       <Icon name={b.icon} size={22} color={colors.brand} />
                     </View>
                     <View style={{ flex: 1, gap: 2 }}>
-                      <Row gap={6}>
+                      <Row gap={6} style={{ flexWrap: 'wrap' }}>
                         <T v="bodyBold">{b.name}</T>
                         {b.popular ? <Pill label="Most popular" tone="warning" /> : null}
                       </Row>
@@ -281,7 +302,7 @@ export default function PromoteEvent() {
           </Card>
 
           {runsPastEvent ? (
-            <Banner icon="information-outline" tone="warning">{`Doors open in ${daysToEvent} day${daysToEvent === 1 ? '' : 's'}. The boost stops automatically then and unused days are refunded to your payment method.`}</Banner>
+            <Banner icon="information-outline" tone="warning">{`Doors open on ${fmtDay(doorsAt)} at ${time(event.start)}. The boost stops automatically then and unused days are refunded to your payment method.`}</Banner>
           ) : null}
 
           <Pressable
@@ -305,14 +326,15 @@ export default function PromoteEvent() {
   );
 }
 
-function ActivePromotion({ chain, now }: { chain: ReturnType<typeof promotionChain>; now: number }) {
-  const span = Math.max(1, chain.end - chain.start);
+/** `end` is the visible end of the boost (the chain end, capped at doors open). */
+function ActivePromotion({ chain, end, now }: { chain: ReturnType<typeof promotionChain>; end: number; now: number }) {
+  const span = Math.max(1, end - chain.start);
   const pct = Math.min(1, Math.max(0, (now - chain.start) / span));
   const totalReach = chain.run.reduce((n, p) => n + reachFor(p), 0);
   const spent = chain.run.reduce((n, p) => n + Math.round((p.budget * p.days) / 7), 0);
   const seen = roundReach(totalReach * Math.max(0.04, pct));
   const clicks = Math.round(seen * 0.045);
-  const daysLeft = Math.max(1, Math.ceil((chain.end - now) / DAY));
+  const daysLeft = Math.max(1, Math.ceil((end - now) / DAY));
   return (
     <View style={{ borderRadius: radius.xl, padding: 16, gap: 14, backgroundColor: colors.brandDeep }}>
       <Row justify="space-between">
@@ -328,7 +350,7 @@ function ActivePromotion({ chain, now }: { chain: ReturnType<typeof promotionCha
         </View>
         <Row justify="space-between">
           <T v="small" color={colors.lilac}>Started {fmtDay(chain.start)}</T>
-          <T v="small" color={colors.lilac}>Ends {fmtDay(chain.end)}</T>
+          <T v="small" color={colors.lilac}>Ends {fmtDay(end)}</T>
         </Row>
       </View>
       <Row gap={8}>
