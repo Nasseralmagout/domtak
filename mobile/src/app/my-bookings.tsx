@@ -12,6 +12,7 @@ import { colors, radius, shadow } from '../theme';
 
 type Tab = 'tickets' | 'musician' | 'venue';
 const asTab = (t?: string): Tab => (t === 'musician' || t === 'venue' ? t : 'tickets');
+const rank = (status: string, end: string) => (status === 'cancelled' ? 2 : status === 'used' || parse(end) < TODAY ? 1 : 0);
 
 export default function MyBookings() {
   const params = useLocalSearchParams<{ tab?: string }>();
@@ -38,7 +39,8 @@ export default function MyBookings() {
   )
     .map((group) => ({ group, event: allEvents.find((x) => x.id === group[0].eventId) }))
     .filter((g): g is { group: typeof tickets; event: NonNullable<typeof g.event> } => !!g.event)
-    .sort((a, b) => Number(a.group[0].status === 'cancelled') - Number(b.group[0].status === 'cancelled') || a.event.start.localeCompare(b.event.start));
+    // Upcoming first (soonest on top), then past nights, then cancelled orders.
+    .sort((a, b) => rank(a.group[0].status, a.event.end) - rank(b.group[0].status, b.event.end) || a.event.start.localeCompare(b.event.start));
 
   const bookingList = bookings.filter((b) => b.type === tab).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 

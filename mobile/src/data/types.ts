@@ -176,6 +176,8 @@ export interface Booking {
   amount: number;
   status: BookingStatus;
   createdAt: string;
+  /** Files or statements attached to a dispute (booking/issue). */
+  evidence?: string[];
 }
 
 export interface Ticket {

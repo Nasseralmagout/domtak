@@ -356,9 +356,9 @@ export function Divider({ style }: { style?: StyleProp<ViewStyle> }) {
 
 export function KeyValue({ k, v, strong, color }: { k: string; v: string; strong?: boolean; color?: string }) {
   return (
-    <Row justify="space-between" style={{ paddingVertical: 4 }}>
+    <Row justify="space-between" align="flex-start" gap={12} style={{ paddingVertical: 4 }}>
       <T v={strong ? 'bodyBold' : 'body'} color={strong ? colors.ink : colors.muted}>{k}</T>
-      <T v={strong ? 'h3' : 'bodyBold'} color={color}>{v}</T>
+      <T v={strong ? 'h3' : 'bodyBold'} color={color} style={{ flexShrink: 1, textAlign: 'right' }}>{v}</T>
     </Row>
   );
 }

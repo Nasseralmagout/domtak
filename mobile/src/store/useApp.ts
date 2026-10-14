@@ -118,6 +118,8 @@ interface State {
   checkout?: CheckoutDraft;
 
   blocked: string[];
+  /** Door check-ins per event: ticket codes scanned at the entrance. */
+  checkIns: Record<string, string[]>;
   availability: Availability;
   promotions: Promotion[];
   plan: 'free' | 'monthly' | 'yearly';
@@ -167,6 +169,10 @@ interface State {
   resetDemo: () => void;
 
   toggleBlock: (profileId: string) => void;
+  /** Records a door check-in; a matching ticket of the user becomes 'used'. Returns false if the code was already in. */
+  checkIn: (eventId: string, code: string) => boolean;
+  /** Adds one evidence item (file name or statement) to a disputed booking. */
+  addBookingEvidence: (bookingId: string, item: string) => void;
   setAvailability: (a: Partial<Availability>) => void;
   promoteEvent: (p: Omit<Promotion, 'id' | 'createdAt'>) => string;
   setPlan: (plan: State['plan']) => void;
@@ -218,6 +224,7 @@ const initialData = () => ({
   selectedPayment: 'visa',
   checkout: undefined,
   blocked: [] as string[],
+  checkIns: {} as Record<string, string[]>,
   availability: {
     days: { Mon: false, Tue: false, Wed: true, Thu: true, Fri: true, Sat: true, Sun: false },
     blockedDates: ['2026-10-31', '2026-11-14'],
@@ -376,6 +383,16 @@ export const useApp = create<State>()(
       resetDemo: () => set({ ...initialData() }),
 
       toggleBlock: (id) => set((s) => ({ blocked: s.blocked.includes(id) ? s.blocked.filter((x) => x !== id) : [...s.blocked, id] })),
+      checkIn: (eventId, code) => {
+        if (get().checkIns[eventId]?.includes(code)) return false;
+        set((s) => ({
+          checkIns: { ...s.checkIns, [eventId]: [...(s.checkIns[eventId] ?? []), code] },
+          tickets: s.tickets.map((t) => (t.eventId === eventId && t.code === code && t.status === 'valid' ? { ...t, status: 'used' as const } : t)),
+        }));
+        return true;
+      },
+      addBookingEvidence: (bookingId, item) =>
+        set((s) => ({ bookings: s.bookings.map((b) => (b.id === bookingId ? { ...b, evidence: [...(b.evidence ?? []), item] } : b)) })),
       setAvailability: (a) => set((s) => ({ availability: { ...s.availability, ...a } })),
       promoteEvent: (p) => {
         const id = uid('promo');

@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Platform, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -11,6 +11,8 @@ import { attendees } from '../../data/mock';
 import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
+
+const NO_GUESTS: typeof attendees = [];
 
 type Result = { kind: 'ready' | 'valid' | 'used' | 'invalid'; title: string; sub: string };
 
@@ -27,12 +29,15 @@ export default function Scanner() {
   const tickets = useApp((s) => s.tickets);
   // Same sample guest list as the Guest list screen; an event with no tickets sold has nobody to scan yet.
   const sold = event ? event.ticketTypes.reduce((n, t) => n + t.sold, 0) : 0;
-  const guests = sold > 0 ? attendees : [];
+  const guests = sold > 0 ? attendees : NO_GUESTS;
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [manual, setManual] = useState('');
   const [result, setResult] = useState<Result>({ kind: 'ready', title: 'Ready to scan', sub: 'Point the camera at the guest’s e-ticket QR code' });
-  const [checked, setChecked] = useState<string[]>(() => guests.filter((a) => a.checkedIn).map((a) => a.code));
+  const scanned = useApp((s) => s.checkIns[eventId]);
+  const checkIn = useApp((s) => s.checkIn);
+  // Seed guests already inside plus everything scanned at this door (shared with the Guest list).
+  const checked = useMemo(() => [...guests.filter((a) => a.checkedIn).map((a) => a.code), ...(scanned ?? [])], [guests, scanned]);
   const lock = useRef(false);
   const count = checked.length;
 
@@ -62,7 +67,7 @@ export default function Scanner() {
     } else if (ticket?.status === 'cancelled') {
       next = { kind: 'invalid', title: 'Cancelled ticket', sub: 'This ticket was refunded' };
     } else {
-      setChecked((c) => [...c, code]);
+      checkIn(eventId, code);
       next = { kind: 'valid', title: `Valid · ${guest?.name ?? ticket?.holder}`, sub: `${guest?.ticketType ?? 'Ticket'} · #${code}` };
     }
     setResult(next);

@@ -20,7 +20,7 @@ export default function BookingIssue() {
   const setStatus = useApp((s) => s.setBookingStatus);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const [evidenceSheet, setEvidenceSheet] = useState(false);
-  const [evidence, setEvidence] = useState<string[]>([]);
+  const addBookingEvidence = useApp((s) => s.addBookingEvidence);
 
   if (!booking) {
     return (
@@ -40,7 +40,7 @@ export default function BookingIssue() {
   const message = () => router.push(`/chat/${ensureConversation(booking.targetId)}`);
   const bookAgain = () => router.replace({ pathname: '/booking/new', params: { type: booking.type, id: booking.targetId } });
   const addEvidence = (kind: string) => {
-    setEvidence((e) => [...e, kind]);
+    addBookingEvidence(booking.id, kind);
     toast(`${kind} added to case ${ref}`);
   };
 
@@ -107,8 +107,8 @@ export default function BookingIssue() {
       {booking.status === 'disputed' ? (
         <Card style={{ alignSelf: 'stretch', gap: 8 }}>
           <T v="title">Case {ref}</T>
-          {evidence.length ? (
-            evidence.map((e, i) => (
+          {booking.evidence?.length ? (
+            booking.evidence.map((e, i) => (
               <Row key={`${e}-${i}`} gap={8}>
                 <Icon name="paperclip" size={18} color={colors.brand} />
                 <T v="body">{e}</T>

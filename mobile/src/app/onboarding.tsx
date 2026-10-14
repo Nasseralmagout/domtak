@@ -35,7 +35,7 @@ export default function Onboarding() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <Row justify="flex-end" style={{ paddingHorizontal: 20, height: 52 }}>
-        <Pressable accessibilityRole="button" onPress={() => finish('/login')} hitSlop={10}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Skip intro and log in" onPress={() => finish('/login')} hitSlop={12}>
           <T v="bodyBold" color={colors.brand}>Skip</T>
         </Pressable>
       </Row>

@@ -356,7 +356,7 @@ export const conversations: Conversation[] = [
 export const notifications: AppNotification[] = [
   { id: 'n1', type: 'follow', actorId: 'suzi', text: 'started following you', time: '8m', section: 'Today' },
   { id: 'n2', type: 'booking', actorId: 'sara', text: 'accepted your booking request — pay to confirm', time: '1h', section: 'Today', href: '/booking/b2' },
-  { id: 'n3', type: 'ticket', actorId: 'danceworld', text: 'Dance world starts in 3 days. Your ticket is ready.', time: '3h', section: 'Today', thumb: 'ev_dance_world', href: '/tickets' },
+  { id: 'n3', type: 'ticket', actorId: 'danceworld', text: 'Dance world is coming up. Your ticket is ready.', time: '3h', section: 'Today', thumb: 'ev_dance_world', href: '/tickets' },
   { id: 'n4', type: 'comment', actorId: 'suzi', text: 'commented on your post: "So good!"', time: '2d', section: 'This week', thumb: 'feed_friends' },
   { id: 'n5', type: 'reshare', actorId: 'toni', text: 'reshared your post', time: '3d', section: 'This week', thumb: 'feed_friends' },
   { id: 'n6', type: 'event', actorId: 'soso', text: 'is playing near you on Saturday — Dark Moon club', time: '4d', section: 'This week', thumb: 'ev_club_dark', href: '/event/darkmoon' },
