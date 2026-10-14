@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ArtistCard } from '../../components/cards';
 import { DomtakHeader, goBack, ScreenHeader } from '../../components/layout';
@@ -24,6 +24,7 @@ export default function ArtistList() {
   const [q, setQ] = useState('');
   const [style, setStyle] = useState<string>();
   const [sort, setSort] = useState<'popular' | 'price'>('popular');
+  const insets = useSafeAreaInsets();
 
   const list = useMemo(() => {
     let l = profiles.filter((p) => (kind === 'all' ? ['dj', 'musician', 'band'].includes(p.kind) : p.kind === kind));
@@ -69,10 +70,10 @@ export default function ArtistList() {
         }
         renderItem={({ item }) => (item ? <ArtistCard artist={item} /> : <View style={{ flex: 1 }} />)}
         ListEmptyComponent={<EmptyState icon="account-music-outline" title="No artists match" body="Try a different style or search term." action="Clear search" onAction={() => { setStyle(undefined); setQ(''); }} />}
-        ListFooterComponent={<View style={{ height: 72 }} />}
+        ListFooterComponent={<View style={{ height: 72 + insets.bottom }} />}
       />
       {/* Floating access to venues from the artist marketplace */}
-      <View style={{ position: 'absolute', right: 16, bottom: 24 }}>
+      <View style={{ position: 'absolute', right: 16, bottom: 24 + insets.bottom }}>
         <IconButton name="storefront-outline" label="Browse venues" bg={colors.brand} color={colors.white} size={56} onPress={() => router.push('/venues')} />
       </View>
     </SafeAreaView>

@@ -25,11 +25,14 @@ export default function Scanner() {
   const { eventId = 'bunker7' } = useLocalSearchParams<{ eventId?: string }>();
   const event = useEvent(eventId);
   const tickets = useApp((s) => s.tickets);
+  // Same sample guest list as the Guest list screen; an event with no tickets sold has nobody to scan yet.
+  const sold = event ? event.ticketTypes.reduce((n, t) => n + t.sold, 0) : 0;
+  const guests = sold > 0 ? attendees : [];
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [manual, setManual] = useState('');
   const [result, setResult] = useState<Result>({ kind: 'ready', title: 'Ready to scan', sub: 'Point the camera at the guest’s e-ticket QR code' });
-  const [checked, setChecked] = useState<string[]>(() => attendees.filter((a) => a.checkedIn).map((a) => a.code));
+  const [checked, setChecked] = useState<string[]>(() => guests.filter((a) => a.checkedIn).map((a) => a.code));
   const lock = useRef(false);
   const count = checked.length;
 
@@ -48,7 +51,7 @@ export default function Scanner() {
       // plain code typed or printed on the ticket
     }
     const ticket = tickets.find((t) => t.code === code);
-    const guest = attendees.find((a) => a.code === code);
+    const guest = guests.find((a) => a.code === code);
     let next: Result;
     if ((forEvent && forEvent !== eventId) || (ticket && ticket.eventId !== eventId)) {
       next = { kind: 'invalid', title: 'Invalid ticket', sub: `This QR isn’t for ${event?.title ?? 'this event'}` };
@@ -70,8 +73,11 @@ export default function Scanner() {
 
   const look = LOOK[result.kind];
   const canScan = permission?.granted && Platform.OS !== 'web';
-  // The demo button tries the next guest who hasn't been checked in yet.
-  const demoCode = attendees.find((a) => !checked.includes(a.code))?.code ?? attendees[0].code;
+  // The demo button tries the next guest who hasn't been checked in yet (your own tickets for this event count too).
+  const demoCode =
+    guests.find((a) => !checked.includes(a.code))?.code ??
+    tickets.find((t) => t.eventId === eventId && t.status === 'valid' && !checked.includes(t.code))?.code ??
+    guests[0]?.code;
   const reset = () => setResult({ kind: 'ready', title: 'Ready to scan', sub: 'Point the camera at the guest’s e-ticket QR code' });
 
   return (
@@ -163,7 +169,13 @@ export default function Scanner() {
               <T v="small" color={colors.inkSoft}>{result.sub}</T>
             </View>
           </Row>
-          <Button title={result.kind === 'ready' ? `Try demo code ${demoCode}` : 'Scan next guest'} onPress={() => (result.kind === 'ready' ? validate(demoCode) : reset())} />
+          {result.kind !== 'ready' ? (
+            <Button title="Scan next guest" onPress={reset} />
+          ) : demoCode ? (
+            <Button title={`Try demo code ${demoCode}`} onPress={() => validate(demoCode)} />
+          ) : (
+            <T v="small" center>No tickets sold for this event yet, so there’s no one to check in.</T>
+          )}
           <Button title="Guest list" variant="ghost" size="md" icon="account-group-outline" onPress={() => router.push(`/pro/attendees/${eventId}`)} />
         </View>
       </SafeAreaView>

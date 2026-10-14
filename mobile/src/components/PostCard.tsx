@@ -1,9 +1,11 @@
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { memo, useRef, useState } from 'react';
-import { FlatList, Platform, Pressable, Share, Text, View, useWindowDimensions } from 'react-native';
+import { FlatList, Pressable, Share, Text, View, useWindowDimensions } from 'react-native';
 
+import type { ImgKey } from '../data/images';
 import { profileById, venueById } from '../data/mock';
-import type { Post } from '../data/types';
+import type { Post, ProfileKind } from '../data/types';
 import { compact, shortDate, time } from '../lib/format';
 import { toast } from '../store/toast';
 import { useApp, useEvent } from '../store/useApp';
@@ -13,25 +15,37 @@ import { Avatar, Button, Icon, IconButton, Photo, Row, T } from './ui';
 
 const postLink = (id: string) => `https://domtak.de/p/${id}`;
 
-/** Copies text where the platform allows it (web); otherwise opens the share sheet, which has a copy option. */
+/** Copies the link to the clipboard on every platform; only if that fails, opens the share sheet (which has a copy option). */
 async function copyLink(url: string) {
-  const clip = Platform.OS === 'web' ? (globalThis as { navigator?: { clipboard?: { writeText?: (t: string) => Promise<void> } } }).navigator?.clipboard : undefined;
-  if (clip?.writeText) {
-    try {
-      await clip.writeText(url);
+  try {
+    // On web this resolves false when the browser refuses clipboard access.
+    if (await Clipboard.setStringAsync(url)) {
       toast('Link copied');
       return;
-    } catch {
-      // fall through to the share sheet
     }
+  } catch {
+    // fall through to the share sheet
   }
   Share.share({ message: url }).catch(() => toast('Could not open the share sheet'));
 }
 
-export function authorFor(id: string, me: { name: string; avatar?: import('../data/images').ImgKey; role: string }) {
-  if (id === 'me') return { id: 'me', name: me.name, avatar: me.avatar, title: 'You', verified: false, kind: 'fan' as const };
+export interface PostAuthor {
+  id: string;
+  name: string;
+  avatar?: ImgKey;
+  title: string;
+  verified: boolean;
+  kind: ProfileKind | 'venue';
+}
+
+/** The author of a post or comment: you, a profile, or a venue (venues post too, e.g. Moon Venue). */
+export function authorFor(id: string, me: { name: string; avatar?: ImgKey; role: string }): PostAuthor | undefined {
+  if (id === 'me') return { id: 'me', name: me.name, avatar: me.avatar, title: 'You', verified: false, kind: 'fan' };
   const p = profileById(id);
-  return p ? { id: p.id, name: p.name, avatar: p.avatar, title: p.title, verified: !!p.verified, kind: p.kind } : undefined;
+  if (p) return { id: p.id, name: p.name, avatar: p.avatar, title: p.title, verified: !!p.verified, kind: p.kind };
+  const v = venueById(id);
+  if (v) return { id: v.id, name: v.name, avatar: v.cover, title: `Venue · ${v.area}`, verified: false, kind: 'venue' };
+  return undefined;
 }
 
 /** `onComment` replaces the default "open the post" behaviour, e.g. on the post screen itself where it focuses the comment box. */
@@ -58,7 +72,7 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const mediaH = Math.round(width * 1.12);
   const commentCount = post.comments.length + (extra?.length ?? 0);
   const bookable = author.kind === 'dj' || author.kind === 'musician' || author.kind === 'band';
-  const authorHref = author.id === 'me' ? '/profile/me' : bookable ? `/artist/${author.id}` : venueById(author.id) ? `/venue/${author.id}` : `/profile/${author.id}`;
+  const authorHref = author.id === 'me' ? '/profile/me' : bookable ? `/artist/${author.id}` : author.kind === 'venue' ? `/venue/${author.id}` : `/profile/${author.id}`;
 
   const onMediaPress = () => {
     const now = Date.now();
@@ -83,7 +97,7 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const actions: SheetAction[] = [
     { label: saved ? 'Remove from saved' : 'Save post', icon: saved ? 'bookmark-remove-outline' : 'bookmark-outline', onPress: () => { toggleSave(post.id); toast(saved ? 'Removed from saved' : 'Saved to your collection'); } },
     { label: 'Share', icon: 'share-variant-outline', onPress: share },
-    { label: 'Copy link', icon: 'link-variant', onPress: () => { copyLink(postLink(post.id)); } },
+    { label: 'Copy link', icon: 'link-variant', onPress: () => { void copyLink(postLink(post.id)); } },
     ...(event ? [{ label: `View ${event.title}`, icon: 'party-popper' as const, onPress: () => router.push(`/event/${event.id}`) }] : []),
     ...(!mine && followingAuthor ? [{ label: `Unfollow ${author.name}`, icon: 'account-minus-outline' as const, onPress: () => { toggleFollow(author.id); toast(`You unfollowed ${author.name}`); } }] : []),
     ...(!mine ? [{ label: 'Hide post', icon: 'eye-off-outline' as const, onPress: () => setHidden(true) }] : []),
@@ -179,8 +193,8 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
           </View>
           <Button title="Tickets" accessibilityLabel={`Tickets for ${event.title}`} size="sm" onPress={() => router.push(`/tickets/${event.id}`)} />
         </Pressable>
-      ) : bookable ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Book ${author.name} for your event`} onPress={() => router.push({ pathname: '/booking/new', params: { type: 'musician', id: author.id } })} style={{ marginHorizontal: 12, marginTop: 10, padding: 10, borderRadius: 14, backgroundColor: colors.brandTint, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      ) : bookable || author.kind === 'venue' ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={`Book ${author.name} for your event`} onPress={() => router.push({ pathname: '/booking/new', params: { type: bookable ? 'musician' : 'venue', id: author.id } })} style={{ marginHorizontal: 12, marginTop: 10, padding: 10, borderRadius: 14, backgroundColor: colors.brandTint, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Icon name="calendar-plus" size={22} color={colors.brand} />
           <T v="smallBold" style={{ flex: 1 }}>Book {author.name} for your event</T>
           <Icon name="chevron-right" size={20} color={colors.brand} />

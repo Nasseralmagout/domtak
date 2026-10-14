@@ -4,11 +4,20 @@ import { Pressable, ScrollView, type TextInput, View } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { authorFor, PostCard } from '../../components/PostCard';
-import { Avatar, Button, EmptyState, Field, IconButton, Row, T } from '../../components/ui';
+import { Avatar, Button, EmptyState, Field, Icon, IconButton, Row, T } from '../../components/ui';
 import { profileById, venueById } from '../../data/mock';
 import { compact } from '../../lib/format';
 import { useApp, useFeedPosts } from '../../store/useApp';
 import { colors } from '../../theme';
+
+// Comment likes last for the app session (sample comments are read-only data).
+const likedComments = new Set<string>();
+
+/** "@handle " for replies: the profile handle, else the first name. */
+function mentionFor(authorId: string, name: string) {
+  const handle = profileById(authorId)?.handle ?? `@${name.split(' ')[0]}`;
+  return `${handle.startsWith('@') ? handle : `@${handle}`} `;
+}
 
 function profileHref(id: string) {
   if (id === 'me') return '/profile/me';
@@ -25,8 +34,7 @@ export default function PostDetail() {
   const extra = useApp((s) => (id ? s.extraComments[id] : undefined));
   const addComment = useApp((s) => s.addComment);
   const [text, setText] = useState('');
-  // Comment likes are kept on this screen only (the sample comments are read-only data).
-  const [liked, setLiked] = useState<Record<string, boolean>>({});
+  const [liked, setLiked] = useState<Record<string, boolean>>(() => Object.fromEntries([...likedComments].map((k) => [k, true])));
   const input = useRef<TextInput>(null);
   const scroll = useRef<ScrollView>(null);
 
@@ -47,13 +55,18 @@ export default function PostDetail() {
   };
   const replyTo = (authorId: string) => {
     const a = authorFor(authorId, user);
-    if (!a || authorId === 'me') {
-      input.current?.focus();
-      return;
+    if (a && authorId !== 'me') {
+      const mention = mentionFor(authorId, a.name);
+      // Replace a leading @mention from an earlier Reply instead of stacking them.
+      setText((cur) => `${mention}${cur.replace(/^@\S+\s+/, '')}`);
     }
-    const handle = `@${a.name.split(' ')[0]} `;
-    setText((cur) => (cur.startsWith(handle) ? cur : `${handle}${cur}`));
     input.current?.focus();
+  };
+  const toggleCommentLike = (commentId: string) => {
+    const on = !liked[commentId];
+    if (on) likedComments.add(commentId);
+    else likedComments.delete(commentId);
+    setLiked((m) => ({ ...m, [commentId]: on }));
   };
 
   return (
@@ -97,28 +110,28 @@ export default function PostDetail() {
             const likes = c.likes + (on ? 1 : 0);
             return (
               <Row key={c.id} gap={12} align="flex-start">
-                <Pressable accessibilityRole="button" accessibilityLabel={`Open ${a?.name ?? 'author'}’s profile`} onPress={() => router.push(profileHref(c.authorId) as never)}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Open ${a?.name ?? 'author'}’s profile`} onPress={() => router.push(profileHref(c.authorId) as never)} hitSlop={4}>
                   <Avatar src={a?.avatar} size={36} label={a?.name} />
                 </Pressable>
                 <View style={{ flex: 1, gap: 2 }}>
                   <T v="body"><T v="bodyBold">{a?.name} </T>{c.text}</T>
                   <Row gap={14}>
                     <T v="small" style={{ fontSize: 12 }}>{c.time === 'now' ? 'Just now' : c.time}</T>
-                    {likes > 0 ? <T v="small" style={{ fontSize: 12 }}>{compact(likes)} like{likes === 1 ? '' : 's'}</T> : null}
                     <Pressable accessibilityRole="button" accessibilityLabel={`Reply to ${a?.name ?? 'comment'}`} onPress={() => replyTo(c.authorId)} hitSlop={12}>
                       <T v="smallBold" style={{ fontSize: 12 }} color={colors.muted}>Reply</T>
                     </Pressable>
                   </Row>
                 </View>
-                <IconButton
-                  name={on ? 'heart' : 'heart-outline'}
-                  label={on ? 'Unlike comment' : 'Like comment'}
-                  selected={on}
-                  size={36}
-                  iconSize={16}
-                  color={on ? colors.danger : colors.muted}
-                  onPress={() => setLiked((m) => ({ ...m, [c.id]: !m[c.id] }))}
-                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${on ? 'Unlike' : 'Like'} comment by ${a?.name ?? 'author'}, ${likes} like${likes === 1 ? '' : 's'}`}
+                  accessibilityState={{ selected: on }}
+                  onPress={() => toggleCommentLike(c.id)}
+                  style={({ pressed }) => ({ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}
+                >
+                  <Icon name={on ? 'heart' : 'heart-outline'} size={18} color={on ? colors.danger : colors.muted} />
+                  {likes > 0 ? <T v="small" style={{ fontSize: 11 }} color={on ? colors.danger : colors.muted}>{compact(likes)}</T> : null}
+                </Pressable>
               </Row>
             );
           })}

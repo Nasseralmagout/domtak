@@ -5,6 +5,7 @@ import { Pressable, View } from 'react-native';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Chip, Field, Icon, Photo, Row, T, Toggle } from '../components/ui';
 import type { ImgKey } from '../data/images';
+import type { PostVisibility } from '../data/types';
 import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors } from '../theme';
@@ -22,7 +23,7 @@ export default function NewPost() {
   const [caption, setCaption] = useState('');
   const [music, setMusic] = useState('');
   const [location, setLocation] = useState('Berlin');
-  const [visibility, setVisibility] = useState<'Public' | 'Followers'>('Public');
+  const [visibility, setVisibility] = useState<PostVisibility>('Public');
   const [addLocation, setAddLocation] = useState(true);
   const max = isStory ? 1 : 6;
 
@@ -54,15 +55,20 @@ export default function NewPost() {
 
   const publish = () => {
     if (!picked.length) return;
-    addPost({
-      kind: picked.length > 1 ? 'carousel' : 'photo',
-      media: picked,
-      caption: caption.trim() || (isStory ? 'New story' : ''),
-      location: addLocation && location.trim() ? location.trim() : undefined,
-      track: music.trim() || undefined,
-    });
-    toast(isStory ? 'Story shared' : visibility === 'Public' ? 'Post published' : 'Post shared with your followers');
-    router.replace('/(tabs)');
+    // Stories have no visibility picker and are always public.
+    const vis: PostVisibility = isStory ? 'Public' : visibility;
+    addPost(
+      {
+        kind: picked.length > 1 ? 'carousel' : 'photo',
+        media: picked,
+        caption: caption.trim() || (isStory ? 'New story' : ''),
+        location: addLocation && location.trim() ? location.trim() : undefined,
+        track: music.trim() || undefined,
+      },
+      vis,
+    );
+    toast(isStory ? 'Story shared' : vis === 'Public' ? 'Post published' : 'Shared with your followers. Find it in the Following feed.');
+    router.replace(vis === 'Followers' ? '/(tabs)?tab=following' : '/(tabs)');
   };
 
   return (
@@ -126,9 +132,22 @@ export default function NewPost() {
           {addLocation ? <Field value={location} onChangeText={setLocation} icon="map-marker-outline" accessibilityLabel="Location" placeholder="Where was this?" /> : null}
           <T v="label">Visibility</T>
           <Row gap={8}>
-            {(['Public', 'Followers'] as const).map((v) => <Chip key={v} label={v} icon={v === 'Public' ? 'earth' : 'account-group-outline'} selected={visibility === v} onPress={() => setVisibility(v)} />)}
+            {(['Public', 'Followers'] as const).map((v) => (
+              <Chip
+                key={v}
+                label={v}
+                icon={v === 'Public' ? 'earth' : 'account-group-outline'}
+                selected={visibility === v}
+                accessibilityLabel={v === 'Public' ? 'Visibility: Public' : 'Visibility: Followers only'}
+                onPress={() => setVisibility(v)}
+              />
+            ))}
           </Row>
-          <T v="small">{visibility === 'Public' ? 'Anyone on Domtak can see this post.' : 'Only people who follow you can see this post.'}</T>
+          <T v="small">
+            {visibility === 'Public'
+              ? 'Anyone on Domtak can see this post in For you, Following and Nearby.'
+              : 'Only your followers see this post, in their Following feed. It won’t appear in For you or Nearby.'}
+          </T>
         </>
       ) : (
         <Field label="Text on story" value={caption} onChangeText={setCaption} placeholder="Say something…" />

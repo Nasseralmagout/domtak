@@ -59,7 +59,7 @@ export default function BookingStatusScreen() {
     requested: { hint: `Your request is on its way to ${name}.`, primary: ['Message', chat], secondary: ['Cancel request', () => setConfirm('cancel')] },
     pending: { hint: `Waiting for ${name} to accept. You won’t be charged until they do.`, primary: [`Message ${name}`, chat], secondary: ['Cancel request', () => setConfirm('cancel')] },
     accepted: {
-      hint: `${name} accepted! Pay now to lock the date. Funds stay in escrow until the event.`,
+      hint: `${name} accepted! Pay now to lock the date. Your money stays in escrow until 24 h after the event.`,
       primary: [`Pay ${euro(booking.amount)}`, () => { startCheckout(booking.id); router.push('/checkout'); }],
       secondary: ['Decline offer', () => setConfirm('decline')],
     },
@@ -169,7 +169,9 @@ export default function BookingStatusScreen() {
 
       <Banner icon="shield-check-outline">
         {booking.status === 'completed'
-          ? `The escrow payment was released to ${name} 24 h after the event.${reportable ? ' Something went wrong? Report it within 48 h of the event.' : ''}`
+          ? reportable
+            ? `Something went wrong? Report it within 48 h of the event and the payment to ${name} stays frozen while we review.`
+            : `The escrow payment was released to ${name} after the event.`
           : paid
             ? `Your payment is held in escrow and only released to ${name} 24 h after the event.`
             : `You pay only after ${name} accepts. The money then waits in escrow until 24 h after the event.`}

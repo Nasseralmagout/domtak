@@ -7,7 +7,7 @@ import { BottomBar, Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, Icon, type IconName, KeyValue, Pill, Row, T } from '../../components/ui';
 import { profileById, venueById } from '../../data/mock';
 import { isException } from '../../lib/booking';
-import { euro, shortDate } from '../../lib/format';
+import { euro, parse, shortDate, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp } from '../../store/useApp';
 import { colors } from '../../theme';
@@ -47,7 +47,7 @@ export default function BookingIssue() {
   const V: Record<string, { chip: string; tone: 'danger' | 'warning' | 'brand'; icon: IconName; title: string; body: string; money: string; moneyColor: string; primary: Action; secondary: Action; tertiary?: Action }> = {
     declined: {
       chip: 'Declined', tone: 'danger', icon: 'close', title: `${name} can’t take this booking`,
-      body: 'They’re not available for this date. You weren’t charged. Similar options may still be free that night.',
+      body: parse(booking.date) < TODAY ? 'They weren’t available for this date. You weren’t charged.' : 'They’re not available for this date. You weren’t charged. Similar options may still be free that night.',
       money: 'Not charged', moneyColor: colors.success,
       primary: [booking.type === 'musician' ? 'Find similar artists' : 'Find similar venues', () => router.replace(browse)],
       secondary: [`Message ${name}`, message],

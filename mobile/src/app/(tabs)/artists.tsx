@@ -26,7 +26,7 @@ export default function ArtistsTab() {
         </Pressable>
 
         <View style={{ padding: 16, gap: 14 }}>
-          <Pressable accessibilityRole="search" onPress={() => router.push('/search?type=musician')} style={{ height: 48, borderRadius: 14, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, ...shadow(1) }}>
+          <Pressable accessibilityRole="search" accessibilityLabel="Search musicians, bands, DJs" onPress={() => router.push('/search?type=musician')} style={{ height: 48, borderRadius: 14, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, ...shadow(1) }}>
             <Icon name="magnify" size={22} color={colors.muted} />
             <T v="body" color={colors.subtle}>Search musicians, bands, DJs</T>
           </Pressable>
@@ -52,7 +52,7 @@ export default function ArtistsTab() {
 
           <Row justify="space-between" style={{ marginTop: 8 }}>
             <T v="h3" color={colors.brandDeep}>Trending artists</T>
-            <Pressable accessibilityRole="button" onPress={() => router.push('/artists/all')} hitSlop={8}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="See all artists" onPress={() => router.push('/artists/all')} hitSlop={12}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
           </Row>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 6 }}>

@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { BackHandler, Modal, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EventCard } from '../components/cards';
@@ -30,6 +30,7 @@ export default function CreateEvent() {
   const insets = useSafeAreaInsets();
   const addEvent = useApp((s) => s.addEvent);
   const createBooking = useApp((s) => s.createBooking);
+  const bookings = useApp((s) => s.bookings);
   const user = useApp((s) => s.user);
   const allEvents = useAllEvents();
   const dates = useMemo(() => Array.from({ length: 60 }, (_, i) => new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + 2 + i, 12)), []);
@@ -68,9 +69,28 @@ export default function CreateEvent() {
   const finalTickets = paid ? tickets : [{ id: 'free', name: isPrivate ? 'Guest' : 'Free entry', description: 'Register to get your QR', price: 0, capacity: tickets[0]?.capacity ?? 100, sold: 0 }];
   const totalCapacity = finalTickets.reduce((n, t) => n + t.capacity, 0);
   const startDate = parse(startIso);
-  const endDate2 = parse(endIso);
-  // Another public event at the same venue whose time overlaps this one.
-  const clash = allEvents.find((e) => e.venueId === venueId && parse(e.start) < endDate2 && parse(e.end) > startDate);
+  const occurrences = oneTime ? 1 : weeks;
+  /** The same time slot moved by whole weeks (a weekly series repeats on this weekday). */
+  const shiftWeeks = (iso: string, w: number) => {
+    const d = parse(iso);
+    const moved = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * w, d.getHours(), d.getMinutes());
+    return `${isoDay(moved)}T${String(moved.getHours()).padStart(2, '0')}:${String(moved.getMinutes()).padStart(2, '0')}:00`;
+  };
+  // Another event at the same venue whose time overlaps any of the dates you're publishing.
+  const clash = Array.from({ length: occurrences }, (_, w) => ({ s: parse(shiftWeeks(startIso, w)), e: parse(shiftWeeks(endIso, w)) }))
+    .map(({ s, e }) => allEvents.find((x) => x.venueId === venueId && parse(x.start) < e && parse(x.end) > s))
+    .find(Boolean);
+
+  // Android back steps through the form like the header arrow does, instead of discarding it.
+  useEffect(() => {
+    if (step === 0) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setError(undefined);
+      setStep((n) => Math.max(0, n - 1));
+      return true;
+    });
+    return () => sub.remove();
+  }, [step]);
 
   const draft = {
     title: title.trim() || 'Untitled event',
@@ -82,7 +102,7 @@ export default function CreateEvent() {
     start: startIso,
     end: endIso,
     ticketTypes: finalTickets,
-    description: description.trim() || 'More details coming soon.',
+    description: description.trim() || (isPrivate ? `Private party at ${venue.name}, ${venue.area}.` : `${genre} night at ${venue.name}, ${venue.area}.`),
     mapPos: venue.mapPos,
     ageLimit: adults ? 18 : undefined,
     refundPolicy: paid ? refund : 'Free event',
@@ -109,50 +129,56 @@ export default function CreateEvent() {
   };
 
   const publish = () => {
-    const occurrences = oneTime ? 1 : weeks;
     let firstId = '';
     for (let w = 0; w < occurrences; w++) {
-      const shift = (iso: string) => {
-        const d = parse(iso);
-        const moved = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * w, d.getHours(), d.getMinutes());
-        return `${isoDay(moved)}T${String(moved.getHours()).padStart(2, '0')}:${String(moved.getMinutes()).padStart(2, '0')}:00`;
-      };
-      const id = addEvent({ ...draft, start: shift(startIso), end: shift(endIso), subtitle: occurrences > 1 ? `Week ${w + 1} of ${occurrences}` : undefined });
+      const id = addEvent({ ...draft, start: shiftWeeks(startIso, w), end: shiftWeeks(endIso, w), subtitle: occurrences > 1 ? `Week ${w + 1} of ${occurrences}` : undefined });
       if (!firstId) firstId = id;
     }
-    // Tagged artists get a real booking request for the first date.
-    if (!isPrivate) {
-      lineup.forEach((aid) => {
-        const a = profiles.find((p) => p.id === aid);
-        if (!a) return;
-        createBooking({
-          type: 'musician',
-          targetId: aid,
-          eventTitle: draft.title,
-          date: isoDay(date),
-          startTime,
-          endTime: endIso.slice(11, 16),
-          hours,
-          location: `${venue.name}, ${venue.area}`,
-          guests: totalCapacity,
-          equipment: venue.equipment,
-          extras: 'None',
-          note: 'Tagged in the line up.',
-          amount: (a.feePerHour ?? 0) * hours,
-        });
+    // Tagged artists get a real booking request for the first date, unless one is already open for that day.
+    const day = isoDay(date);
+    const toRequest = isPrivate
+      ? []
+      : lineup.filter((aid) => !bookings.some((b) => b.targetId === aid && b.date === day && !['declined', 'cancelled', 'expired', 'completed'].includes(b.status)));
+    toRequest.forEach((aid) => {
+      const a = profiles.find((p) => p.id === aid);
+      if (!a) return;
+      createBooking({
+        type: 'musician',
+        targetId: aid,
+        eventTitle: draft.title,
+        date: day,
+        startTime,
+        endTime: endIso.slice(11, 16),
+        hours,
+        location: `${venue.name}, ${venue.area}`,
+        guests: totalCapacity,
+        equipment: venue.equipment,
+        extras: 'None',
+        note: 'Tagged in the line up.',
+        amount: (a.feePerHour ?? 0) * hours,
       });
-    }
-    const parts = [occurrences > 1 ? `${occurrences} weekly dates published` : 'Event published', !isPrivate && lineup.length ? `${lineup.length} booking request${lineup.length > 1 ? 's' : ''} sent` : ''].filter(Boolean);
+    });
+    const parts = [occurrences > 1 ? `${occurrences} weekly dates published` : 'Event published', toRequest.length ? `${toRequest.length} booking request${toRequest.length > 1 ? 's' : ''} sent` : ''].filter(Boolean);
     toast(parts.join(' · '));
     router.replace({ pathname: '/event-created', params: { id: firstId } });
   };
 
   const next = () => {
+    if (step === 3) {
+      // Re-check every step before publishing: earlier answers may have changed via "Edit details".
+      const bad = [0, 1, 2].find((s) => validate(s));
+      if (bad !== undefined) {
+        setError(validate(bad));
+        setStep(bad);
+        return;
+      }
+      setError(undefined);
+      publish();
+      return;
+    }
     const e = validate(step);
     setError(e);
-    if (e) return;
-    if (step < 3) setStep(step + 1);
-    else publish();
+    if (!e) setStep(step + 1);
   };
 
   const pickTime = (t: string) => {
@@ -306,7 +332,7 @@ export default function CreateEvent() {
               const on = v.id === venueId;
               const side = width - 32;
               return (
-                <Pressable key={v.id} accessibilityRole="button" accessibilityLabel={v.name} onPress={() => setVenueId(v.id)} style={{ position: 'absolute', left: (v.mapPos.x / 100) * side - (on ? 18 : 12), top: (v.mapPos.y / 100) * (width * 0.7) - (on ? 18 : 12) }}>
+                <Pressable key={v.id} accessibilityRole="button" accessibilityLabel={v.name} accessibilityState={{ selected: on }} hitSlop={on ? 6 : 12} onPress={() => setVenueId(v.id)} style={{ position: 'absolute', left: (v.mapPos.x / 100) * side - (on ? 18 : 12), top: (v.mapPos.y / 100) * (width * 0.7) - (on ? 18 : 12) }}>
                   <View style={{ width: on ? 36 : 24, height: on ? 36 : 24, borderRadius: 18, backgroundColor: on ? colors.brand : '#E5484D', borderWidth: 3, borderColor: colors.white }} />
                 </Pressable>
               );
@@ -314,7 +340,7 @@ export default function CreateEvent() {
           </View>
           <View style={{ gap: 8 }}>
             {venues.map((v) => (
-              <Pressable key={v.id} accessibilityRole="radio" accessibilityState={{ checked: v.id === venueId }} onPress={() => setVenueId(v.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, borderWidth: v.id === venueId ? 2 : 1, borderColor: v.id === venueId ? colors.brand : colors.border, backgroundColor: colors.surface }}>
+              <Pressable key={v.id} accessibilityRole="radio" accessibilityLabel={`${v.name}, ${v.area}, ${v.capacity} people`} accessibilityState={{ checked: v.id === venueId }} onPress={() => setVenueId(v.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, borderWidth: v.id === venueId ? 2 : 1, borderColor: v.id === venueId ? colors.brand : colors.border, backgroundColor: colors.surface }}>
                 <Photo src={v.cover} style={{ width: 48, height: 48 }} radius={10} />
                 <View style={{ flex: 1 }}>
                   <T v="bodyBold">{v.name}</T>
@@ -327,7 +353,7 @@ export default function CreateEvent() {
           {clash ? (
             <Banner icon="calendar-alert" tone="danger">{`${venue.name} already hosts “${clash.title}” on ${shortDate(clash.start)}, ${time(clash.start)}–${time(clash.end)}.`}</Banner>
           ) : (
-            <Banner icon="information-outline">{`${venue.name} fits ${venue.capacity} people. Not booked yet? Send them a booking request from the venue page; the event stays a draft for the venue until they accept.`}</Banner>
+            <Banner icon="information-outline">{`${venue.name} fits ${venue.capacity} people. Haven’t booked it yet? Send a booking request from the venue page.`}</Banner>
           )}
           <Button title={`Open ${venue.name}`} variant="ghost" size="sm" icon="storefront-outline" onPress={() => router.push(`/venue/${venue.id}`)} />
           <Field label="Description" value={description} onChangeText={setDescription} multiline placeholder="What should people expect?" />

@@ -9,7 +9,7 @@ import { profileById, profiles, venueById } from '../data/mock';
 import type { BookingStatus, Conversation } from '../data/types';
 import { STATUS_LABEL, STATUS_TONE } from '../lib/booking';
 import { shortDate } from '../lib/format';
-import { useApp } from '../store/useApp';
+import { overlayVenue, useApp, type VenueListing } from '../store/useApp';
 import { colors, shadow } from '../theme';
 
 const ONLINE = ['adam', 'sameul', 'sara', 'dana', 'mo', 'soso'];
@@ -19,13 +19,24 @@ const CHAT_STATUSES: BookingStatus[] = ['accepted', 'paid', 'confirmed', 'comple
 
 const rowStyle: ViewStyle = { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, backgroundColor: colors.surface, ...shadow(1) };
 
-/** A chat partner can be a person (musician, organizer, fan) or a venue. */
-function party(id: string): { name: string; avatar?: ImgKey; verified?: boolean } | undefined {
+interface Party { name: string; avatar?: ImgKey; verified?: boolean; isVenue: boolean }
+
+/** A chat partner can be a person (musician, organizer, fan) or a venue (shown with its cover and the owner's listing edits). */
+function party(id: string, listing: VenueListing): Party | undefined {
   const p = profileById(id);
-  if (p) return { name: p.name, avatar: p.avatar, verified: p.verified };
-  const v = venueById(id);
-  if (v) return { name: v.name, avatar: v.cover };
+  if (p) return { name: p.name, avatar: p.avatar, verified: p.verified, isVenue: false };
+  const v = overlayVenue(venueById(id), listing);
+  if (v) return { name: v.name, avatar: v.cover, isVenue: true };
   return undefined;
+}
+
+function PartyName({ who }: { who?: Party }) {
+  return (
+    <Row gap={4} style={{ flex: 1 }}>
+      <T v="bodyBold" numberOfLines={1} style={{ flexShrink: 1 }}>{who?.name}</T>
+      {who?.isVenue ? <Icon name="storefront-outline" size={15} color={colors.brandMid} /> : null}
+    </Row>
+  );
 }
 
 function lastMessage(c?: Conversation) {
@@ -44,6 +55,7 @@ export default function Inbox() {
   const bookings = useApp((s) => s.bookings);
   const blocked = useApp((s) => s.blocked);
   const role = useApp((s) => s.user.role);
+  const venueListing = useApp((s) => s.venueListing);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const [tab, setTab] = useState<'messages' | 'requests'>('messages');
   const [q, setQ] = useState('');
@@ -54,16 +66,17 @@ export default function Inbox() {
   const openChat = (withId: string) => router.push(`/chat/${ensureConversation(withId)}`);
 
   const online = profiles.filter((p) => ONLINE.includes(p.id) && !isBlocked(p.id));
+  const who = (id: string) => party(id, venueListing);
   const list = conversations.filter((c) => {
-    const who = party(c.withId);
-    return !!who && !isBlocked(c.withId) && matches(who.name);
+    const p = who(c.withId);
+    return !!p && !isBlocked(c.withId) && matches(p.name);
   });
 
   // Fans: one chat per booking the provider has accepted (or later).
   const bookingChatsAll = bookings
-    .filter((b) => CHAT_STATUSES.includes(b.status) && !isBlocked(b.targetId) && !!party(b.targetId))
+    .filter((b) => CHAT_STATUSES.includes(b.status) && !isBlocked(b.targetId) && !!who(b.targetId))
     .sort((a, b) => Number(a.status === 'completed') - Number(b.status === 'completed'));
-  const bookingChats = bookingChatsAll.filter((b) => matches(party(b.targetId)?.name, b.eventTitle));
+  const bookingChats = bookingChatsAll.filter((b) => matches(who(b.targetId)?.name, b.eventTitle));
 
   // Requests carry the requester's name only; match it to a profile to honour blocks.
   const newRequests = allRequests.filter((r) => {
@@ -103,17 +116,17 @@ export default function Inbox() {
       {tab === 'messages' ? (
         list.length ? (
           list.map((c) => {
-            const who = party(c.withId);
+            const p = who(c.withId);
             const { last, preview } = lastMessage(c);
             return (
-              <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={`Chat with ${who?.name}${c.unread ? `, ${c.unread} unread` : ''}`} onPress={() => router.push(`/chat/${c.id}`)} style={rowStyle}>
+              <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={`Chat with ${p?.name}${p?.isVenue ? ' (venue)' : ''}${c.unread ? `, ${c.unread} unread` : ''}`} onPress={() => router.push(`/chat/${c.id}`)} style={rowStyle}>
                 <View>
-                  <Avatar src={who?.avatar} size={52} label={who?.name} />
+                  <Avatar src={p?.avatar} size={52} label={p?.name} verified={p?.verified} />
                   {c.unread ? <UnreadDot /> : null}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Row justify="space-between">
-                    <T v="bodyBold" numberOfLines={1} style={{ flex: 1 }}>{who?.name}</T>
+                  <Row justify="space-between" gap={8}>
+                    <PartyName who={p} />
                     <T v="small" style={{ fontSize: 12 }}>{last?.time}</T>
                   </Row>
                   <T v={c.unread ? 'bodyBold' : 'body'} numberOfLines={1} color={c.unread ? colors.ink : colors.muted}>{preview}</T>
@@ -129,24 +142,24 @@ export default function Inbox() {
       ) : role === 'fan' ? (
         bookingChats.length ? (
           bookingChats.map((b) => {
-            const who = party(b.targetId);
+            const p = who(b.targetId);
             const conv = conversations.find((c) => c.withId === b.targetId);
             const { last, preview } = lastMessage(conv);
             return (
               <Pressable
                 key={b.id}
                 accessibilityRole="button"
-                accessibilityLabel={`Chat with ${who?.name} about ${b.eventTitle}, ${STATUS_LABEL[b.status]}`}
+                accessibilityLabel={`Chat with ${p?.name} about ${b.eventTitle}, ${STATUS_LABEL[b.status]}`}
                 onPress={() => openChat(b.targetId)}
                 style={rowStyle}
               >
                 <View>
-                  <Avatar src={who?.avatar} size={52} label={who?.name} verified={who?.verified} />
+                  <Avatar src={p?.avatar} size={52} label={p?.name} verified={p?.verified} />
                   {conv?.unread ? <UnreadDot /> : null}
                 </View>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Row justify="space-between" gap={8}>
-                    <T v="bodyBold" numberOfLines={1} style={{ flex: 1 }}>{who?.name}</T>
+                    <PartyName who={p} />
                     {last ? <T v="small" style={{ fontSize: 12 }}>{last.time}</T> : null}
                   </Row>
                   <Row gap={6}>

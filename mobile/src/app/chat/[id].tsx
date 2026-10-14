@@ -77,8 +77,9 @@ export default function Chat() {
   const ensureConversation = useApp((s) => s.ensureConversation);
   const toggleBlock = useApp((s) => s.toggleBlock);
   const toggleMessageLike = useApp((s) => s.toggleMessageLike);
-  // Links may carry the conversation id or the other party's id.
-  const conv = conversations.find((c) => c.id === id) ?? conversations.find((c) => c.withId === id);
+  // Links may carry the conversation id or the other party's id. (A string selector stays stable.)
+  const convId = useApp((s) => (s.conversations.find((c) => c.id === id) ?? s.conversations.find((c) => c.withId === id))?.id);
+  const conv = conversations.find((c) => c.id === convId);
   const withId = conv?.withId ?? id ?? '';
   const person = profileById(withId);
   // Venues chat too (e.g. venue bookings); the owner's own venue shows its listing edits.
@@ -102,12 +103,11 @@ export default function Chat() {
     }
     return undefined;
   }, [person, venue]);
-  const convId = conv?.id;
   const [text, setText] = useState('');
   const [tray, setTray] = useState(false);
   const [recording, setRecording] = useState<number>();
   const [menu, setMenu] = useState(false);
-  const [muted, setMuted] = useState(() => mutedChats.has(conv?.id ?? id ?? ''));
+  const [muted, setMuted] = useState(() => mutedChats.has(convId ?? id ?? ''));
   const list = useRef<FlatList>(null);
 
   useFocusEffect(useCallback(() => { if (convId) markRead(convId); }, [convId, markRead]));

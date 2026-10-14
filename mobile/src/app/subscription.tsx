@@ -233,7 +233,13 @@ export default function Subscription() {
 
       <Banner icon="shield-check-outline">Payments are handled securely by our payment provider. Cancel anytime in Settings → Subscription.</Banner>
 
-      <ActionSheet visible={confirmCancel} title="Cancel Domtak Pro? Uploads, live streaming, analytics and in-app payouts stop right away." actions={cancelActions} onClose={() => setConfirmCancel(false)} />
+      <ActionSheet
+        visible={confirmCancel}
+        title="Cancel Domtak Pro? Uploads, live streaming, analytics and in-app payouts stop right away."
+        actions={cancelActions}
+        cancelLabel="Keep Pro"
+        onClose={() => setConfirmCancel(false)}
+      />
     </Screen>
   );
 }

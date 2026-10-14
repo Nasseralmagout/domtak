@@ -72,7 +72,7 @@ export default function Invite() {
           />
         ) : null}
       </Row>
-      {count ? <T v="small">{count} of {profiles.filter((p) => p.kind === 'fan').length} people selected</T> : null}
+      {count ? <T v="small">{count} of {profiles.filter((p) => p.kind === 'fan' && !blocked.includes(p.id)).length} people selected</T> : null}
       {people.map((p) => {
         const on = invited.includes(p.id);
         return (

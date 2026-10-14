@@ -24,6 +24,7 @@ export default function ForgotPassword() {
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [error, setError] = useState<string>();
+  const [pwError, setPwError] = useState<string>();
   const st = strength(pw);
   const label = ['Too weak', 'Weak', 'Okay', 'Strong', 'Very strong'][st];
 
@@ -65,7 +66,7 @@ export default function ForgotPassword() {
       {step === 2 ? (
         <>
           <T v="h1">Create a new password</T>
-          <Field label="New password" value={pw} onChangeText={(t) => { setPw(t); setError(undefined); }} secureTextEntry autoComplete="new-password" />
+          <Field label="New password" value={pw} onChangeText={(t) => { setPw(t); setPwError(undefined); setError(undefined); }} secureTextEntry autoComplete="new-password" error={pwError} />
           <View style={{ gap: 8 }}>
             <Row gap={6}>
               {[0, 1, 2, 3].map((i) => (
@@ -78,8 +79,9 @@ export default function ForgotPassword() {
           <Button
             title="Save password"
             onPress={() => {
-              if (st < 2) return setError('Choose a stronger password');
+              if (pw.length < 8 || st < 2) return setPwError('Use at least 8 characters with a mix of letters, numbers or symbols');
               if (pw !== pw2) return setError('Passwords don’t match');
+              setPwError(undefined);
               setError(undefined);
               setStep(3);
               toast('Password updated');
