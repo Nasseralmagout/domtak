@@ -38,15 +38,21 @@ Checks: `npm run typecheck`, `npm run lint`, `npm run export:android`.
 | Area | Screens |
 |---|---|
 | Onboarding | Splash, 3 onboarding slides, Login, Register, Verify (email/SMS code), Choose role, Profile setup, Forgot password |
-| Home / Social | Instagram-style feed with stories (incl. LIVE), For You / Following / Nearby, photo, carousel and video posts, double-tap like, save, share, music track tags, **event ticket strip and "Book this artist" on posts**, "Musicians' next events" and "Upcoming events" carousels, sponsored event card · Story viewer with reply · Post + comments · New post / story |
+| Home / Social | Instagram-style feed with stories (incl. LIVE), For You / Following / Nearby, photo, carousel and video posts, double-tap like, save, share, music track tags, **event ticket strip and "Book this artist" on posts**, "Musicians' next events" and "Upcoming events" carousels, sponsored event card · Story viewer with reply · **Live stream viewer with live chat, hearts and Book** · Post + comments · New post / story (Public or Followers only) · Followers / Following lists |
 | Discover | Events tab (featured, categories, coming up) · Event list with category chips and search · Filters (date, time, price slider, category, music style) · Map with pins and quick filters · Unified search (events, artists, venues, organizers) |
-| Events & tickets | Event detail (lineup, organizer, venue, going, share, add to calendar) · Choose ticket type and quantity · Review summary and payment (saved cards, Google Pay, PayPal, SEPA, bank verification, failure state) · Success · E-ticket with real QR code · Leave a review |
-| Artists & venues | Artist categories (Musician, Band, DJ) · Artist list (genre chips, sort by popularity or fee) · Artist portfolio (bio, styles, fee, SoundCloud/Spotify/YouTube, gigs, media, reviews) · Venues list · Venue detail (gallery, capacity, rooms, stages, occasions) |
-| Booking (escrow) | Booking request form (date, time, duration, guests, equipment) · Review and send · Status tracker: Requested → Pending → Accepted → Paid in escrow → Confirmed → Completed · Declined / Expired / Cancelled-refund / Disputed screens |
+| Events & tickets | Event detail (lineup, organizer, venue, going, share, add to calendar, your review) · Event discussion · Choose ticket type and quantity · Review summary and payment (saved cards, Google Pay, PayPal, SEPA, bank verification, failure state) · Success · E-ticket with real QR code · Leave a review |
+| Artists & venues | Artist categories (Musician, Band, DJ) · Artist list (genre chips, sort by popularity or fee) · Artist portfolio (bio, styles, fee, SoundCloud/Spotify/YouTube, gigs, media, reviews) · Venues list · Venue detail (gallery, capacity, rooms, stages, occasions) · Reviews & ratings (average, star breakdown, filters, write a review) |
+| Booking (escrow) | Booking request form (date, time, duration, guests, equipment) · Review and send · Status tracker: Requested → Pending → Accepted → Paid in escrow → Confirmed → Completed · Declined / Expired / Cancelled-refund / Disputed screens (with evidence) · Receipt |
 | Calendar | Month / Week / Day calendar with your plans · Event overview grouped by month |
-| Messages | Inbox (online artists, messages, booking requests) · Chat with text, photo and voice messages |
-| Account | Profile (posts, saved, events, shortcuts) · Public user/organizer profile · Side menu · Notifications · Your bookings (tickets, musicians, venues) · Wishlist with empty states · Payment methods · Settings · Help & FAQ · Promo code · About |
-| Pro tools | Pro workspace (earnings, escrow, requests, gigs, profile views) · Incoming booking requests · Accept / counter / decline with reason · Create event wizard (details, map location, ticket types, preview) → Event created → Invite guests · Sales & attendees · QR door scanner (valid / already used / invalid) · Pro verification |
+| Messages | Inbox (online artists, messages, booking requests) · Chat with text, photo and voice messages, likes, venue chats and block/report |
+| Account | Profile (posts, saved, events, shortcuts) · Public user/organizer profile · Side menu · Notifications · Your bookings (tickets, musicians, venues) · Wishlist with empty states · Payment methods · Settings · **Pro plan (Standard vs Pro, monthly/yearly)** · Blocked users · Help & FAQ · Promo code · About |
+| Pro tools | Pro workspace (earnings, escrow, requests, gigs, profile views) · Incoming booking requests · Accept / counter / decline with reason · Create event wizard (details, map location, ticket types, preview) → Event created → Invite guests · Sales & attendees (shared door check-ins) · QR door scanner (valid / already used / invalid) · Pro verification · **Availability & pricing** · **Earnings & Insights** (balance, escrow, payouts, analytics) · **My events** · **Promote event** (featured listing, budget, reach, extend) · **My venue listing** editor |
+
+## All screens as SVG
+
+Every screen and state is exported as SVG in [`../design/svg/`](../design/svg/README.md): exact phone-frame files,
+full scroll-length files, and Figma-editable files with live text. Regenerate them with
+`scripts/svg-export/run.sh` (see [its README](scripts/svg-export/README.md)).
 
 ## Project structure
 
@@ -73,3 +79,4 @@ The app is complete on the client side. To go live, the sample data and store ac
 4. **Media:** real photo/video upload with `expo-image-picker` and storage.
 5. **Realtime and push:** chat over websockets; booking and ticket notifications with `expo-notifications`.
 6. **Admin:** a web console to review Pro applications and disputes.
+7. **Licensed images:** 19 photos taken from the design file are Unsplash+ previews and carry a faint "Unsplash+" watermark: `av_ben`, `av_sara`, `band_jam`, `dj_kai`, `dj_killers`, `dj_radio`, `dj_red`, `ev_drummer`, `ev_hands`, `ev_party`, `ev_selfie`, `ev_stage_gold`, `feed_crowd`, `feed_drums`, `m_pianist`, `m_sameul`, `m_singer`, `ven_kids`, `ven_neon` (in `assets/images/`). Replace them with licensed downloads or your own photos, and replace `map_berlin.jpg` (a Google Maps screenshot) with the live map from step 3.
