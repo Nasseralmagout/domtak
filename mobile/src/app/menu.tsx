@@ -2,31 +2,44 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Avatar, Icon, type IconName, T } from '../components/ui';
+import { Avatar, Icon, type IconName, Pill, T } from '../components/ui';
 import { isPro, ROLE_LABEL, useApp } from '../store/useApp';
 import { colors } from '../theme';
 
-type Item = { icon: IconName; label: string; href: string };
+type Item = { icon: IconName; label: string; href: string; badge?: string };
 
 export default function Menu() {
   const user = useApp((s) => s.user);
   const signOut = useApp((s) => s.signOut);
+  const plan = useApp((s) => s.plan);
 
   const go = (href: string) => {
     router.back();
     setTimeout(() => router.push(href as never), 10);
   };
 
+  const earnings: Item = { icon: 'cash-multiple', label: 'Earnings', href: '/pro/earnings' };
+  const roleItems: Item[] =
+    user.role === 'musician'
+      ? [{ icon: 'calendar-clock', label: 'Availability', href: '/pro/availability' }, earnings]
+      : user.role === 'organizer'
+        ? [{ icon: 'calendar-star', label: 'My events', href: '/pro/events' }, earnings]
+        : user.role === 'venue'
+          ? [{ icon: 'storefront-outline', label: 'My venue', href: '/pro/venue-listing' }, earnings]
+          : [];
+
   const items: Item[] = [
     { icon: 'account-circle-outline', label: 'Profile', href: '/profile/me' },
     ...(isPro(user.role) ? [{ icon: 'view-grid-outline' as const, label: 'Pro workspace', href: '/pro/workspace' }] : []),
+    ...roleItems,
     { icon: 'basket-outline', label: 'Your bookings', href: '/my-bookings?tab=musician' },
     { icon: 'ticket-confirmation-outline', label: 'Your tickets', href: '/my-bookings?tab=tickets' },
     { icon: 'heart-outline', label: 'Wishlist', href: '/wishlist' },
     { icon: 'credit-card-outline', label: 'Payment methods', href: '/payment-methods' },
     { icon: 'ticket-percent-outline', label: 'Promo code', href: '/help?section=promo' },
     { icon: 'bell-outline', label: 'Notifications', href: '/notifications' },
-    { icon: 'check-decagram', label: 'Join us as Pro', href: '/pro-verification' },
+    { icon: 'crown-outline', label: 'Pro plan', href: '/subscription', badge: plan === 'free' ? '1 month free' : 'Active' },
+    ...(user.pro === 'verified' ? [] : [{ icon: 'check-decagram' as const, label: user.pro === 'review' ? 'Pro verification' : 'Join us as Pro', href: '/pro-verification' }]),
     { icon: 'help-circle-outline', label: 'Help', href: '/help' },
     { icon: 'information-outline', label: 'About', href: '/help?section=about' },
   ];
@@ -44,9 +57,10 @@ export default function Menu() {
             </View>
           </Pressable>
           {items.map((it) => (
-            <Pressable key={it.label} accessibilityRole="button" onPress={() => go(it.href)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 13, paddingHorizontal: 8, borderRadius: 12, backgroundColor: pressed ? colors.brandSoft : 'transparent' })}>
+            <Pressable key={it.label} accessibilityRole="button" accessibilityLabel={it.badge ? `${it.label}, ${it.badge}` : it.label} onPress={() => go(it.href)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 48, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 12, backgroundColor: pressed ? colors.brandSoft : 'transparent' })}>
               <Icon name={it.icon} size={24} color={colors.ink} />
-              <T v="bodyBold" style={{ fontSize: 16 }}>{it.label}</T>
+              <T v="bodyBold" style={{ fontSize: 16, flex: 1 }} numberOfLines={1}>{it.label}</T>
+              {it.badge ? <Pill label={it.badge} tone={plan === 'free' ? 'brand' : 'success'} /> : null}
             </Pressable>
           ))}
           <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />

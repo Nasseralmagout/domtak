@@ -9,7 +9,7 @@ import { colors, radius } from '../theme';
 
 function LinkRow({ label, value, onPress, first }: { label: string; value?: string; onPress: () => void; first?: boolean }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 54, paddingHorizontal: 16, borderTopWidth: first ? 0 : 1, borderTopColor: colors.divider }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={value ? `${label}, ${value}` : label} onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 54, paddingHorizontal: 16, borderTopWidth: first ? 0 : 1, borderTopColor: colors.divider }}>
       <T v="body" style={{ flex: 1 }}>{label}</T>
       {value ? <T v="small" numberOfLines={1} style={{ maxWidth: 160 }}>{value}</T> : null}
       <Icon name="chevron-right" size={20} color={colors.subtle} />
@@ -44,6 +44,9 @@ export default function Settings() {
   const selected = useApp((s) => s.selectedPayment);
   const signOut = useApp((s) => s.signOut);
   const resetDemo = useApp((s) => s.resetDemo);
+  const blockedCount = useApp((s) => s.blocked.length);
+  const plan = useApp((s) => s.plan);
+  const planLabel = plan === 'free' ? 'Standard (free)' : plan === 'monthly' ? 'Pro · monthly' : 'Pro · yearly';
 
   const confirm = (title: string, msg: string, onYes: () => void) => {
     if (Platform.OS === 'web') {
@@ -71,6 +74,7 @@ export default function Settings() {
         <LinkRow label="Email & phone" value={user.email} onPress={() => router.push('/profile-setup?mode=edit')} />
         <LinkRow label="Password" value="Change" onPress={() => router.push('/forgot-password')} />
         <LinkRow label="Payment methods" value={methods.find((m) => m.id === selected)?.label} onPress={() => router.push('/payment-methods')} />
+        <LinkRow label="Subscription" value={planLabel} onPress={() => router.push('/subscription')} />
       </Group>
 
       <Group title="Notifications">
@@ -81,7 +85,7 @@ export default function Settings() {
 
       <Group title="Privacy">
         <ToggleRow first label="Private account" value={prefs.privateAccount} onChange={(v) => setPref('privateAccount', v)} />
-        <LinkRow label="Blocked users" value="0" onPress={() => router.push('/help?section=safety')} />
+        <LinkRow label="Blocked users" value={String(blockedCount)} onPress={() => router.push('/blocked')} />
       </Group>
 
       <View style={{ gap: 8 }}>

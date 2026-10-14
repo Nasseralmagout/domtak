@@ -81,7 +81,7 @@ export default function Blocked() {
             </Row>
           ))}
         </Card>
-        <Button title="Safety centre" variant="ghost" size="md" icon="shield-account-outline" onPress={() => router.push('/help?section=safety')} />
+        <Button title="Help with blocking & reporting" variant="ghost" size="md" icon="shield-account-outline" onPress={() => router.push('/help?section=safety')} />
       </View>
     </Screen>
   );

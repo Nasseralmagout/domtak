@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { BottomBar, Screen, ScreenHeader } from '../components/layout';
 import { Button, Card, Icon, type IconName, Row, T } from '../components/ui';
+import { euro } from '../lib/format';
 import { isPro, ROLE_LABEL, useApp } from '../store/useApp';
 import { colors, radius } from '../theme';
 
@@ -14,9 +15,32 @@ const STEPS: { id: string; name: string; sub: string; icon: IconName }[] = [
   { id: 'payout', name: 'Payout account', sub: 'IBAN for bookings & tickets', icon: 'credit-card-outline' },
 ];
 
+const PLAN_LABEL = { free: 'Not subscribed yet', monthly: 'Pro · monthly', yearly: 'Pro · yearly' } as const;
+
+/** Links the verification flow to the Pro subscription plans. */
+function PlanCard({ plan }: { plan: keyof typeof PLAN_LABEL }) {
+  const subscribed = plan !== 'free';
+  return (
+    <Card style={{ alignSelf: 'stretch', gap: 12 }}>
+      <Row gap={12}>
+        <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="crown" size={22} color={colors.brandDark} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <T v="bodyBold">Domtak Pro plan</T>
+          <T v="small">{subscribed ? `Your plan: ${PLAN_LABEL[plan]}` : `${euro(9.99, true)}/month or ${euro(89)}/year after a free first month`}</T>
+        </View>
+      </Row>
+      <T v="small">The plan unlocks uploads, live streaming, analytics and in-app bookings and payouts.</T>
+      <Button title={subscribed ? 'Manage plan' : 'See Pro plan'} variant="light" size="md" icon="crown-outline" onPress={() => router.push('/subscription')} />
+    </Card>
+  );
+}
+
 export default function ProVerification() {
   const user = useApp((s) => s.user);
   const update = useApp((s) => s.updateUser);
+  const plan = useApp((s) => s.plan);
   const [done, setDone] = useState<string[]>(['id', 'pro']);
   const ready = done.length === STEPS.length;
   const role = isPro(user.role) ? user.role : 'musician';
@@ -50,6 +74,7 @@ export default function ProVerification() {
             </Row>
           ))}
         </Card>
+        <PlanCard plan={plan} />
       </Screen>
     );
   }
@@ -94,7 +119,8 @@ export default function ProVerification() {
           </Pressable>
         );
       })}
-      <T v="small">Pro plan: €9,99/month or €89/year after a free first month. Every application is reviewed by our team.</T>
+      <T v="small">Every application is reviewed by our team, usually within 2 working days.</T>
+      <PlanCard plan={plan} />
     </Screen>
   );
 }
