@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Platform, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,11 +28,15 @@ export default function Scanner() {
   const [torch, setTorch] = useState(false);
   const [manual, setManual] = useState('');
   const [result, setResult] = useState<Result>({ kind: 'ready', title: 'Ready to scan', sub: 'Point the camera at the guest’s e-ticket QR code' });
-  const used = useRef(new Set(attendees.filter((a) => a.checkedIn).map((a) => a.code)));
+  const [checked, setChecked] = useState<string[]>(() => attendees.filter((a) => a.checkedIn).map((a) => a.code));
   const lock = useRef(false);
-  const [count, setCount] = useState(() => attendees.filter((a) => a.checkedIn).length);
+  const count = checked.length;
 
   const validate = (raw: string) => {
+    if (!raw.trim()) {
+      setResult({ kind: 'ready', title: 'Enter a ticket ID', sub: 'Type the 4–8 character code printed under the QR' });
+      return;
+    }
     let code = raw.trim().toUpperCase();
     let forEvent: string | undefined;
     try {
@@ -49,13 +53,12 @@ export default function Scanner() {
       next = { kind: 'invalid', title: 'Invalid ticket', sub: `This QR isn’t for ${event?.title ?? 'this event'}` };
     } else if (!ticket && !guest) {
       next = { kind: 'invalid', title: 'Ticket not found', sub: `No ticket with code ${code || '—'}` };
-    } else if (used.current.has(code) || ticket?.status === 'used') {
+    } else if (checked.includes(code) || ticket?.status === 'used') {
       next = { kind: 'used', title: 'Already used', sub: `#${code} was already checked in tonight` };
     } else if (ticket?.status === 'cancelled') {
       next = { kind: 'invalid', title: 'Cancelled ticket', sub: 'This ticket was refunded' };
     } else {
-      used.current.add(code);
-      setCount(used.current.size);
+      setChecked((c) => [...c, code]);
       next = { kind: 'valid', title: `Valid · ${guest?.name ?? ticket?.holder}`, sub: `${guest?.ticketType ?? 'Ticket'} · #${code}` };
     }
     setResult(next);
@@ -66,6 +69,9 @@ export default function Scanner() {
 
   const look = LOOK[result.kind];
   const canScan = permission?.granted && Platform.OS !== 'web';
+  // The demo button tries the next guest who hasn't been checked in yet.
+  const demoCode = attendees.find((a) => !checked.includes(a.code))?.code ?? attendees[0].code;
+  const reset = () => setResult({ kind: 'ready', title: 'Ready to scan', sub: 'Point the camera at the guest’s e-ticket QR code' });
 
   return (
     <View style={{ flex: 1, backgroundColor: '#120A24' }}>
@@ -119,8 +125,8 @@ export default function Scanner() {
             ) : null}
           </View>
           <Row gap={12}>
-            <IconButton name="flashlight" label={torch ? 'Turn torch off' : 'Turn torch on'} color={colors.white} bg={torch ? colors.brand : 'rgba(255,255,255,0.14)'} size={52} onPress={() => setTorch(!torch)} />
-            <View style={{ width: 200, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.14)', flexDirection: 'row', alignItems: 'center', paddingLeft: 16 }}>
+            {canScan ? <IconButton name={torch ? 'flashlight-off' : 'flashlight'} label={torch ? 'Turn torch off' : 'Turn torch on'} selected={torch} color={colors.white} bg={torch ? colors.brand : 'rgba(255,255,255,0.14)'} size={52} onPress={() => setTorch(!torch)} /> : null}
+            <View style={{ width: canScan ? 200 : 264, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.14)', flexDirection: 'row', alignItems: 'center', paddingLeft: 16 }}>
               <TextInput
                 value={manual}
                 onChangeText={setManual}
@@ -146,7 +152,8 @@ export default function Scanner() {
               <T v="small" color={colors.inkSoft}>{result.sub}</T>
             </View>
           </Row>
-          <Button title={result.kind === 'ready' ? 'Try demo code A7K2 / C44D' : 'Scan next guest'} onPress={() => (result.kind === 'ready' ? validate('C44D') : setResult({ kind: 'ready', title: 'Ready to scan', sub: 'Point the camera at the guest’s e-ticket QR code' }))} />
+          <Button title={result.kind === 'ready' ? `Try demo code ${demoCode}` : 'Scan next guest'} onPress={() => (result.kind === 'ready' ? validate(demoCode) : reset())} />
+          <Button title="Guest list" variant="ghost" size="md" icon="account-group-outline" onPress={() => router.push(`/pro/attendees/${eventId}`)} />
         </View>
       </SafeAreaView>
     </View>

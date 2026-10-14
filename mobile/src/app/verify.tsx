@@ -2,8 +2,9 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
-import { Screen, ScreenHeader } from '../components/layout';
+import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Icon, Segmented, T } from '../components/ui';
+import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors, fonts } from '../theme';
 
@@ -29,11 +30,18 @@ export default function Verify() {
   const submit = () => {
     if (code.length !== 6) return setError('Enter all 6 digits');
     setError(undefined);
+    toast(by === 'email' ? 'Email verified' : 'Phone number verified');
     router.replace('/role');
+  };
+  const resend = () => {
+    setSeconds(42);
+    setCode('');
+    toast(`New code sent to ${target}`);
+    input.current?.focus();
   };
 
   return (
-    <Screen keyboard header={<ScreenHeader />} contentStyle={{ paddingHorizontal: 24, gap: 22 }}>
+    <Screen keyboard header={<ScreenHeader onBack={() => goBack('/register')} />} contentStyle={{ paddingHorizontal: 24, gap: 22 }}>
       <View style={{ width: 72, height: 72, borderRadius: 24, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
         <Icon name={by === 'email' ? 'email-outline' : 'cellphone'} size={34} color={colors.brand} />
       </View>
@@ -45,7 +53,7 @@ export default function Verify() {
       </View>
       <Segmented options={[{ key: 'email', label: 'Email' }, { key: 'phone', label: 'Phone (SMS)' }]} value={by} onChange={(k) => { setBy(k); setCode(''); setSeconds(42); }} />
 
-      <Pressable accessibilityLabel="Verification code" onPress={() => input.current?.focus()} style={{ flexDirection: 'row', gap: 10 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Verification code, ${code.length} of 6 digits entered`} onPress={() => input.current?.focus()} style={{ flexDirection: 'row', gap: 10 }}>
         {Array.from({ length: 6 }).map((_, i) => {
           const filled = i < code.length;
           const active = i === code.length;
@@ -59,7 +67,8 @@ export default function Verify() {
       <TextInput
         ref={input}
         value={code}
-        onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+        onChangeText={(t) => { setCode(t.replace(/\D/g, '').slice(0, 6)); setError(undefined); }}
+        onSubmitEditing={submit}
         keyboardType="number-pad"
         autoFocus
         maxLength={6}
@@ -73,12 +82,12 @@ export default function Verify() {
       {seconds > 0 ? (
         <T v="body" color={colors.muted}>Didn’t get it? <T v="bodyBold">Resend in 0:{String(seconds).padStart(2, '0')}</T></T>
       ) : (
-        <Pressable accessibilityRole="button" onPress={() => setSeconds(42)}>
+        <Pressable accessibilityRole="button" onPress={resend} hitSlop={12} style={{ alignSelf: 'flex-start', minHeight: 32, justifyContent: 'center' }}>
           <T v="bodyBold" color={colors.brand}>Resend code</T>
         </Pressable>
       )}
       <View style={{ flex: 1 }} />
-      <Button title="Verify" onPress={submit} />
+      <Button title="Verify" disabled={code.length !== 6} onPress={submit} />
       <T v="small" center>Demo: any 6 digits will work.</T>
     </Screen>
   );

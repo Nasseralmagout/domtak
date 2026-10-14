@@ -62,23 +62,38 @@ function SectionCard({ icon, title, sub, children }: { icon: IconName; title: st
   );
 }
 
-function FeeStepper({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
+/** A typed (not yet committed) fee, or undefined when the field holds nothing usable. */
+const typedFee = (draft: string | null) => {
+  if (draft === null || draft === '') return undefined;
+  const n = parseInt(draft, 10);
+  return Number.isNaN(n) ? undefined : n;
+};
+
+/**
+ * The draft lives in the screen so "Save" can commit a value that is still being typed
+ * (tapping the footer button does not blur the input on Android).
+ */
+function FeeStepper({ value, draft, onDraft, onChange }: { value: number; draft: string | null; onDraft: (d: string | null) => void; onChange: (n: number) => void }) {
+  const base = typedFee(draft) ?? value;
   const commit = () => {
     if (draft === null) return;
-    const n = parseInt(draft, 10);
-    if (!Number.isNaN(n)) onChange(clampFee(n));
-    setDraft(null);
+    const n = typedFee(draft);
+    if (n !== undefined) onChange(clampFee(n));
+    onDraft(null);
+  };
+  const bump = (delta: number) => {
+    onChange(clampFee(base + delta));
+    onDraft(null);
   };
   return (
     <Row gap={10}>
-      <IconButton name="minus" label={`Lower fee by ${euro(FEE_STEP)}`} onPress={() => onChange(clampFee(value - FEE_STEP))} bg={colors.brandSoft} color={colors.brand} size={48} iconSize={22} />
+      <IconButton name="minus" label={`Lower fee by ${euro(FEE_STEP)}`} disabled={base <= FEE_MIN} onPress={() => bump(-FEE_STEP)} bg={colors.brandSoft} color={colors.brand} size={48} iconSize={22} />
       <View style={{ flex: 1, height: 56, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
         <Text style={{ fontFamily: fonts.displaySemi, fontSize: 22, color: colors.ink }}>€</Text>
         <TextInput
           value={draft ?? String(value)}
-          onFocus={() => setDraft(String(value))}
-          onChangeText={(t) => setDraft(t.replace(/\D/g, '').slice(0, 4))}
+          onFocus={() => onDraft(String(value))}
+          onChangeText={(t) => onDraft(t.replace(/\D/g, '').slice(0, 4))}
           onBlur={commit}
           onSubmitEditing={commit}
           keyboardType="number-pad"
@@ -89,7 +104,7 @@ function FeeStepper({ value, onChange }: { value: number; onChange: (n: number) 
         />
         <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.muted }}>/ hour</Text>
       </View>
-      <IconButton name="plus" label={`Raise fee by ${euro(FEE_STEP)}`} onPress={() => onChange(clampFee(value + FEE_STEP))} bg={colors.brand} color={colors.white} size={48} iconSize={22} />
+      <IconButton name="plus" label={`Raise fee by ${euro(FEE_STEP)}`} disabled={base >= FEE_MAX} onPress={() => bump(FEE_STEP)} bg={colors.brand} color={colors.white} size={48} iconSize={22} />
     </Row>
   );
 }
@@ -112,8 +127,12 @@ export default function AvailabilityScreen() {
   const setAvailability = useApp((s) => s.setAvailability);
   const requests = useApp((s) => s.requests);
   const [cursor, setCursor] = useState(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1, 12));
+  const [feeDraft, setFeeDraft] = useState<string | null>(null);
 
-  const { days, blockedDates, feePerHour, minHours, radiusKm, instantBook } = availability;
+  const { days, blockedDates, minHours, radiusKm, instantBook } = availability;
+  // While the fee is being typed, preview what will be saved.
+  const draftFee = typedFee(feeDraft);
+  const feePerHour = draftFee === undefined ? availability.feePerHour : clampFee(draftFee);
   const blockedSet = useMemo(() => new Set(blockedDates), [blockedDates]);
   const bookedSet = useMemo(
     () => new Set(requests.filter((r) => r.status === 'accepted').map((r) => labelToIso(r.date)).filter((d): d is string => Boolean(d))),
@@ -134,6 +153,8 @@ export default function AvailabilityScreen() {
     setAvailability({ blockedDates: blockedSet.has(iso) ? blockedDates.filter((d) => d !== iso) : [...blockedDates, iso].sort() });
 
   const save = () => {
+    if (draftFee !== undefined) setAvailability({ feePerHour: clampFee(draftFee) });
+    setFeeDraft(null);
     toast('Availability saved');
     goBack('/pro/workspace');
   };
@@ -225,6 +246,7 @@ export default function AvailabilityScreen() {
               const state = past ? 'past' : booked ? 'booked gig' : blocked ? 'blocked' : open ? 'available' : 'off in weekly schedule';
               const bg = past ? 'transparent' : booked ? colors.brand : blocked ? colors.dangerBg : open ? colors.brandTint : 'transparent';
               const fg = past ? colors.disabled : booked ? colors.white : blocked ? colors.danger : open ? colors.ink : colors.subtle;
+              const dayOff = !past && !booked && !blocked && !open;
               return (
                 <Pressable
                   key={iso}
@@ -237,7 +259,7 @@ export default function AvailabilityScreen() {
                   style={{ width: `${100 / 7}%`, height: 48, padding: 2 }}
                 >
                   {({ pressed }) => (
-                    <View style={{ flex: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: bg, borderWidth: today ? 2 : 0, borderColor: colors.brand, opacity: pressed ? 0.75 : 1 }}>
+                    <View style={{ flex: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: bg, borderWidth: today ? 2 : dayOff ? 1 : 0, borderColor: today ? colors.brand : colors.borderStrong, opacity: pressed ? 0.75 : 1 }}>
                       <Text style={{ fontFamily: fonts.bodyBold, fontSize: 15, color: fg, textDecorationLine: blocked && !past ? 'line-through' : 'none' }}>{d.getDate()}</Text>
                     </View>
                   )}
@@ -256,7 +278,15 @@ export default function AvailabilityScreen() {
           <View style={{ gap: 8 }}>
             <Row justify="space-between">
               <T v="label">Upcoming blocked dates</T>
-              <Pressable accessibilityRole="button" accessibilityLabel="Unblock all upcoming dates" hitSlop={10} onPress={() => setAvailability({ blockedDates: blockedDates.filter((d) => d < TODAY_ISO) })}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Unblock all upcoming dates"
+                onPress={() => {
+                  setAvailability({ blockedDates: blockedDates.filter((d) => d < TODAY_ISO) });
+                  toast(`${upcomingBlocked.length} ${upcomingBlocked.length === 1 ? 'date' : 'dates'} unblocked`);
+                }}
+                style={{ minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'flex-end', paddingLeft: 8 }}
+              >
                 <T v="smallBold" color={colors.brand}>Clear all</T>
               </Pressable>
             </Row>
@@ -280,13 +310,13 @@ export default function AvailabilityScreen() {
       </SectionCard>
 
       <SectionCard icon="cash-multiple" title="Booking fee" sub={`Per hour, in ${euro(FEE_STEP)} steps. Tap the amount to type it.`}>
-        <FeeStepper value={feePerHour} onChange={(n) => setAvailability({ feePerHour: n })} />
+        <FeeStepper value={availability.feePerHour} draft={feeDraft} onDraft={setFeeDraft} onChange={(n) => setAvailability({ feePerHour: n })} />
         <Row gap={12} style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 14 }}>
           <View style={{ flex: 1 }}>
             <T v="bodyBold">Minimum booking</T>
             <T v="small">{minHours} {minHours === 1 ? 'hour' : 'hours'} · bookers can’t request less</T>
           </View>
-          <Stepper value={minHours} min={1} max={12} onChange={(n) => setAvailability({ minHours: n })} />
+          <Stepper value={minHours} min={1} max={12} label="minimum hours" onChange={(n) => setAvailability({ minHours: n })} />
         </Row>
         <Banner icon="information-outline">
           {`A ${minHours} h booking pays ${euro(feePerHour * minHours)}. You receive ${euro(feePerHour * minHours * 0.9)} after the 10% Domtak fee.`}

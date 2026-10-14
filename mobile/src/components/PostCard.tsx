@@ -90,7 +90,7 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
         <Icon name="eye-off-outline" size={22} color={colors.muted} />
         <View style={{ flex: 1 }}>
           <T v="bodyBold">Post hidden</T>
-          <T v="small">You’ll see fewer posts like this from {author.name}.</T>
+          <T v="small">This post from {author.name} is hidden from your feed.</T>
         </View>
         <Button title="Undo" variant="light" size="sm" accessibilityLabel="Undo hide post" onPress={() => setHidden(false)} />
       </Row>
@@ -100,7 +100,7 @@ export const PostCard = memo(function PostCard({ post }: { post: Post }) {
   return (
     <View style={{ backgroundColor: colors.surface, marginBottom: 10 }}>
       <Row gap={10} style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${author.name}'s profile`} onPress={() => router.push(authorHref as never)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${author.name}’s profile`} onPress={() => router.push(authorHref as never)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
           <Avatar src={author.avatar} size={40} label={author.name} ring />
           <View style={{ flex: 1 }}>
             <Row gap={4}>

@@ -7,7 +7,7 @@ import { goBack } from '../../components/layout';
 import { Avatar, Button, Icon, type IconName, IconButton, Pill, Row, T } from '../../components/ui';
 import { analytics, transactions } from '../../data/mock';
 import type { Role } from '../../data/types';
-import { euro, isoDay, TODAY } from '../../lib/format';
+import { euro, isoDay, shortDate, TODAY } from '../../lib/format';
 import { ROLE_LABEL, useApp } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
@@ -24,6 +24,10 @@ function requestIso(label: string) {
 
 const num = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const sum = (xs: number[]) => xs.reduce((n, x) => n + x, 0);
+/** What the pro receives for a gig: the offer minus the 10% Domtak fee. */
+const net = (offer: number) => Math.round(offer * 0.9);
+/** Gigs that already have a mock transaction; newly accepted ones are booked into escrow today (same rule as /pro/earnings). */
+const KNOWN_TITLES = new Set(transactions.map((t) => t.title));
 
 type QuickAction = { key: string; icon: IconName; label: string; href: string; badge?: number };
 
@@ -74,8 +78,9 @@ export default function Workspace() {
     .filter((r) => r.status === 'accepted')
     .map((r) => ({ ...r, iso: requestIso(r.date) }))
     .sort((a, b) => a.iso.localeCompare(b.iso));
-  const escrow = sum(accepted.map((r) => r.offer * 0.9));
-  const monthEarnings = sum(transactions.filter((t) => t.amount > 0 && t.date.startsWith(THIS_MONTH)).map((t) => t.amount));
+  const escrow = sum(accepted.map((r) => net(r.offer)));
+  const newlyAccepted = sum(accepted.filter((r) => !KNOWN_TITLES.has(r.title)).map((r) => net(r.offer)));
+  const monthEarnings = sum(transactions.filter((t) => t.amount > 0 && t.date.startsWith(THIS_MONTH)).map((t) => t.amount)) + newlyAccepted;
 
   const views = analytics.profileViews;
   const views7 = views.slice(-7);
@@ -114,7 +119,7 @@ export default function Workspace() {
               <T v="small">Earnings this month</T>
               <T v="h1">{euro(monthEarnings)}</T>
             </View>
-            <Button title="Payout" size="sm" icon="bank-transfer-out" onPress={() => router.push('/pro/earnings')} />
+            <Button title="Payout" accessibilityLabel={`Payout, ${euro(balance)} available`} size="sm" icon="bank-transfer-out" hitSlop={6} onPress={() => router.push('/pro/earnings')} />
           </Row>
           <Row gap={10}>
             <View style={{ flex: 1, padding: 12, borderRadius: 14, backgroundColor: colors.brandTint }}>
@@ -135,7 +140,11 @@ export default function Workspace() {
         </Row>
 
         {user.pro !== 'verified' ? (
-          <Pressable accessibilityRole="button" onPress={() => router.push('/pro-verification')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, backgroundColor: colors.brandDeep }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${user.pro === 'review' ? 'Verification in review' : 'Get verified as Pro'}. Badge, in-app bookings and payouts`}
+            onPress={() => router.push('/pro-verification')}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, backgroundColor: colors.brandDeep }}>
             <Icon name="check-decagram" size={26} color={colors.gold} />
             <View style={{ flex: 1 }}>
               <T v="bodyBold" color={colors.white}>{user.pro === 'review' ? 'Verification in review' : 'Get verified as Pro'}</T>
@@ -153,7 +162,12 @@ export default function Workspace() {
             </Pressable>
           </Row>
           {accepted.map((r) => (
-            <Pressable key={r.id} accessibilityRole="button" onPress={() => router.push(`/pro/request/${r.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, backgroundColor: colors.surface, ...shadow(1) }}>
+            <Pressable
+              key={r.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${r.title}, ${shortDate(r.iso)}, ${r.time}, ${r.location.split(',')[0]}, ${euro(r.offer)}, paid into escrow. Open request`}
+              onPress={() => router.push(`/pro/request/${r.id}`)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, backgroundColor: colors.surface, ...shadow(1) }}>
               <DateBadge iso={r.iso} size={52} />
               <View style={{ flex: 1 }}>
                 <T v="bodyBold">{r.title}</T>
@@ -163,7 +177,12 @@ export default function Workspace() {
             </Pressable>
           ))}
           {myEvents.map((e) => (
-            <Pressable key={e.id} accessibilityRole="button" onPress={() => router.push(`/pro/attendees/${e.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, backgroundColor: colors.surface, ...shadow(1) }}>
+            <Pressable
+              key={e.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${e.title}, ${shortDate(e.start)}, your event. Manage attendees`}
+              onPress={() => router.push(`/pro/attendees/${e.id}`)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, backgroundColor: colors.surface, ...shadow(1) }}>
               <DateBadge iso={e.start} size={52} />
               <View style={{ flex: 1 }}>
                 <T v="bodyBold">{e.title}</T>
@@ -180,6 +199,7 @@ export default function Workspace() {
                 title={user.role === 'organizer' ? 'Create an event' : 'Review requests'}
                 size="sm"
                 variant="light"
+                hitSlop={6}
                 style={{ alignSelf: 'flex-start' }}
                 onPress={() => router.push(user.role === 'organizer' ? '/create-event' : '/pro/requests')}
               />

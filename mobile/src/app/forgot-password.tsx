@@ -4,6 +4,7 @@ import { View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Field, Icon, Row, T } from '../components/ui';
+import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors } from '../theme';
 
@@ -41,7 +42,7 @@ export default function ForgotPassword() {
             <T v="body" color={colors.muted}>Enter the email you registered with and we’ll send you a reset link.</T>
           </View>
           <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" icon="email-outline" error={error} />
-          <Button title="Send reset link" onPress={() => (email.includes('@') ? (setError(undefined), setStep(1)) : setError('Enter a valid email'))} />
+          <Button title="Send reset link" onPress={() => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? (setError(undefined), setStep(1)) : setError('Enter a valid email'))} />
         </>
       ) : null}
 
@@ -54,15 +55,17 @@ export default function ForgotPassword() {
             <T v="h1">Check your inbox</T>
             <T v="body" color={colors.muted}>We sent a reset link to <T v="bodyBold">{email}</T>. It expires in 30 minutes.</T>
           </View>
-          <Button title="I've opened the link" onPress={() => setStep(2)} />
-          <T v="small">No email? Check spam or go back to resend.</T>
+          <Button title="I’ve opened the link" onPress={() => setStep(2)} />
+          <T v="small">No email? Check your spam folder or send it again.</T>
+          <Button title="Resend link" variant="ghost" size="md" onPress={() => toast(`Reset link sent again to ${email.trim()}`)} />
+          <Button title="Use a different email" variant="ghost" size="md" onPress={() => setStep(0)} />
         </>
       ) : null}
 
       {step === 2 ? (
         <>
           <T v="h1">Create a new password</T>
-          <Field label="New password" value={pw} onChangeText={setPw} secureTextEntry />
+          <Field label="New password" value={pw} onChangeText={(t) => { setPw(t); setError(undefined); }} secureTextEntry autoComplete="new-password" />
           <View style={{ gap: 8 }}>
             <Row gap={6}>
               {[0, 1, 2, 3].map((i) => (
@@ -71,7 +74,7 @@ export default function ForgotPassword() {
             </Row>
             <T v="smallBold" color={st >= 3 ? colors.success : colors.warning}>{pw ? label : 'Use 8+ characters with numbers and symbols'}</T>
           </View>
-          <Field label="Confirm password" value={pw2} onChangeText={setPw2} secureTextEntry error={error} />
+          <Field label="Confirm password" value={pw2} onChangeText={(t) => { setPw2(t); setError(undefined); }} secureTextEntry autoComplete="new-password" error={error} />
           <Button
             title="Save password"
             onPress={() => {
@@ -79,6 +82,7 @@ export default function ForgotPassword() {
               if (pw !== pw2) return setError('Passwords don’t match');
               setError(undefined);
               setStep(3);
+              toast('Password updated');
             }}
           />
         </>

@@ -4,12 +4,13 @@ import { FlatList, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ArtistCard } from '../../components/cards';
-import { DomtakHeader, ScreenHeader } from '../../components/layout';
+import { DomtakHeader, goBack, ScreenHeader } from '../../components/layout';
 import { Chip, EmptyState, Field, IconButton, Row, T } from '../../components/ui';
 import { profiles } from '../../data/mock';
+import type { Profile } from '../../data/types';
 import { colors } from '../../theme';
 
-const TITLES: Record<string, string> = { musician: "All musicians", band: 'All bands', dj: "All DJ's", all: 'All artists' };
+const TITLES: Record<string, string> = { musician: 'All musicians', band: 'All bands', dj: 'All DJs', all: 'All artists' };
 const STYLES: Record<string, string[]> = {
   dj: ['Techno', 'House', 'Trance', 'Pop', 'Electronic'],
   musician: ['Acoustic', 'Soul', 'Jazz', 'Pop', 'Rock', 'Indie'],
@@ -18,7 +19,8 @@ const STYLES: Record<string, string[]> = {
 };
 
 export default function ArtistList() {
-  const { kind = 'all' } = useLocalSearchParams<{ kind: string }>();
+  const params = useLocalSearchParams<{ kind: string }>();
+  const kind = params.kind && TITLES[params.kind] ? params.kind : 'all';
   const [q, setQ] = useState('');
   const [style, setStyle] = useState<string>();
   const [sort, setSort] = useState<'popular' | 'price'>('popular');
@@ -26,27 +28,35 @@ export default function ArtistList() {
   const list = useMemo(() => {
     let l = profiles.filter((p) => (kind === 'all' ? ['dj', 'musician', 'band'].includes(p.kind) : p.kind === kind));
     if (style) l = l.filter((p) => p.genres.includes(style));
-    if (q.trim()) l = l.filter((p) => `${p.name} ${p.title} ${p.genres.join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+    const t = q.trim().toLowerCase();
+    if (t) l = l.filter((p) => `${p.name} ${p.title} ${p.genres.join(' ')} ${p.city} ${(p.instruments ?? []).join(' ')}`.toLowerCase().includes(t));
     return [...l].sort((a, b) => (sort === 'popular' ? b.followers - a.followers : (a.feePerHour ?? 0) - (b.feePerHour ?? 0)));
   }, [kind, style, q, sort]);
+  // Pad odd lists so the last card keeps its column width.
+  const data: (Profile | null)[] = list.length % 2 ? [...list, null] : list;
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.brandDeep }}>
       <DomtakHeader showMenu={false} />
       <FlatList
         style={{ flex: 1, backgroundColor: colors.bg }}
-        data={list}
+        data={data}
         numColumns={2}
-        keyExtractor={(p) => p.id}
+        keyExtractor={(p, i) => p?.id ?? `spacer-${i}`}
         columnWrapperStyle={{ gap: 12, paddingHorizontal: 12 }}
         contentContainerStyle={{ gap: 12, paddingBottom: 32 }}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
-            <ScreenHeader title={TITLES[kind] ?? 'Artists'} right={<IconButton name={sort === 'popular' ? 'sort-descending' : 'cash-multiple'} label={`Sort by ${sort === 'popular' ? 'price' : 'popularity'}`} onPress={() => setSort(sort === 'popular' ? 'price' : 'popular')} />} />
+            <ScreenHeader title={TITLES[kind] ?? 'Artists'} onBack={() => goBack('/(tabs)/artists')} right={<IconButton name={sort === 'popular' ? 'sort-descending' : 'cash-multiple'} label={`Sort by ${sort === 'popular' ? 'lowest fee' : 'popularity'}`} onPress={() => setSort(sort === 'popular' ? 'price' : 'popular')} />} />
             <View style={{ paddingHorizontal: 16 }}>
-              <Field placeholder="Search here" value={q} onChangeText={setQ} icon="magnify" />
+              <Field placeholder="Search by name, style or area" accessibilityLabel="Search artists" value={q} onChangeText={setQ} icon="magnify" />
             </View>
-            <T v="h3" style={{ paddingHorizontal: 16 }}>Categories</T>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+              {(['all', 'dj', 'musician', 'band'] as const).map((k) => (
+                <Chip key={k} label={k === 'all' ? 'All' : k === 'dj' ? 'DJs' : k === 'band' ? 'Bands' : 'Musicians'} selected={kind === k} onPress={() => { setStyle(undefined); router.setParams({ kind: k }); }} />
+              ))}
+            </ScrollView>
+            <T v="h3" style={{ paddingHorizontal: 16 }}>Music style</T>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
               <Chip label="All" selected={!style} onPress={() => setStyle(undefined)} />
               {(STYLES[kind] ?? STYLES.all).map((s) => <Chip key={s} label={s} selected={style === s} onPress={() => setStyle(style === s ? undefined : s)} />)}
@@ -57,10 +67,9 @@ export default function ArtistList() {
             </Row>
           </View>
         }
-        renderItem={({ item }) => <ArtistCard artist={item} />}
-        ListEmptyComponent={<EmptyState icon="account-music-outline" title="No artists match" body="Try a different style or search term." action="Clear" onAction={() => { setStyle(undefined); setQ(''); }} />}
-        ListFooterComponent={<View style={{ height: 8 }} />}
-        onEndReachedThreshold={0.5}
+        renderItem={({ item }) => (item ? <ArtistCard artist={item} /> : <View style={{ flex: 1 }} />)}
+        ListEmptyComponent={<EmptyState icon="account-music-outline" title="No artists match" body="Try a different style or search term." action="Clear search" onAction={() => { setStyle(undefined); setQ(''); }} />}
+        ListFooterComponent={<View style={{ height: 72 }} />}
       />
       {/* Floating access to venues from the artist marketplace */}
       <View style={{ position: 'absolute', right: 16, bottom: 24 }}>

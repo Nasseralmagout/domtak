@@ -5,6 +5,7 @@ import { Pressable, Text, View } from 'react-native';
 import { Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, Divider, Icon, type IconName, KeyValue, Pill, Row, SectionTitle, Segmented, T } from '../../components/ui';
 import { analytics, transactions, type Transaction } from '../../data/mock';
+import type { IncomingRequest } from '../../data/types';
 import { euro, isoDay, shortDate, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { type Payout, useApp } from '../../store/useApp';
@@ -31,6 +32,23 @@ const PAYOUT_STATUS: Record<Payout['status'], { label: string; tone: 'success' |
   paid: { label: 'Paid', tone: 'success' },
   processing: { label: 'Processing', tone: 'warning' },
 };
+
+const KNOWN_TITLES = new Set(transactions.map((t) => t.title));
+
+/**
+ * Mock transactions plus an escrow row for every accepted request that has none yet
+ * (offer minus the 10% Domtak fee), so a gig accepted in Requests shows up here the
+ * same way it does in the workspace escrow total. Once the balance has been paid out,
+ * "available" income is shown as paid out.
+ */
+function ledger(requests: IncomingRequest[], balance: number): Transaction[] {
+  const accepted: Transaction[] = requests
+    .filter((r) => r.status === 'accepted' && !KNOWN_TITLES.has(r.title))
+    .map((r) => ({ id: `req_${r.id}`, title: r.title, sub: `${r.requester} · booking`, amount: Math.round(r.offer * 0.9), date: isoDay(TODAY), status: 'escrow' }));
+  return [...accepted, ...transactions]
+    .map((t) => (t.status === 'available' && balance <= 0 ? { ...t, status: 'paid out' as const } : t))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
 
 /** Change of the last 7 days against the 7 days before, in percent (undefined when there is no baseline). */
 function weekDelta(series: number[]) {
@@ -91,11 +109,12 @@ function EarningsTab() {
   const payouts = useApp((s) => s.payouts);
   const methods = useApp((s) => s.paymentMethods);
   const requestPayout = useApp((s) => s.requestPayout);
+  const requests = useApp((s) => s.requests);
 
   const account = methods.find((m) => m.badge === 'SEPA')?.sub ?? 'your bank account';
-  const escrow = sum(transactions.filter((t) => t.status === 'escrow').map((t) => t.amount));
+  const txs = ledger(requests, balance);
+  const escrow = sum(txs.filter((t) => t.status === 'escrow').map((t) => t.amount));
   const paidOut = sum(payouts.map((p) => p.amount));
-  const txs = [...transactions].sort((a, b) => b.date.localeCompare(a.date));
 
   const payout = () => {
     const amount = requestPayout();
@@ -125,14 +144,19 @@ function EarningsTab() {
         <StatTile label="Paid out" value={euro(paidOut)} sub={`${payouts.length} ${payouts.length === 1 ? 'payout' : 'payouts'}`} />
       </Row>
 
-      <Card padded={false} onPress={() => router.push('/payment-methods')} style={{ paddingHorizontal: 16, minHeight: 64, justifyContent: 'center' }}>
+      <Card
+        padded={false}
+        onPress={() => router.push('/payment-methods')}
+        accessibilityLabel={`Payout account, SEPA, ${account}. Manage payment methods`}
+        style={{ paddingHorizontal: 16, minHeight: 64, justifyContent: 'center' }}
+      >
         <Row gap={12}>
           <Icon name="bank-outline" size={22} color={colors.brand} />
           <View style={{ flex: 1 }}>
             <T v="bodyBold">Payout account</T>
             <T v="small">SEPA · {account}</T>
           </View>
-          <T v="smallBold" color={colors.brand}>Change</T>
+          <T v="smallBold" color={colors.brand}>Manage</T>
           <Icon name="chevron-right" size={20} color={colors.subtle} />
         </Row>
       </Card>

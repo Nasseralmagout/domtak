@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, Field, Radio, Row, T } from '../components/ui';
+import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors, fonts, radius } from '../theme';
 
@@ -30,7 +31,15 @@ export default function PaymentMethods() {
     setExpiry('');
     setCvc('');
     setError(undefined);
-    if (params.add === '1') router.back();
+    toast(`Card ending ${digits.slice(-4)} added and set as default`);
+    // Opened from checkout to add a card: return there (only when there is a screen to return to).
+    if (params.add === '1' && router.canGoBack()) router.back();
+  };
+
+  const cancel = () => {
+    setAdding(false);
+    setError(undefined);
+    if (params.add === '1' && router.canGoBack()) router.back();
   };
 
   // Payouts live on the Earnings screen; keep old ?payout=1 links working.
@@ -42,7 +51,7 @@ export default function PaymentMethods() {
         {methods.map((m) => {
           const on = m.id === selected;
           return (
-            <Pressable key={m.id} accessibilityRole="radio" accessibilityState={{ checked: on }} onPress={() => setSelected(m.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, height: 68, paddingHorizontal: 16, borderRadius: radius.lg, borderWidth: on ? 2 : 1, borderColor: on ? colors.brand : colors.border, backgroundColor: on ? colors.brandTint : colors.surface }}>
+            <Pressable key={m.id} accessibilityRole="radio" accessibilityLabel={`${m.label}, ${m.sub}`} accessibilityState={{ checked: on }} onPress={() => setSelected(m.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, height: 68, paddingHorizontal: 16, borderRadius: radius.lg, borderWidth: on ? 2 : 1, borderColor: on ? colors.brand : colors.border, backgroundColor: on ? colors.brandTint : colors.surface }}>
               <View style={{ width: 52, height: 34, borderRadius: 6, backgroundColor: m.badge === 'PP' ? '#1F4E9C' : m.badge === 'VISA' ? colors.brand : colors.ink, alignItems: 'center', justifyContent: 'center' }}>
                 <T v="caption" color={colors.white} style={{ fontFamily: fonts.bodyBold }}>{m.badge}</T>
               </View>
@@ -65,7 +74,7 @@ export default function PaymentMethods() {
           </Row>
           {error ? <T v="small" color={colors.danger}>{error}</T> : null}
           <Row gap={10}>
-            <Button title="Cancel" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => setAdding(false)} />
+            <Button title="Cancel" variant="secondary" size="md" style={{ flex: 1 }} onPress={cancel} />
             <Button title="Save card" size="md" style={{ flex: 1 }} onPress={save} />
           </Row>
         </Card>

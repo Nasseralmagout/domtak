@@ -1,10 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useMemo, useState } from 'react';
-import { FlatList, ScrollView, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { VenueCard } from '../components/cards';
 import { goBack } from '../components/layout';
-import { Chip, EmptyState, IconButton, Photo, Row, T } from '../components/ui';
+import { Chip, EmptyState, Icon, IconButton, Photo, Row, T } from '../components/ui';
 import { venues } from '../data/mock';
 import type { Venue } from '../data/types';
 import { colors, fonts } from '../theme';
@@ -14,7 +14,11 @@ const TYPES: ('All' | Venue['type'])[] = ['All', 'Club', 'Open air', 'Hall', 'Ga
 
 export default function Venues() {
   const [type, setType] = useState<(typeof TYPES)[number]>('All');
-  const list = useMemo(() => (type === 'All' ? venues : venues.filter((v) => v.type === type)), [type]);
+  const [sort, setSort] = useState<'rating' | 'price'>('rating');
+  const list = useMemo(() => {
+    const l = type === 'All' ? venues : venues.filter((v) => v.type === type);
+    return [...l].sort((a, b) => (sort === 'rating' ? b.rating - a.rating : a.pricePerNight - b.pricePerNight));
+  }, [type, sort]);
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <FlatList
@@ -37,11 +41,17 @@ export default function Venues() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 8 }}>
               {TYPES.map((t) => <Chip key={t} label={t} tone="dark" selected={type === t} onPress={() => setType(t)} />)}
             </ScrollView>
-            <Row style={{ paddingHorizontal: 16, paddingBottom: 12 }}><T v="small">{list.length} venue{list.length === 1 ? '' : 's'}</T></Row>
+            <Row justify="space-between" style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+              <T v="small">{list.length} venue{list.length === 1 ? '' : 's'}</T>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Sorted by ${sort === 'rating' ? 'top rated' : 'lowest price'}. Change sort`} onPress={() => setSort(sort === 'rating' ? 'price' : 'rating')} hitSlop={12} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 32 }}>
+                <Icon name={sort === 'rating' ? 'star-outline' : 'cash-multiple'} size={16} color={colors.brand} />
+                <T v="smallBold" color={colors.brand}>{sort === 'rating' ? 'Top rated' : 'Lowest price'}</T>
+              </Pressable>
+            </Row>
           </View>
         }
         renderItem={({ item }) => <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}><VenueCard venue={item} /></View>}
-        ListEmptyComponent={<EmptyState icon="storefront-outline" title="No venues of this type" body="Try another category." />}
+        ListEmptyComponent={<EmptyState icon="storefront-outline" title="No venues of this type" body="Try another category." action="Show all venues" onAction={() => setType('All')} />}
       />
     </View>
   );
