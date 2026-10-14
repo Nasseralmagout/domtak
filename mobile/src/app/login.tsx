@@ -64,7 +64,7 @@ export default function Login() {
           </View>
           <T v="small" color={colors.inkSoft}>Remember me</T>
         </Pressable>
-        <Pressable accessibilityRole="link" onPress={() => router.push('/forgot-password')} hitSlop={12}>
+        <Pressable accessibilityRole="link" onPress={() => router.push('/forgot-password')} hitSlop={12} style={{ minHeight: 44, justifyContent: 'center' }}>
           <T v="smallBold" color={colors.brand}>Forgot password?</T>
         </Pressable>
       </Row>
@@ -83,7 +83,7 @@ export default function Login() {
 
       <Row justify="center" gap={4} style={{ marginTop: 8 }}>
         <T v="body" color={colors.muted}>New member?</T>
-        <Pressable accessibilityRole="link" onPress={() => router.push('/register')} hitSlop={12}>
+        <Pressable accessibilityRole="link" onPress={() => router.push('/register')} hitSlop={12} style={{ minHeight: 44, justifyContent: 'center' }}>
           <Text style={{ fontFamily: fonts.bodyBold, fontSize: 15, color: colors.brand }}>Register now</Text>
         </Pressable>
       </Row>

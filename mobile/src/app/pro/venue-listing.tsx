@@ -76,6 +76,8 @@ export default function VenueListingEditor() {
   const toggleOccasion = (o: string) => patch({ occasions: draft.occasions.includes(o) ? draft.occasions.filter((x) => x !== o) : [...draft.occasions, o] });
 
   const save = () => {
+    // Nothing to publish: the saved listing is already live.
+    if (!dirty) return goBack('/pro/workspace');
     if (draft.name.trim().length < 2) return setError('Add your venue name');
     if (!draft.area.trim()) return setError('Add the area or district');
     if (draft.pricePerNight <= 0) return setError('Set a price per night');
@@ -113,7 +115,7 @@ export default function VenueListingEditor() {
           {error ? <T v="small" color={colors.danger} style={{ marginBottom: 8 }}>{error}</T> : null}
           <Row gap={10}>
             {dirty ? <Button title="Discard" variant="secondary" style={{ flex: 1 }} onPress={() => { setDraft(listing); setError(undefined); toast('Changes discarded'); }} /> : null}
-            <Button title={dirty ? 'Save changes' : 'Save listing'} icon="check" style={{ flex: dirty ? 1.6 : 1 }} full={!dirty} onPress={save} />
+            <Button title={dirty ? 'Save changes' : 'Done'} icon="check" style={{ flex: dirty ? 1.6 : 1 }} full={!dirty} accessibilityLabel={dirty ? 'Save changes and publish them' : 'Done, no unsaved changes'} onPress={save} />
           </Row>
         </BottomBar>
       }

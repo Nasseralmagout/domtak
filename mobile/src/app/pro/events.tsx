@@ -5,11 +5,11 @@ import { Text, View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, EmptyState, Icon, Photo, Pill, Row, Segmented, T } from '../../components/ui';
-import { events as seedEvents, venueById } from '../../data/mock';
+import { events as seedEvents } from '../../data/mock';
 import type { EventItem } from '../../data/types';
 import { euro, eventWhen, isoDay, parse, shortDate, TODAY } from '../../lib/format';
 import { DAY_MS, doorsOpenAt, isPromoted, promotionChain, promotionEnd } from '../../lib/promotions';
-import { type Promotion, useApp } from '../../store/useApp';
+import { type Promotion, useApp, useVenue } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
 
 /** For the demo, these seed organizers count as "you". */
@@ -43,7 +43,8 @@ function daysUntil(iso: string) {
 }
 
 function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: PromoState; past: boolean; mine: boolean }) {
-  const venue = venueById(event.venueId);
+  // Includes the owner's saved listing edits, like the public venue page.
+  const venue = useVenue(event.venueId);
   const { sold, capacity, revenue, pct } = stats(event);
   const soldOut = capacity > 0 && sold >= capacity;
   const promoted = promo.kind !== 'none';

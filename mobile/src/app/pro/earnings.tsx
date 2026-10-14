@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { Screen, ScreenHeader } from '../../components/layout';
+import { goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, Divider, Icon, type IconName, KeyValue, Pill, Row, SectionTitle, Segmented, T } from '../../components/ui';
 import { analytics, transactions, type Transaction } from '../../data/mock';
 import type { IncomingRequest } from '../../data/types';
@@ -384,7 +384,7 @@ export default function Earnings() {
   const [tab, setTab] = useState<Tab>(params.tab === 'insights' ? 'insights' : 'earnings');
 
   return (
-    <Screen header={<ScreenHeader title={tab === 'insights' ? 'Insights' : 'Earnings'} subtitle="Domtak Pro" />}>
+    <Screen header={<ScreenHeader title={tab === 'insights' ? 'Insights' : 'Earnings'} subtitle="Domtak Pro" onBack={() => goBack('/pro/workspace')} />}>
       <Segmented
         dark
         options={[

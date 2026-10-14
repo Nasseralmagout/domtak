@@ -4,10 +4,10 @@ import { Pressable, View } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/layout';
 import { Banner, Button, Card, Chip, Divider, EmptyState, Icon, type IconName, KeyValue, Photo, Pill, Radio, Row, T } from '../../../components/ui';
-import { GENRES, venueById } from '../../../data/mock';
+import { GENRES } from '../../../data/mock';
 import { compact, euro, isoDay, parse, shortDate, time, TODAY } from '../../../lib/format';
 import { activePromotion, DAY_MS, doorsOpenAt, isPromoted, type PromotionChain, promotionChain, promotionEnd } from '../../../lib/promotions';
-import { type Promotion, useApp, useEvent } from '../../../store/useApp';
+import { type Promotion, useApp, useEvent, useVenue } from '../../../store/useApp';
 import { colors, radius, shadow } from '../../../theme';
 
 /** Featured listings: €49–€199 per week (revenue model). Reach is per week at a 10 km radius. */
@@ -29,6 +29,7 @@ const reachFor = (p: Pick<Promotion, 'budget' | 'days' | 'radiusKm' | 'audience'
 };
 
 const fmtDay = (ms: number) => shortDate(isoDay(new Date(ms)));
+const dayCount = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
@@ -45,6 +46,8 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 export default function PromoteEvent() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const event = useEvent(eventId);
+  // Includes the owner's saved listing edits (e.g. a renamed Moon Club).
+  const venue = useVenue(event?.venueId);
   const promotions = useApp((s) => s.promotions);
   const promoteEvent = useApp((s) => s.promoteEvent);
   const methods = useApp((s) => s.paymentMethods);
@@ -73,24 +76,27 @@ export default function PromoteEvent() {
     );
   }
 
-  const venue = venueById(event.venueId);
   const ended = parse(event.end) < TODAY;
   const doorsAt = doorsOpenAt(event).getTime();
   const doorsOpen = doorsAt <= now;
   // Boosts stop automatically when doors open, so the visible end date is capped there.
   const runEnd = promotionEnd(promotions, event)?.getTime() ?? 0;
   const active = isPromoted(promotions, event, TODAY);
-  // The running boost already lasts until doors open: extending would only buy refunded days.
+  // The running boost already lasts until doors open: there is nothing left to extend.
   const covered = active && chain.end >= doorsAt;
   const canPromote = !doorsOpen && !event.isPrivate && !covered;
   const method = methods.find((m) => m.id === selectedPayment) ?? methods[0];
 
   const tier = BUDGETS.find((b) => b.amount === budget) ?? BUDGETS[1];
-  const total = Math.round((budget * days) / 7);
-  const reach = reachFor({ budget, days, radiusKm, audience });
-  const requestedEnd = (active ? chain.end : now) + days * DAY_MS;
-  const runsPastEvent = requestedEnd > doorsAt;
-  const newEnd = Math.min(requestedEnd, doorsAt);
+  // An extension starts when the running boost ends. Boosts stop at doors open, so only the (whole) days
+  // before then are billed and booked: nothing is charged for days that could never run.
+  const startAt = active ? chain.end : now;
+  const daysBeforeDoors = Math.max(1, Math.ceil((doorsAt - startAt) / DAY_MS));
+  const billedDays = Math.min(days, daysBeforeDoors);
+  const runsPastEvent = billedDays < days;
+  const total = Math.round((budget * billedDays) / 7);
+  const reach = reachFor({ budget, days: billedDays, radiusKm, audience });
+  const newEnd = Math.min(startAt + billedDays * DAY_MS, doorsAt);
 
   const toggleGenre = (g: string) => setAudience((a) => (a.includes(g) ? a.filter((x) => x !== g) : [...a, g]));
 
@@ -98,7 +104,7 @@ export default function PromoteEvent() {
     if (paying) return;
     setPaying(true);
     timer.current = setTimeout(() => {
-      promoteEvent({ eventId: event.id, budget, days, radiusKm, audience });
+      promoteEvent({ eventId: event.id, budget, days: billedDays, radiusKm, audience });
       setPaying(false);
       setDone({ total, reach, extended: active });
     }, 700);
@@ -136,7 +142,7 @@ export default function PromoteEvent() {
           <BottomBar>
             <Row gap={12}>
               <View style={{ flex: 1 }}>
-                <T v="small">Total · {days} days</T>
+                <T v="small">Total · {dayCount(billedDays)}</T>
                 <T v="h2">{euro(total)}</T>
               </View>
               <Button
@@ -269,18 +275,18 @@ export default function PromoteEvent() {
           <Card style={{ gap: 2 }}>
             <T v="caption" style={{ marginBottom: 6 }}>SUMMARY</T>
             <KeyValue k="Plan" v={`${tier.name} · ${euro(budget)} / week`} />
-            <KeyValue k="Duration" v={`${days} days`} />
+            <KeyValue k="Duration" v={runsPastEvent ? `${dayCount(billedDays)}, until doors open` : dayCount(days)} />
             <KeyValue k={active ? 'New end date' : 'Runs until'} v={fmtDay(newEnd)} />
             <KeyValue k="Radius" v={`${radiusKm} km`} />
             <KeyValue k="Audience" v={audience.length ? `${audience.length} genre${audience.length > 1 ? 's' : ''}` : 'All fans'} />
             <KeyValue k="Estimated reach" v={`${compact(reach)} people`} color={colors.brand} />
             <Divider style={{ marginVertical: 8 }} />
             <KeyValue k="Total" v={euro(total)} strong />
-            <T v="small" style={{ marginTop: 4 }}>{`${euro(budget)} × ${days} days ÷ 7, rounded. Incl. VAT.`}</T>
+            <T v="small" style={{ marginTop: 4 }}>{`${euro(budget)} × ${dayCount(billedDays)} ÷ 7, rounded. Incl. VAT.`}</T>
           </Card>
 
           {runsPastEvent ? (
-            <Banner icon="information-outline" tone="warning">{`Doors open on ${fmtDay(doorsAt)} at ${time(event.start)}. The boost stops automatically then and unused days are refunded to your payment method.`}</Banner>
+            <Banner icon="information-outline" tone="warning">{`Doors open on ${fmtDay(doorsAt)} at ${time(event.start)}. The boost stops then, so you’re only charged for ${dayCount(billedDays)}, not ${days}.`}</Banner>
           ) : null}
 
           <Pressable
