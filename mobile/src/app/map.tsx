@@ -5,33 +5,31 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventRow } from '../components/cards';
 import { goBack } from '../components/layout';
-import { Button, Chip, IconButton, Photo, T } from '../components/ui';
-import { venueById, venues } from '../data/mock';
+import { Button, Chip, IconButton, Photo, Pill, T } from '../components/ui';
 import { parse, sameDay, TODAY } from '../lib/format';
-import { activeFilterCount, applyFilters, type Filters, useFilters } from '../store/filters';
-import { useAllEvents } from '../store/useApp';
-import { colors } from '../theme';
-
-/** Area picked under Filters → Location (stored next to the shared filters). */
-const areaOf = (f: Filters) => (f.location === 'search' ? (f as Filters & { area?: string }).area : undefined);
+import { isPromoted } from '../lib/promotions';
+import { activeFilterCount, applyFilters, useFilters } from '../store/filters';
+import { useAllEvents, useApp, useVenues } from '../store/useApp';
+import { colors, radius } from '../theme';
 
 type Quick = 'all' | 'today' | 'weekend' | 'free' | 'live' | 'venues';
 
 export default function MapScreen() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const events = useAllEvents();
+  const venues = useVenues();
+  const promotions = useApp((s) => s.promotions);
   const filters = useFilters((s) => s.filters);
   const resetFilters = useFilters((s) => s.reset);
-  const filterCount = activeFilterCount(filters) + (areaOf(filters) ? 1 : 0);
+  const filterCount = activeFilterCount(filters);
   const [size, setSize] = useState({ w: 1, h: 1 });
   const [quick, setQuick] = useState<Quick>('all');
-  const [selected, setSelected] = useState<string | undefined>(focus ?? events[0]?.id);
+  // Without a focus the card shows the first event on the map, which is a sponsored one when there is one.
+  const [selected, setSelected] = useState<string | undefined>(focus);
 
-  const shown = useMemo(() => {
-    const area = areaOf(filters);
-    return applyFilters(events, filters).filter((e) => {
+  const { shown, promoted } = useMemo(() => {
+    const list = applyFilters(events, filters).filter((e) => {
       if (e.isPrivate && e.organizerId !== 'me') return false;
-      if (area && venueById(e.venueId)?.area !== area) return false;
       const d = parse(e.start);
       const days = (d.getTime() - TODAY.getTime()) / 86_400_000;
       if (quick === 'today') return sameDay(d, TODAY);
@@ -40,7 +38,10 @@ export default function MapScreen() {
       if (quick === 'live') return e.category === 'Concerts' || e.category === 'Acoustic';
       return quick !== 'venues';
     });
-  }, [events, quick, filters]);
+    // Boosted events (Pro → Promote) come first and get highlighted pins.
+    const boosted = new Set(list.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
+    return { shown: [...list.filter((e) => boosted.has(e.id)), ...list.filter((e) => !boosted.has(e.id))], promoted: boosted };
+  }, [events, promotions, quick, filters]);
 
   // The map artwork is square and drawn with "cover", so convert % positions to screen points.
   const side = Math.max(size.w, size.h);
@@ -61,10 +62,12 @@ export default function MapScreen() {
           ))
         : shown.map((e) => {
             const on = e.id === sel?.id;
-            const s = on ? 64 : 44;
+            const boosted = promoted.has(e.id);
+            // Sponsored pins are a little larger with a gold ring and sit above regular pins.
+            const s = on ? 64 : boosted ? 52 : 44;
             return (
-              <Pressable key={e.id} accessibilityRole="button" accessibilityLabel={e.title} accessibilityState={{ selected: on }} onPress={() => setSelected(e.id)} style={{ position: 'absolute', ...pos(e.mapPos), marginLeft: -s / 2, marginTop: -s / 2, zIndex: on ? 2 : 1 }}>
-                <Photo src={e.cover} style={{ width: s, height: s, borderRadius: s / 2, borderWidth: on ? 4 : 2, borderColor: on ? colors.brand : colors.white }} />
+              <Pressable key={e.id} accessibilityRole="button" accessibilityLabel={boosted ? `${e.title}, sponsored` : e.title} accessibilityState={{ selected: on }} onPress={() => setSelected(e.id)} style={{ position: 'absolute', ...pos(e.mapPos), marginLeft: -s / 2, marginTop: -s / 2, zIndex: on ? 3 : boosted ? 2 : 1 }}>
+                <Photo src={e.cover} style={{ width: s, height: s, borderRadius: s / 2, borderWidth: on ? 4 : boosted ? 3 : 2, borderColor: on ? colors.brand : boosted ? colors.gold : colors.white }} />
               </Pressable>
             );
           })}
@@ -83,7 +86,14 @@ export default function MapScreen() {
       </SafeAreaView>
 
       <SafeAreaView edges={['bottom']} style={{ position: 'absolute', left: 16, right: 16, bottom: 12 }}>
-        {quick !== 'venues' && sel ? <EventRow event={sel} /> : null}
+        {quick !== 'venues' && sel ? (
+          <View style={{ gap: 6 }}>
+            {promoted.has(sel.id) ? <Pill label="Sponsored" icon="star-four-points" /> : null}
+            <View style={promoted.has(sel.id) ? { borderRadius: radius.lg + 2, borderWidth: 2, borderColor: colors.gold } : undefined}>
+              <EventRow event={sel} />
+            </View>
+          </View>
+        ) : null}
         {quick !== 'venues' && !shown.length ? (
           <View style={{ backgroundColor: colors.surface, padding: 16, borderRadius: 16, gap: 10 }}>
             <T v="body">No events on the map for this filter.</T>

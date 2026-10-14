@@ -6,13 +6,10 @@ import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Chip, Field, Row, T, Toggle } from '../components/ui';
 import { GENRES, venues } from '../data/mock';
 import { euro } from '../lib/format';
-import { activeFilterCount, applyFilters, DEFAULT_FILTERS, type Filters, useFilters } from '../store/filters';
+import { activeArea, activeFilterCount, applyFilters, DEFAULT_FILTERS, type Filters, useFilters } from '../store/filters';
 import { toast } from '../store/toast';
 import { useAllEvents } from '../store/useApp';
 import { colors } from '../theme';
-
-/** The shared filters plus the area picked under "Search for location". */
-type FiltersWithArea = Filters & { area?: string };
 
 const AREAS = Array.from(new Set(venues.map((v) => v.area)));
 
@@ -62,22 +59,25 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 export default function FiltersScreen() {
   const { next } = useLocalSearchParams<{ next?: string }>();
-  const current = useFilters((s) => s.filters) as FiltersWithArea;
+  const current = useFilters((s) => s.filters);
   const apply = useFilters((s) => s.set);
   const events = useAllEvents();
-  const [f, setF] = useState<FiltersWithArea>(current);
+  const [f, setF] = useState<Filters>(current);
   const [areaQuery, setAreaQuery] = useState(current.area ?? '');
-  const up = (p: Partial<FiltersWithArea>) => setF((x) => ({ ...x, ...p }));
-  const toggleIn = (key: 'categories' | 'styles', v: string) => up({ [key]: f[key].includes(v) ? f[key].filter((x) => x !== v) : [...f[key], v] } as Partial<Filters>);
+  const up = (p: Partial<Filters>) => setF((x) => ({ ...x, ...p }));
+  const toggleIn = (key: 'categories' | 'styles', v: string) => {
+    const list = f[key].includes(v) ? f[key].filter((x) => x !== v) : [...f[key], v];
+    up(key === 'categories' ? { categories: list } : { styles: list });
+  };
 
-  const area = f.location === 'search' ? f.area : undefined;
-  const matches = applyFilters(events, f).filter((e) => (!e.isPrivate || e.organizerId === 'me') && (!area || venues.find((v) => v.id === e.venueId)?.area === area)).length;
+  // applyFilters and activeFilterCount only use the area while "Search for location" is on.
+  const matches = applyFilters(events, f).filter((e) => !e.isPrivate || e.organizerId === 'me').length;
   const areaSuggestions = AREAS.filter((a) => !areaQuery.trim() || a.toLowerCase().includes(areaQuery.trim().toLowerCase()));
-  const changed = activeFilterCount(f) + (area ? 1 : 0);
+  const changed = activeFilterCount(f);
 
   const showResults = () => {
     // Keep "area" only when a location search is active, so "Current location" really means near you.
-    apply({ ...f, area: f.location === 'search' ? f.area : undefined } as Partial<Filters>);
+    apply({ ...f, area: activeArea(f) });
     toast(changed ? `${changed} filter${changed === 1 ? '' : 's'} applied` : 'Showing all events');
     if (next && next.startsWith('/')) router.replace(next as never);
     else goBack('/events/all');
@@ -91,7 +91,7 @@ export default function FiltersScreen() {
           title="Filters"
           onBack={() => goBack('/events/all')}
           right={
-            <Pressable accessibilityRole="button" accessibilityLabel="Reset all filters" onPress={() => { setF({ ...DEFAULT_FILTERS, area: undefined }); setAreaQuery(''); }} hitSlop={8} style={{ paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' }}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Reset all filters" onPress={() => { setF(DEFAULT_FILTERS); setAreaQuery(''); }} hitSlop={8} style={{ paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' }}>
               <T v="bodyBold" color={colors.brand}>Reset</T>
             </Pressable>
           }

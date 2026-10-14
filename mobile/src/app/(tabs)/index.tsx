@@ -7,9 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateBadge, EventCard, MiniEventCard } from '../../components/cards';
 import { DomtakHeader } from '../../components/layout';
 import { PostCard } from '../../components/PostCard';
-import { Avatar, Icon, Photo, Row, Segmented, T } from '../../components/ui';
+import { Avatar, Icon, Photo, Pill, Row, Segmented, T } from '../../components/ui';
 import { profileById, profiles, stories } from '../../data/mock';
-import type { Post } from '../../data/types';
+import type { EventItem, Post } from '../../data/types';
+import { parse, TODAY } from '../../lib/format';
+import { isPromoted } from '../../lib/promotions';
 import { useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
 import { colors, fonts, shadow } from '../../theme';
 
@@ -85,9 +87,26 @@ function NextGigs() {
   );
 }
 
-function UpcomingEvents() {
+/**
+ * Public events that have not ended, in date order, with boosted events (Pro → Promote) first.
+ * `promoted` holds the ids of the boosted ones, which are marked as Sponsored.
+ */
+function useDiscoverEvents() {
   const events = useAllEvents();
-  const list = [...events].sort((a, b) => a.start.localeCompare(b.start)).slice(0, 6);
+  const promotions = useApp((s) => s.promotions);
+  return useMemo(() => {
+    const open = events
+      .filter((e) => (!e.isPrivate || e.organizerId === 'me') && parse(e.end) >= TODAY)
+      .sort((a, b) => a.start.localeCompare(b.start));
+    const promoted = new Set(open.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
+    const list: EventItem[] = [...open.filter((e) => promoted.has(e.id)), ...open.filter((e) => !promoted.has(e.id))];
+    return { list, promoted };
+  }, [events, promotions]);
+}
+
+function UpcomingEvents() {
+  const { list: discover, promoted } = useDiscoverEvents();
+  const list = discover.slice(0, 6);
   return (
     <View style={{ backgroundColor: colors.surface, paddingVertical: 14, marginBottom: 10 }}>
       <Row justify="space-between" style={{ paddingHorizontal: 14, marginBottom: 10 }}>
@@ -95,18 +114,29 @@ function UpcomingEvents() {
         <Pressable accessibilityRole="button" accessibilityLabel="See all upcoming events" onPress={() => router.push('/events/all')} hitSlop={12}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
       </Row>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, gap: 12, paddingBottom: 4 }}>
-        {list.map((e) => <MiniEventCard key={e.id} event={e} />)}
+        {list.map((e) => (
+          <View key={e.id}>
+            <MiniEventCard event={e} />
+            {promoted.has(e.id) ? (
+              <View pointerEvents="none" style={{ position: 'absolute', top: 8, left: 8 }}>
+                <Pill label="Sponsored" icon="star-four-points" />
+              </View>
+            ) : null}
+          </View>
+        ))}
       </ScrollView>
     </View>
   );
 }
 
 function Sponsored() {
-  const events = useAllEvents();
-  const ev = events.find((e) => e.sponsored);
+  const { list, promoted } = useDiscoverEvents();
+  // A boosted event takes the sponsored slot first; otherwise a sponsored partner event.
+  const ev = list.find((e) => promoted.has(e.id)) ?? list.find((e) => e.sponsored);
   if (!ev) return null;
   return (
-    <View style={{ paddingHorizontal: 12, marginBottom: 10 }}>
+    <View style={{ paddingHorizontal: 12, marginBottom: 10, gap: 6 }}>
+      {promoted.has(ev.id) ? <Pill label="Sponsored" icon="star-four-points" /> : null}
       <EventCard event={ev} />
     </View>
   );

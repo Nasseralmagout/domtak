@@ -7,15 +7,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackOverlay, EventRow, HeartToggle, VenueFacts } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
 import { Avatar, Button, Icon, Photo, RatingBadge, Row, SectionTitle, Stars, T } from '../../components/ui';
-import { followersOf, profileById, reviewsFor, venueById } from '../../data/mock';
-import { compact, euro, shortDate } from '../../lib/format';
-import { useAllEvents, useApp } from '../../store/useApp';
+import { followersOf, profileById, reviewsFor } from '../../data/mock';
+import { compact, euro, parse, shortDate, TODAY } from '../../lib/format';
+import { useAllEvents, useApp, useRating, useVenue } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 export default function VenueDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
-  const venue = venueById(id ?? '');
+  // Includes the owner's saved listing edits (Pro → Venue listing) for their own venue.
+  const venue = useVenue(id);
+  // Same review average as the venue cards and /ratings.
+  const { rating, count: reviewCount } = useRating(id ?? '');
   const wished = useApp((s) => (id ? s.wishlist.venues.includes(id) : false));
   const following = useApp((s) => (id ? !!s.following[id] : false));
   const toggleWish = useApp((s) => s.toggleWish);
@@ -37,7 +40,10 @@ export default function VenueDetail() {
     );
   }
   const gallery = [venue.cover, ...venue.gallery];
-  const upcoming = events.filter((e) => e.venueId === venue.id);
+  // Public events that have not ended yet (private events only for their organizer, i.e. you).
+  const upcoming = events
+    .filter((e) => e.venueId === venue.id && (!e.isPrivate || e.organizerId === 'me') && parse(e.end) >= TODAY)
+    .sort((a, b) => a.start.localeCompare(b.start));
   const fans = followersOf(venue.id).filter((p) => !blocked.includes(p.id)).slice(0, 5);
   const half = Math.ceil(venue.occasions.length / 2);
   const followerCount = venue.followers + (following ? 1 : 0);
@@ -56,9 +62,7 @@ export default function VenueDetail() {
       .filter((r) => !blocked.includes(r.authorId))
       .sort((a, b) => b.date.localeCompare(a.date)),
   ];
-  const reviewCount = allReviews.length;
   const reviewsLabel = `${reviewCount} review${reviewCount === 1 ? '' : 's'}`;
-  const rating = reviewCount ? allReviews.reduce((n, r) => n + r.rating, 0) / reviewCount : venue.rating;
   const ratingText = rating.toFixed(1).replace('.', ',');
   const openRatings = () => router.push(`/ratings/${venue.id}`);
 

@@ -5,8 +5,9 @@ import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { VenueCard } from '../components/cards';
 import { goBack } from '../components/layout';
 import { Chip, EmptyState, Icon, IconButton, Photo, Row, T } from '../components/ui';
-import { venues } from '../data/mock';
+import { ratingFor } from '../data/mock';
 import type { Venue } from '../data/types';
+import { useApp, useVenues } from '../store/useApp';
 import { colors, fonts } from '../theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,10 +16,18 @@ const TYPES: ('All' | Venue['type'])[] = ['All', 'Club', 'Open air', 'Hall', 'Ga
 export default function Venues() {
   const [type, setType] = useState<(typeof TYPES)[number]>('All');
   const [sort, setSort] = useState<'rating' | 'price'>('rating');
+  // The owner's listing edits (Moon Club) apply to type and price, so filters and sorting see them too.
+  const venues = useVenues();
+  const bookings = useApp((s) => s.bookings);
+  const reviews = useApp((s) => s.reviews);
+  const blocked = useApp((s) => s.blocked);
   const list = useMemo(() => {
+    // Same rating the cards and /ratings show: review average incl. your own reviews, blocked authors left out.
+    const ratingOf = (id: string) => ratingFor(id, { extra: bookings.filter((b) => b.targetId === id && reviews[b.id]).map((b) => reviews[b.id].rating), exclude: blocked });
     const l = type === 'All' ? venues : venues.filter((v) => v.type === type);
-    return [...l].sort((a, b) => (sort === 'rating' ? b.rating - a.rating : a.pricePerNight - b.pricePerNight));
-  }, [type, sort]);
+    const ratings = new Map(l.map((v) => [v.id, ratingOf(v.id)]));
+    return [...l].sort((a, b) => (sort === 'rating' ? (ratings.get(b.id) ?? 0) - (ratings.get(a.id) ?? 0) : a.pricePerNight - b.pricePerNight));
+  }, [venues, bookings, reviews, blocked, type, sort]);
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <FlatList

@@ -5,14 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventCard } from '../../components/cards';
 import { DomtakHeader, goBack, ScreenHeader } from '../../components/layout';
-import { Chip, EmptyState, Field, IconButton, Row, T } from '../../components/ui';
-import { venueById } from '../../data/mock';
-import { activeFilterCount, applyFilters, type Filters, useFilters } from '../../store/filters';
-import { useAllEvents } from '../../store/useApp';
+import { Chip, EmptyState, Field, IconButton, Pill, Row, T } from '../../components/ui';
+import { isPromoted } from '../../lib/promotions';
+import { activeArea, activeFilterCount, applyFilters, useFilters } from '../../store/filters';
+import { useAllEvents, useApp, useVenues } from '../../store/useApp';
 import { colors } from '../../theme';
-
-/** Area picked under Filters → Location (stored next to the shared filters). */
-const areaOf = (f: Filters) => (f.location === 'search' ? (f as Filters & { area?: string }).area : undefined);
 
 const CATS = [
   { key: 'all', label: 'All', icon: 'view-grid-outline' as const },
@@ -30,18 +27,23 @@ export default function EventList() {
   const [cat, setCat] = useState(category && CATS.some((c) => c.key === category) ? category : 'all');
   const [q, setQ] = useState('');
   const events = useAllEvents();
+  const venues = useVenues();
+  const promotions = useApp((s) => s.promotions);
   const filters = useFilters((s) => s.filters);
-  const area = areaOf(filters);
-  const count = activeFilterCount(filters) + (area ? 1 : 0);
+  const area = activeArea(filters);
+  const count = activeFilterCount(filters);
 
-  const list = useMemo(() => {
+  const { list, promoted } = useMemo(() => {
+    const venueName = (id: string) => venues.find((v) => v.id === id)?.name ?? '';
     let l = applyFilters(events, filters).filter((e) => !e.isPrivate || e.organizerId === 'me');
-    if (area) l = l.filter((e) => venueById(e.venueId)?.area === area);
     if (cat !== 'all') l = l.filter((e) => e.category === cat);
     const t = q.trim().toLowerCase();
-    if (t) l = l.filter((e) => `${e.title} ${e.genre} ${e.description} ${venueById(e.venueId)?.name ?? ''}`.toLowerCase().includes(t));
-    return [...l].sort((a, b) => a.start.localeCompare(b.start));
-  }, [events, filters, area, cat, q]);
+    if (t) l = l.filter((e) => `${e.title} ${e.genre} ${e.description} ${venueName(e.venueId)}`.toLowerCase().includes(t));
+    // Boosted events (Pro → Promote) come first, marked as Sponsored; each group stays in date order.
+    const boosted = new Set(l.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
+    const byDate = [...l].sort((a, b) => a.start.localeCompare(b.start));
+    return { list: [...byDate.filter((e) => boosted.has(e.id)), ...byDate.filter((e) => !boosted.has(e.id))], promoted: boosted };
+  }, [events, venues, promotions, filters, cat, q]);
   const title = cat === 'all' ? 'All events' : CATS.find((c) => c.key === cat)?.label ?? 'Events';
 
   return (
@@ -76,7 +78,12 @@ export default function EventList() {
             </Row>
           </View>
         }
-        renderItem={({ item }) => <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}><EventCard event={item} /></View>}
+        renderItem={({ item }) => (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 6 }}>
+            {promoted.has(item.id) ? <Pill label="Sponsored" icon="star-four-points" /> : null}
+            <EventCard event={item} />
+          </View>
+        )}
         ListEmptyComponent={<EmptyState icon="party-popper" title="No events found" body="Try another category or clear your filters." action="Clear filters" onAction={() => { useFilters.getState().reset(); setCat('all'); setQ(''); }} />}
       />
     </SafeAreaView>

@@ -4,15 +4,16 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { create } from 'zustand';
 
 import { goBack, Screen } from '../components/layout';
-import { Avatar, Button, Chip, EmptyState, Field, Icon, IconButton, Photo, Row, T } from '../components/ui';
+import { Avatar, Button, Chip, EmptyState, Field, Icon, IconButton, Photo, Pill, Row, T } from '../components/ui';
 import type { ImgKey } from '../data/images';
-import { profiles, venueById, venues } from '../data/mock';
+import { profiles } from '../data/mock';
 import { euro, priceRange, shortDate } from '../lib/format';
-import { useAllEvents } from '../store/useApp';
+import { isPromoted } from '../lib/promotions';
+import { useAllEvents, useApp, useVenues } from '../store/useApp';
 import { colors, radius, shadow } from '../theme';
 
 type Kind = 'all' | 'event' | 'musician' | 'venue' | 'organizer';
-type Result = { key: string; kind: Exclude<Kind, 'all'>; title: string; sub: string; image: ImgKey; href: string; round?: boolean };
+type Result = { key: string; kind: Exclude<Kind, 'all'>; title: string; sub: string; image: ImgKey; href: string; round?: boolean; sponsored?: boolean };
 
 const KINDS: readonly (readonly [Kind, string])[] = [['all', 'All'], ['event', 'Events'], ['musician', 'Musicians'], ['venue', 'Venues'], ['organizer', 'Organizers']];
 const SEED_RECENT = ['Techno Kreuzberg', 'Moon Club', 'Acoustic', 'Saxophonist wedding'];
@@ -32,6 +33,9 @@ export default function Search() {
   const recent = useRecent((s) => s.items);
   const setRecent = useRecent((s) => s.setItems);
   const events = useAllEvents();
+  // Venues with the owner's listing edits (Moon Club), so names, areas and photos match the venue page.
+  const venues = useVenues();
+  const promotions = useApp((s) => s.promotions);
 
   const remember = (term: string) => {
     const t = term.trim();
@@ -51,14 +55,18 @@ export default function Search() {
       const hay = s.toLowerCase();
       return words.every((w) => hay.includes(w) || (w.length > 4 && w.endsWith('s') && hay.includes(w.slice(0, -1))));
     };
-    const out: Result[] = [];
+    const venueOf = (id: string) => venues.find((v) => v.id === id);
+    const eventResults: Result[] = [];
     events.forEach((e) => {
       if (e.isPrivate && e.organizerId !== 'me') return;
-      const v = venueById(e.venueId);
+      const v = venueOf(e.venueId);
       if (match(`${e.title} ${e.subtitle ?? ''} ${e.genre} ${e.category} ${v?.name ?? ''} ${v?.area ?? ''}`)) {
-        out.push({ key: e.id, kind: 'event', title: e.title, sub: `${shortDate(e.start)} · ${v?.name ?? ''} · ${priceRange(e.ticketTypes.map((x) => x.price))}`, image: e.cover, href: `/event/${e.id}` });
+        const sub = [shortDate(e.start), v?.name, priceRange(e.ticketTypes.map((x) => x.price))].filter(Boolean).join(' · ');
+        eventResults.push({ key: e.id, kind: 'event', title: e.title, sub, image: e.cover, href: `/event/${e.id}`, sponsored: isPromoted(promotions, e) });
       }
     });
+    // Boosted events (Pro → Promote) lead the results, marked as Sponsored.
+    const out: Result[] = [...eventResults.filter((r) => r.sponsored), ...eventResults.filter((r) => !r.sponsored)];
     profiles.forEach((p) => {
       if (['dj', 'musician', 'band'].includes(p.kind) && match(`${p.name} ${p.title} ${p.kind === 'dj' ? 'dj' : ''} ${p.genres.join(' ')} ${p.city} ${p.bio} ${(p.instruments ?? []).join(' ')}`)) {
         out.push({ key: p.id, kind: 'musician', title: p.name, sub: `${p.title} · from ${euro(p.feePerHour ?? 0)}/h`, image: p.avatar, href: `/artist/${p.id}`, round: true });
@@ -73,7 +81,7 @@ export default function Search() {
       }
     });
     return kind === 'all' ? out : out.filter((r) => r.kind === kind);
-  }, [q, kind, events]);
+  }, [q, kind, events, venues, promotions]);
 
   return (
     <Screen
@@ -120,7 +128,7 @@ export default function Search() {
         <Pressable
           key={`${r.kind}-${r.key}`}
           accessibilityRole="button"
-          accessibilityLabel={`${r.kind === 'musician' ? 'Artist' : r.kind}: ${r.title}, ${r.sub}`}
+          accessibilityLabel={`${r.sponsored ? 'Sponsored ' : ''}${r.kind === 'musician' ? 'Artist' : r.kind}: ${r.title}, ${r.sub}`}
           onPress={() => {
             remember(q);
             router.push(r.href as never);
@@ -129,7 +137,14 @@ export default function Search() {
         >
           {r.round ? <Avatar src={r.image} size={64} /> : <Photo src={r.image} style={{ width: 64, height: 64 }} radius={14} />}
           <View style={{ flex: 1, gap: 2 }}>
-            <T v="caption">{r.kind === 'musician' ? 'ARTIST' : r.kind.toUpperCase()}</T>
+            {r.sponsored ? (
+              <Row gap={6}>
+                <T v="caption">EVENT</T>
+                <Pill label="Sponsored" icon="star-four-points" />
+              </Row>
+            ) : (
+              <T v="caption">{r.kind === 'musician' ? 'ARTIST' : r.kind.toUpperCase()}</T>
+            )}
             <T v="title" numberOfLines={1}>{r.title}</T>
             <T v="small" numberOfLines={1}>{r.sub}</T>
           </View>
