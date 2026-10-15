@@ -1,17 +1,16 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { type LayoutChangeEvent, Pressable, View } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Chip, Field, Row, T, Toggle } from '../components/ui';
-import { GENRES, venues } from '../data/mock';
+import { GENRES } from '../data/mock';
 import { euro } from '../lib/format';
 import { activeArea, activeFilterCount, applyFilters, DEFAULT_FILTERS, type Filters, useFilters } from '../store/filters';
 import { toast } from '../store/toast';
-import { useAllEvents } from '../store/useApp';
+import { useAllEvents, useVenues } from '../store/useApp';
 import { colors } from '../theme';
 
-const AREAS = Array.from(new Set(venues.map((v) => v.area)));
 
 function PriceSlider({ value, onChange, max = 250 }: { value: number; onChange: (n: number) => void; max?: number }) {
   const [w, setW] = useState(1);
@@ -62,6 +61,9 @@ export default function FiltersScreen() {
   const current = useFilters((s) => s.filters);
   const apply = useFilters((s) => s.set);
   const events = useAllEvents();
+  // Includes the owner's saved listing, so a moved venue is found under its new area.
+  const allVenues = useVenues();
+  const areas = useMemo(() => Array.from(new Set(allVenues.map((v) => v.area))), [allVenues]);
   const [f, setF] = useState<Filters>(current);
   const [areaQuery, setAreaQuery] = useState(current.area ?? '');
   const up = (p: Partial<Filters>) => setF((x) => ({ ...x, ...p }));
@@ -71,8 +73,8 @@ export default function FiltersScreen() {
   };
 
   // applyFilters and activeFilterCount only use the area while "Search for location" is on.
-  const matches = applyFilters(events, f).filter((e) => !e.isPrivate || e.organizerId === 'me').length;
-  const areaSuggestions = AREAS.filter((a) => !areaQuery.trim() || a.toLowerCase().includes(areaQuery.trim().toLowerCase()));
+  const matches = applyFilters(events, f, allVenues).filter((e) => !e.isPrivate || e.organizerId === 'me').length;
+  const areaSuggestions = areas.filter((a) => !areaQuery.trim() || a.toLowerCase().includes(areaQuery.trim().toLowerCase()));
   const changed = activeFilterCount(f);
 
   const showResults = () => {

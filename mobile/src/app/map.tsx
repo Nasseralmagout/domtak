@@ -37,7 +37,7 @@ export default function MapScreen() {
   };
 
   const { shown, promoted } = useMemo(() => {
-    const filtered = applyFilters(events, filters).filter((e) => {
+    const filtered = applyFilters(events, filters, venues).filter((e) => {
       if (e.isPrivate && e.organizerId !== 'me') return false;
       const d = parse(e.start);
       const days = (d.getTime() - TODAY.getTime()) / 86_400_000;
@@ -52,13 +52,18 @@ export default function MapScreen() {
     // Boosted events (Pro → Promote) come first and get highlighted pins.
     const boosted = new Set(list.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
     return { shown: [...list.filter((e) => boosted.has(e.id)), ...list.filter((e) => !boosted.has(e.id))], promoted: boosted };
-  }, [events, promotions, quick, filters, focus, pinFocus]);
+  }, [events, venues, promotions, quick, filters, focus, pinFocus]);
 
   // The map artwork is square and drawn with "cover", so convert % positions to screen points.
   const side = Math.max(size.w, size.h);
   const offX = (side - size.w) / 2;
   const offY = (side - size.h) / 2;
-  const pos = (p: { x: number; y: number }) => ({ left: (p.x / 100) * side - offX, top: (p.y / 100) * side - offY });
+  // Pins near the edge are nudged inside so the whole pin (ring included) stays visible.
+  const clamp = (v: number, half: number, max: number) => (max > 0 ? Math.min(Math.max(v, half + 8), max - half - 8) : v);
+  const pos = (p: { x: number; y: number }, pin: number) => ({
+    left: clamp((p.x / 100) * side - offX, pin / 2, size.w),
+    top: clamp((p.y / 100) * side - offY, pin / 2, size.h),
+  });
   // The card always shows an event that is visible on the map with the current filters.
   const sel = shown.find((e) => e.id === selected) ?? shown[0];
 
@@ -67,7 +72,7 @@ export default function MapScreen() {
       <Photo src="map_berlin" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} accessibilityLabel="Map of Berlin" />
       {quick === 'venues'
         ? venues.map((v) => (
-            <Pressable key={v.id} accessibilityRole="button" accessibilityLabel={`${v.name}, ${v.area}`} onPress={() => router.push(`/venue/${v.id}`)} style={{ position: 'absolute', ...pos(v.mapPos), marginLeft: -22, marginTop: -22 }}>
+            <Pressable key={v.id} accessibilityRole="button" accessibilityLabel={`${v.name}, ${v.area}`} onPress={() => router.push(`/venue/${v.id}`)} style={{ position: 'absolute', ...pos(v.mapPos, 44), marginLeft: -22, marginTop: -22 }}>
               <Photo src={v.cover} style={{ width: 44, height: 44, borderRadius: 12, borderWidth: 3, borderColor: colors.gold }} />
             </Pressable>
           ))
@@ -77,7 +82,7 @@ export default function MapScreen() {
             // Sponsored pins are a little larger with a gold ring and sit above regular pins.
             const s = on ? 64 : boosted ? 52 : 44;
             return (
-              <Pressable key={e.id} accessibilityRole="button" accessibilityLabel={boosted ? `${e.title}, sponsored` : e.title} accessibilityState={{ selected: on }} onPress={() => setSelected(e.id)} style={{ position: 'absolute', ...pos(e.mapPos), marginLeft: -s / 2, marginTop: -s / 2, zIndex: on ? 3 : boosted ? 2 : 1 }}>
+              <Pressable key={e.id} accessibilityRole="button" accessibilityLabel={boosted ? `${e.title}, sponsored` : e.title} accessibilityState={{ selected: on }} onPress={() => setSelected(e.id)} style={{ position: 'absolute', ...pos(e.mapPos, s), marginLeft: -s / 2, marginTop: -s / 2, zIndex: on ? 3 : boosted ? 2 : 1 }}>
                 <Photo src={e.cover} style={{ width: s, height: s, borderRadius: s / 2, borderWidth: on ? 4 : boosted ? 3 : 2, borderColor: on ? colors.brand : boosted ? colors.gold : colors.white }} />
               </Pressable>
             );

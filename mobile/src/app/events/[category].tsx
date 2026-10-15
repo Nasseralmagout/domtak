@@ -35,7 +35,7 @@ export default function EventList() {
 
   const { list, promoted } = useMemo(() => {
     const venueName = (id: string) => venues.find((v) => v.id === id)?.name ?? '';
-    let l = applyFilters(events, filters).filter((e) => !e.isPrivate || e.organizerId === 'me');
+    let l = applyFilters(events, filters, venues).filter((e) => !e.isPrivate || e.organizerId === 'me');
     if (cat !== 'all') l = l.filter((e) => e.category === cat);
     const t = q.trim().toLowerCase();
     if (t) l = l.filter((e) => `${e.title} ${e.genre} ${e.description} ${venueName(e.venueId)}`.toLowerCase().includes(t));

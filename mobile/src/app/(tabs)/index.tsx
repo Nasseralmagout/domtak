@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import { useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
 import { colors, fonts, shadow } from '../../theme';
 
 type FeedTab = 'forYou' | 'following' | 'nearby';
+const asFeedTab = (t?: string): FeedTab => (t === 'following' || t === 'nearby' ? t : 'forYou');
 type Item =
   | { kind: 'post'; post: Post }
   | { kind: 'artists' }
@@ -146,7 +147,14 @@ function Sponsored() {
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<FeedTab>('forYou');
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<FeedTab>(asFeedTab(params.tab));
+  // ?tab=following (e.g. after a Followers-only post) switches the feed even when Home is already mounted.
+  const [lastParam, setLastParam] = useState(params.tab);
+  if (params.tab !== lastParam) {
+    setLastParam(params.tab);
+    if (params.tab) setTab(asFeedTab(params.tab));
+  }
   const [refreshing, setRefreshing] = useState(false);
   const following = useApp((s) => s.following);
   const allPosts = useFeedPosts();
