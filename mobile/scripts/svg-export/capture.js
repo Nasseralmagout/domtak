@@ -95,6 +95,10 @@ async function setRole(page, role) {
     if (!raw) return;
     const data = JSON.parse(raw);
     data.state.user.role = r;
+    // Professional screens need an approved role (blueprint F02); the demo approves it directly.
+    const approved = new Set(data.state.user.approvedRoles || ['fan']);
+    approved.add(r);
+    data.state.user.approvedRoles = [...approved];
     localStorage.setItem('domtak-app', JSON.stringify(data));
   }, role);
 }
