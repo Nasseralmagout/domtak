@@ -11,7 +11,7 @@ import { profiles, venues } from '../data/mock';
 import type { EventCategory, TicketType } from '../data/types';
 import { isoDay, parse, shortDate, time, TODAY } from '../lib/format';
 import { toast } from '../store/toast';
-import { useAllEvents, useApp } from '../store/useApp';
+import { useAllEvents, useApp, useEvent } from '../store/useApp';
 import { colors, radius } from '../theme';
 
 const COVERS: ImgKey[] = ['ev_lasers', 'ev_concert_blue', 'ev_party', 'feed_openair', 'ev_pool_party', 'ev_red_crowd', 'cat_acoustic', 'ev_purple_arena'];
@@ -24,40 +24,60 @@ const CATEGORIES: EventCategory[] = ['Concerts', 'Parties', 'Electronic', 'Acous
 const STEPS = ['Details', 'Location', 'Tickets', 'Preview'];
 
 export default function CreateEvent() {
-  const { private: priv } = useLocalSearchParams<{ private?: string }>();
-  const isPrivate = priv === '1';
+  const { private: priv, edit } = useLocalSearchParams<{ private?: string; edit?: string }>();
+  // ?edit=<id> opens the wizard on an event you organise, prefilled; Save keeps ticket sales.
+  const editing = useEvent(edit);
+  const isPrivate = editing ? !!editing.isPrivate : priv === '1';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const addEvent = useApp((s) => s.addEvent);
+  const updateEvent = useApp((s) => s.updateEvent);
   const createBooking = useApp((s) => s.createBooking);
   const bookings = useApp((s) => s.bookings);
   const user = useApp((s) => s.user);
   const allEvents = useAllEvents();
-  const dates = useMemo(() => Array.from({ length: 60 }, (_, i) => new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + 2 + i, 12)), []);
+  const editStartIso = editing?.start;
+  const editDay = useMemo(() => {
+    if (!editStartIso) return undefined;
+    const d = parse(editStartIso);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+  }, [editStartIso]);
+  const editTime = editing ? editing.start.slice(11, 16) : undefined;
+  const dates = useMemo(() => {
+    const list = Array.from({ length: 60 }, (_, i) => new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + 2 + i, 12));
+    // An edited event keeps its own date in the picker even when it is outside the usual range.
+    if (editDay && !list.some((d) => isoDay(d) === isoDay(editDay))) return [editDay, ...list].sort((a, b) => a.getTime() - b.getTime());
+    return list;
+  }, [editDay]);
 
   const [step, setStep] = useState(0);
-  const [cover, setCover] = useState<ImgKey>(isPrivate ? 'ev_pool_party' : 'ev_lasers');
-  const [title, setTitle] = useState(isPrivate ? `${user.name.split(' ')[0]}’s Birthday Party` : '');
-  const [category, setCategory] = useState<EventCategory>(isPrivate ? 'Parties' : 'Electronic');
-  const [genre, setGenre] = useState('Techno');
-  const [date, setDate] = useState(dates[14]);
-  const [startTime, setStartTime] = useState('22:00');
-  const [customTime, setCustomTime] = useState('');
-  const [hours, setHours] = useState(6);
+  const [cover, setCover] = useState<ImgKey>(editing?.cover ?? (isPrivate ? 'ev_pool_party' : 'ev_lasers'));
+  const [title, setTitle] = useState(editing?.title ?? (isPrivate ? `${user.name.split(' ')[0]}’s Birthday Party` : ''));
+  const [category, setCategory] = useState<EventCategory>(editing?.category ?? (isPrivate ? 'Parties' : 'Electronic'));
+  const [genre, setGenre] = useState(editing?.genre ?? 'Techno');
+  const [date, setDate] = useState(editDay ?? dates[14]);
+  const [startTime, setStartTime] = useState(editTime ?? '22:00');
+  const [customTime, setCustomTime] = useState(editTime && !START_TIMES.includes(editTime) ? editTime : '');
+  const [hours, setHours] = useState(editing ? Math.min(24, Math.max(1, Math.round((parse(editing.end).getTime() - parse(editing.start).getTime()) / 3_600_000))) : 6);
   const [oneTime, setOneTime] = useState(true);
   const [weeks, setWeeks] = useState(4);
   const [library, setLibrary] = useState(false);
   const [uploaded, setUploaded] = useState<ImgKey[]>([]);
-  const [lineup, setLineup] = useState<string[]>(isPrivate ? [] : ['adam']);
-  const [venueId, setVenueId] = useState(isPrivate ? 'arcada' : 'moonclub');
-  const [description, setDescription] = useState('');
-  const [paid, setPaid] = useState(!isPrivate);
-  const [tickets, setTickets] = useState<TicketType[]>([
-    { id: 'ga', name: 'General admission', description: 'Entry', price: 25, capacity: 200, sold: 0 },
-    { id: 'vip', name: 'VIP', description: 'Fast lane', price: 45, capacity: 30, sold: 0 },
-  ]);
-  const [refund, setRefund] = useState('Refunds up to 48 h before doors');
-  const [adults, setAdults] = useState(!isPrivate);
+  const editPaid = editing ? editing.ticketTypes.some((t) => t.price > 0) : undefined;
+  const [lineup, setLineup] = useState<string[]>(editing?.lineup ?? (isPrivate ? [] : ['adam']));
+  const [venueId, setVenueId] = useState(editing?.venueId ?? (isPrivate ? 'arcada' : 'moonclub'));
+  const [description, setDescription] = useState(editing?.description ?? '');
+  const [paid, setPaid] = useState(editPaid ?? !isPrivate);
+  const [tickets, setTickets] = useState<TicketType[]>(
+    editing && editPaid
+      ? editing.ticketTypes
+      : [
+          { id: 'ga', name: 'General admission', description: 'Entry', price: 25, capacity: 200, sold: 0 },
+          { id: 'vip', name: 'VIP', description: 'Fast lane', price: 45, capacity: 30, sold: 0 },
+        ],
+  );
+  const [refund, setRefund] = useState(editing && editPaid ? editing.refundPolicy ?? 'Refunds up to 48 h before doors' : 'Refunds up to 48 h before doors');
+  const [adults, setAdults] = useState(editing ? !!editing.ageLimit : !isPrivate);
   const [error, setError] = useState<string>();
 
   const artists = profiles.filter((p) => ['dj', 'musician', 'band'].includes(p.kind));
@@ -66,7 +86,12 @@ export default function CreateEvent() {
   const startIso = `${isoDay(date)}T${startTime}:00`;
   const endDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h + hours, m);
   const endIso = `${isoDay(endDate)}T${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}:00`;
-  const finalTickets = paid ? tickets : [{ id: 'free', name: isPrivate ? 'Guest' : 'Free entry', description: 'Register to get your QR', price: 0, capacity: tickets[0]?.capacity ?? 100, sold: 0 }];
+  const soldBefore = editing ? editing.ticketTypes.reduce((n, t) => n + t.sold, 0) : 0;
+  const freeBefore = editing && !editPaid ? editing.ticketTypes[0] : undefined;
+  const [freeCapacity] = useState(freeBefore?.capacity);
+  const finalTickets = paid
+    ? tickets
+    : [{ id: freeBefore?.id ?? 'free', name: isPrivate ? 'Guest' : 'Free entry', description: 'Register to get your QR', price: 0, capacity: freeCapacity ?? tickets[0]?.capacity ?? 100, sold: freeBefore?.sold ?? 0 }];
   const totalCapacity = finalTickets.reduce((n, t) => n + t.capacity, 0);
   const startDate = parse(startIso);
   const occurrences = oneTime ? 1 : weeks;
@@ -78,7 +103,7 @@ export default function CreateEvent() {
   };
   // Another event at the same venue whose time overlaps any of the dates you're publishing.
   const clash = Array.from({ length: occurrences }, (_, w) => ({ s: parse(shiftWeeks(startIso, w)), e: parse(shiftWeeks(endIso, w)) }))
-    .map(({ s, e }) => allEvents.find((x) => x.venueId === venueId && parse(x.start) < e && parse(x.end) > s))
+    .map(({ s, e }) => allEvents.find((x) => x.id !== edit && x.venueId === venueId && parse(x.start) < e && parse(x.end) > s))
     .find(Boolean);
 
   // Android back steps through the form like the header arrow does, instead of discarding it.
@@ -122,10 +147,28 @@ export default function CreateEvent() {
       if (paid && tickets.some((t) => t.price > MAX_PRICE)) return `Ticket prices can be at most €${MAX_PRICE}`;
       if (paid && tickets.every((t) => t.price === 0)) return 'Paid events need at least one ticket with a price, or switch to free entry';
       if (paid && new Set(tickets.map((t) => t.name.trim().toLowerCase())).size !== tickets.length) return 'Give each ticket type a different name';
+      if (editing && soldBefore > 0 && paid !== !!editPaid) return `${soldBefore} tickets are already sold, so ${editPaid ? 'paid' : 'free'} entry has to stay`;
+      const short = paid ? tickets.find((t) => t.capacity < t.sold) : undefined;
+      if (short) return `${short.sold} ${short.name} tickets are already sold; the quantity can’t go below that`;
       if (totalCapacity <= 0) return isPrivate ? 'Set how many guests can come' : 'Set how many tickets are available';
       if (totalCapacity > venue.capacity) return `${venue.name} fits ${venue.capacity} people, but you have ${totalCapacity} tickets`;
     }
     return undefined;
+  };
+
+  const saveChanges = () => {
+    if (!editing) return;
+    updateEvent(editing.id, { ...draft, subtitle: editing.subtitle });
+    // Artists newly tagged in the line up get a booking request, like on publish.
+    const day = isoDay(date);
+    const added = isPrivate ? [] : lineup.filter((aid) => !editing.lineup.includes(aid) && !bookings.some((b) => b.targetId === aid && b.date === day && !['declined', 'cancelled', 'expired', 'completed'].includes(b.status)));
+    added.forEach((aid) => {
+      const a = profiles.find((p) => p.id === aid);
+      if (!a) return;
+      createBooking({ type: 'musician', targetId: aid, eventTitle: draft.title, date: day, startTime, endTime: endIso.slice(11, 16), hours, location: `${venue.name}, ${venue.area}`, guests: totalCapacity, equipment: venue.equipment, extras: 'None', note: 'Tagged in the line up.', amount: (a.feePerHour ?? 0) * hours });
+    });
+    toast(added.length ? `Changes saved · ${added.length} booking request${added.length > 1 ? 's' : ''} sent` : 'Changes saved');
+    router.replace({ pathname: '/event/[id]', params: { id: editing.id } });
   };
 
   const publish = () => {
@@ -173,7 +216,8 @@ export default function CreateEvent() {
         return;
       }
       setError(undefined);
-      publish();
+      if (editing) saveChanges();
+      else publish();
       return;
     }
     const e = validate(step);
@@ -207,11 +251,11 @@ export default function CreateEvent() {
   return (
     <Screen
       keyboard
-      header={<ScreenHeader title={isPrivate ? 'Private event' : 'Add event'} subtitle={`Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`} onBack={() => { setError(undefined); if (step) setStep(step - 1); else goBack('/(tabs)'); }} />}
+      header={<ScreenHeader title={editing ? 'Edit event' : isPrivate ? 'Private event' : 'Add event'} subtitle={`Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`} onBack={() => { setError(undefined); if (step) setStep(step - 1); else goBack('/(tabs)'); }} />}
       footer={
         <BottomBar>
           {error ? <T v="small" color={colors.danger} style={{ marginBottom: 8 }}>{error}</T> : null}
-          <Button title={step === 3 ? (oneTime ? 'Publish' : `Publish ${weeks} dates`) : 'Next'} onPress={next} />
+          <Button title={step === 3 ? (editing ? 'Save changes' : oneTime ? 'Publish' : `Publish ${weeks} dates`) : 'Next'} onPress={next} />
         </BottomBar>
       }
     >
@@ -293,11 +337,13 @@ export default function CreateEvent() {
             <View style={{ flex: 1 }}><T v="label">Duration</T><T v="small">Ends {shortDate(endIso)} {endIso.slice(11, 16)}</T></View>
             <Stepper value={hours} onChange={setHours} min={1} max={24} label="duration in hours" format={(n) => `${n} h`} />
           </Row>
+          {!editing ? (
           <Row gap={12}>
             <View style={{ flex: 1 }}><T v="bodyBold">One-time event</T><T v="small">{oneTime ? 'Turn off for a weekly series' : `Repeats every ${shortDate(startIso).split(' ')[0]} for ${weeks} weeks`}</T></View>
             <Toggle label="One-time event" value={oneTime} onValueChange={setOneTime} />
           </Row>
-          {!oneTime ? (
+          ) : null}
+          {!oneTime && !editing ? (
             <Row justify="space-between">
               <View style={{ flex: 1 }}><T v="label">Number of weeks</T><T v="small">Last date {shortDate(isoDay(new Date(date.getFullYear(), date.getMonth(), date.getDate() + 7 * (weeks - 1), 12)))}</T></View>
               <Stepper value={weeks} onChange={setWeeks} min={2} max={12} label="weeks" />

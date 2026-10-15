@@ -65,7 +65,10 @@ export default function EventCreated() {
         </Pressable>
       ) : null}
 
-      <Button title="Manage event" variant="secondary" full onPress={() => router.replace(`/pro/attendees/${event.id}`)} />
+      <Row gap={12} style={{ alignSelf: 'stretch' }}>
+        <Button title="Edit event" icon="pencil-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} />
+        <Button title="Manage" icon="account-group-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.replace(`/pro/attendees/${event.id}`)} />
+      </Row>
       <Button title="To Home page" full onPress={() => router.replace('/(tabs)')} />
     </Screen>
   );

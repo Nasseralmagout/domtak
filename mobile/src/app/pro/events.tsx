@@ -4,12 +4,11 @@ import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../../components/layout';
-import { Button, Card, EmptyState, Icon, Photo, Pill, Row, Segmented, T } from '../../components/ui';
-import { events as seedEvents } from '../../data/mock';
+import { Button, Card, EmptyState, Icon, IconButton, Photo, Pill, Row, Segmented, T } from '../../components/ui';
 import type { EventItem } from '../../data/types';
 import { euro, eventWhen, isoDay, parse, shortDate, TODAY } from '../../lib/format';
 import { DAY_MS, doorsOpenAt, type PromotionState, promotionState } from '../../lib/promotions';
-import { useApp, useVenue } from '../../store/useApp';
+import { useAllEvents, useApp, useVenue } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
 
 /** For the demo, these seed organizers count as "you". */
@@ -43,12 +42,17 @@ function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: Pro
       <View style={{ height: 136 }}>
         <Photo src={event.cover} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} accessibilityLabel={`${event.title} cover`} />
         <LinearGradient colors={['transparent', 'rgba(20,10,40,0.85)']} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 96 }} />
-        <Row gap={6} style={{ position: 'absolute', top: 12, left: 12, right: 12, flexWrap: 'wrap' }}>
+        <Row gap={6} style={{ position: 'absolute', top: 12, left: 12, right: 60, flexWrap: 'wrap' }}>
           {promoted ? <Pill label={`Promoted until ${until}`} icon="rocket-launch" tone="brand" /> : null}
           {event.isPrivate ? <Pill label="Private" icon="lock-outline" tone="neutral" /> : null}
           {mine ? <Pill label="New" tone="success" /> : null}
           {past ? <Pill label="Ended" tone="neutral" /> : null}
         </Row>
+        {!past ? (
+          <View style={{ position: 'absolute', top: 4, right: 4 }}>
+            <IconButton name="pencil-outline" label={`Edit ${event.title}`} color={colors.white} bg="rgba(0,0,0,0.35)" onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} />
+          </View>
+        ) : null}
         <View style={{ position: 'absolute', left: 14, right: 14, bottom: 12 }}>
           <Text numberOfLines={1} style={{ fontFamily: fonts.display, fontSize: 20, color: colors.white }}>{event.title}</Text>
           <Text numberOfLines={1} style={{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.lilacLight }}>
@@ -117,16 +121,18 @@ function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: Pro
 
 export default function ProEvents() {
   const myEvents = useApp((s) => s.myEvents);
+  // Includes saved edits to the demo organizer's sample events.
+  const allEvents = useAllEvents();
   const promotions = useApp((s) => s.promotions);
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
 
   const { upcoming, past } = useMemo(() => {
-    const all = [...myEvents, ...seedEvents.filter((e) => DEMO_ORGANIZERS.includes(e.organizerId))];
+    const all = allEvents.filter((e) => e.organizerId === 'me' || DEMO_ORGANIZERS.includes(e.organizerId));
     return {
       upcoming: all.filter((e) => parse(e.end) >= TODAY).sort((a, b) => a.start.localeCompare(b.start)),
       past: all.filter((e) => parse(e.end) < TODAY).sort((a, b) => b.start.localeCompare(a.start)),
     };
-  }, [myEvents]);
+  }, [allEvents]);
 
   const myIds = useMemo(() => new Set(myEvents.map((e) => e.id)), [myEvents]);
   // Boost state per upcoming event, on the demo clock (boosts are stamped with TODAY).

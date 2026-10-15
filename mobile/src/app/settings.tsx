@@ -76,8 +76,7 @@ export default function Settings() {
 
       <Group title="Account">
         <LinkRow first label="Edit profile" onPress={() => router.push('/profile-setup?mode=edit')} />
-        <LinkRow label="Email & phone" value={user.email} onPress={() => router.push('/profile-setup?mode=edit')} />
-        <LinkRow label="Password" value="Change" onPress={() => router.push('/forgot-password')} />
+        <LinkRow label="Account & security" value={user.email} onPress={() => router.push('/account-security')} />
         <LinkRow label="Payment methods" value={methods.find((m) => m.id === selected)?.label} onPress={() => router.push('/payment-methods')} />
         <LinkRow label="Subscription" value={planLabel} onPress={() => router.push('/subscription')} />
       </Group>
@@ -110,7 +109,7 @@ export default function Settings() {
 
       <Group title="Support">
         <LinkRow first label="Help & FAQ" onPress={() => router.push('/help')} />
-        <LinkRow label="Terms & privacy" onPress={() => router.push('/help?section=about')} />
+        <LinkRow label="Terms, privacy & imprint" onPress={() => router.push('/legal')} />
       </Group>
 
       <Row gap={10}>

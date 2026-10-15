@@ -70,6 +70,9 @@ export default function Register() {
               <T v="small" style={{ flex: 1 }}>{t}</T>
             </Row>
           ))}
+          <Pressable accessibilityRole="link" onPress={() => router.push('/legal')} hitSlop={8} style={{ minHeight: 32, justifyContent: 'center', alignSelf: 'flex-start' }}>
+            <Text style={{ color: colors.brand, fontFamily: fonts.bodyBold, fontSize: 13 }}>Full terms, privacy and imprint</Text>
+          </Pressable>
         </Card>
       ) : null}
       {errors.agree ? <T v="small" color={colors.danger}>{errors.agree}</T> : null}

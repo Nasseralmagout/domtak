@@ -89,6 +89,8 @@ export interface Prefs {
   language: 'English' | 'Deutsch';
   /** Stay signed in after the app restarts. When false, a reload signs you out. */
   rememberMe: boolean;
+  /** Ask for a code from the phone at every new sign-in. */
+  twoFactor: boolean;
 }
 
 interface State {
@@ -108,6 +110,8 @@ interface State {
   /** Comment hearts (post and event discussion comments), keyed by comment id. */
   likedComments: Record<string, boolean>;
   myEvents: EventItem[];
+  /** Organizer edits to sample events the demo organizer runs (your own events are edited in myEvents). */
+  eventEdits: Record<string, Partial<EventItem>>;
   tickets: Ticket[];
   bookings: Booking[];
   requests: IncomingRequest[];
@@ -149,6 +153,8 @@ interface State {
   addComment: (postId: string, text: string) => void;
   toggleCommentLike: (commentId: string) => void;
   addEvent: (e: Omit<EventItem, 'id' | 'going' | 'rating' | 'distanceKm' | 'organizerId'>) => string;
+  /** Saves changes to an event you organise (ticket sales and going counts are kept). */
+  updateEvent: (id: string, patch: Partial<Omit<EventItem, 'id' | 'organizerId'>>) => void;
 
   startTicketCheckout: (eventId: string, typeId: string, qty: number) => void;
   startBookingCheckout: (bookingId: string) => void;
@@ -200,7 +206,7 @@ const initialData = () => ({
   onboarded: false,
   authed: false,
   user: defaultUser,
-  prefs: { bookings: true, messages: true, nearby: false, privateAccount: false, language: 'English', rememberMe: true } as Prefs,
+  prefs: { bookings: true, messages: true, nearby: false, privateAccount: false, language: 'English', rememberMe: true, twoFactor: false } as Prefs,
   likes: {},
   saves: {},
   following: { adam: true, nightowls: true, soso: true, sara: true } as Record<string, boolean>,
@@ -210,6 +216,7 @@ const initialData = () => ({
   extraComments: {},
   likedComments: {} as Record<string, boolean>,
   myEvents: [],
+  eventEdits: {} as Record<string, Partial<EventItem>>,
   tickets: [
     { id: 't_seed1', eventId: 'danceworld', typeId: 'ga', holder: 'Sara M.', code: 'DW7K2QXA', status: 'valid' as const, purchasedAt: '2026-10-10' },
     { id: 't_seed2', eventId: 'listening', typeId: 'ga', holder: 'Sara M.', code: 'LS3M8PZB', status: 'cancelled' as const, purchasedAt: '2026-10-02' },
@@ -323,6 +330,12 @@ export const useApp = create<State>()(
         set((s) => ({ myEvents: [ev, ...s.myEvents] }));
         return id;
       },
+      updateEvent: (id, patch) =>
+        set((s) =>
+          s.myEvents.some((e) => e.id === id)
+            ? { myEvents: s.myEvents.map((e) => (e.id === id ? { ...e, ...patch } : e)) }
+            : { eventEdits: { ...s.eventEdits, [id]: { ...s.eventEdits[id], ...patch } } },
+        ),
 
       startTicketCheckout: (eventId, typeId, qty) => set({ checkout: { kind: 'ticket', eventId, typeId, qty } }),
       startBookingCheckout: (bookingId) => set({ checkout: { kind: 'booking', bookingId } }),
@@ -440,16 +453,28 @@ export const useApp = create<State>()(
   ),
 );
 
-/** All events: sample data plus events the user created. */
+const withEdits = (e: EventItem, edits: Record<string, Partial<EventItem>>) => (edits[e.id] ? { ...e, ...edits[e.id] } : e);
+
+/** All events: sample data (with the organizer's saved edits) plus events the user created. */
 export function useAllEvents() {
   const mine = useApp((s) => s.myEvents);
-  return mine.length ? [...mine, ...seedEvents] : seedEvents;
+  const edits = useApp((s) => s.eventEdits);
+  return useMemo(() => {
+    const seed = Object.keys(edits).length ? seedEvents.map((e) => withEdits(e, edits)) : seedEvents;
+    return mine.length ? [...mine, ...seed] : seed;
+  }, [mine, edits]);
 }
 
 export function useEvent(id?: string) {
   const mine = useApp((s) => s.myEvents);
-  if (!id) return undefined;
-  return mine.find((e) => e.id === id) ?? seedEvents.find((e) => e.id === id);
+  const edits = useApp((s) => s.eventEdits);
+  return useMemo(() => {
+    if (!id) return undefined;
+    const own = mine.find((e) => e.id === id);
+    if (own) return own;
+    const seed = seedEvents.find((e) => e.id === id);
+    return seed ? withEdits(seed, edits) : undefined;
+  }, [id, mine, edits]);
 }
 
 export function useFeedPosts() {

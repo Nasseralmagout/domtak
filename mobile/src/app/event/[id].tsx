@@ -64,6 +64,7 @@ export default function EventDetail() {
   // The venue as its public page shows it, including the owner's listing edits.
   const venue = useVenue(event?.venueId);
   const [more, setMore] = useState(false);
+  const role = useApp((s) => s.user.role);
 
   if (!event) {
     return (
@@ -86,6 +87,8 @@ export default function EventDetail() {
   // Same rule as the calendar tab: going, holding a valid ticket, or organizing it yourself.
   const inCalendar = going || hasTicket || event.organizerId === 'me';
   const longDescription = event.description.length > 160;
+  // Your own events, and the demo organizer's sample events when signed in as an organizer, can be edited.
+  const organizes = event.organizerId === 'me' || (role === 'organizer' && ['mobolosa', 'og'].includes(event.organizerId));
   const reviewTags = myReview?.tags ?? [];
   const reviewText = myReview ? myReview.text || (reviewTags.length ? `Loved the ${reviewTags.join(', ').toLowerCase()}.` : '') : '';
   const openTicket = () => (myTicket ? router.push(`/ticket/${myTicket.id}`) : router.push(`/tickets/${event.id}`));
@@ -250,7 +253,14 @@ export default function EventDetail() {
             <T v="small">From</T>
             <T v="h3">{priceRange(prices.length ? [Math.min(...prices)] : [])}</T>
           </View>
-          <Button title={hasTicket ? 'View my ticket' : 'Get tickets'} style={{ flex: 1 }} onPress={openTicket} />
+          {organizes ? (
+            <>
+              <Button title="Edit" icon="pencil-outline" variant="secondary" size="md" accessibilityLabel={`Edit ${event.title}`} style={{ flex: 1 }} onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} />
+              <Button title="Manage" icon="account-group-outline" size="md" accessibilityLabel={`Manage ${event.title}`} style={{ flex: 1 }} onPress={() => router.push(`/pro/attendees/${event.id}`)} />
+            </>
+          ) : (
+            <Button title={hasTicket ? 'View my ticket' : 'Get tickets'} style={{ flex: 1 }} onPress={openTicket} />
+          )}
         </Row>
       </BottomBar>
     </View>
