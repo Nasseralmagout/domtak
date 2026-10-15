@@ -1,19 +1,24 @@
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { memo, useRef, useState } from 'react';
-import { FlatList, Pressable, Share, Text, View, useWindowDimensions } from 'react-native';
+import { FlatList, Modal, Pressable, Share, type StyleProp, Text, View, type ViewStyle, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ImgKey } from '../data/images';
 import { profileById, venueById } from '../data/mock';
 import type { Post, ProfileKind } from '../data/types';
-import { compact, shortDate, time } from '../lib/format';
+import { compact, plural, shortDate, time } from '../lib/format';
+import { canBefriend, useFriendStatus } from '../store/social';
 import { toast } from '../store/toast';
 import { overlayVenue, useApp, useEvent, type VenueListing } from '../store/useApp';
 import { colors, fonts } from '../theme';
-import { ActionSheet, type SheetAction } from './ActionSheet';
+import { ActionSheet, ReasonSheet, type SheetAction } from './ActionSheet';
 import { Avatar, Button, Icon, IconButton, Photo, Row, T } from './ui';
 
 const postLink = (id: string) => `https://domtak.de/p/${id}`;
+
+/** Reasons offered when reporting a post, comment, profile or conversation (F09, F25). */
+export const REPORT_REASONS = ['Spam or scam', 'Harassment or bullying', 'Hate speech or symbols', 'Nudity or sexual content', 'Violence or dangerous acts', 'Misleading information', 'Something else'];
 
 /** Copies the link to the clipboard on every platform; only if that fails, opens the share sheet (which has a copy option). */
 async function copyLink(url: string) {
@@ -67,6 +72,10 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const toggleSave = useApp((s) => s.toggleSave);
   const followingAuthor = useApp((s) => !!s.following[post.authorId]);
   const toggleFollow = useApp((s) => s.toggleFollow);
+  const reportContent = useApp((s) => s.reportContent);
+  // A boolean selector stays stable: true while your report on this post is open.
+  const reported = useApp((s) => s.reports.some((r) => r.byMe && r.targetId === post.id && r.status === 'open'));
+  const [reporting, setReporting] = useState(false);
   const event = useEvent(post.eventId);
   const [slide, setSlide] = useState(0);
   const [burst, setBurst] = useState(false);
@@ -109,7 +118,13 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
     ...(event ? [{ label: `View ${event.title}`, icon: 'party-popper' as const, onPress: () => router.push(`/event/${event.id}`) }] : []),
     ...(!mine && followingAuthor ? [{ label: `Unfollow ${author.name}`, icon: 'account-minus-outline' as const, onPress: () => { toggleFollow(author.id); toast(`You unfollowed ${author.name}`); } }] : []),
     ...(!mine ? [{ label: 'Hide post', icon: 'eye-off-outline' as const, onPress: () => setHidden(true) }] : []),
-    ...(!mine ? [{ label: 'Report post', icon: 'flag-outline' as const, destructive: true, onPress: () => toast('Thanks, our team will review this post') }] : []),
+    ...(!mine
+      ? [
+          reported
+            ? { label: 'Reported', sub: 'Our team is reviewing this post', icon: 'flag-outline' as const, disabled: true, onPress: () => {} }
+            : { label: 'Report post', icon: 'flag-outline' as const, destructive: true, onPress: () => setReporting(true) },
+        ]
+      : []),
   ];
 
   if (hidden) {
@@ -142,6 +157,20 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
         <IconButton name="dots-horizontal" label="More options" size={40} onPress={() => setMenu(true)} />
       </Row>
       <ActionSheet visible={menu} title={mine ? 'Your post' : `Post by ${author.name}`} actions={actions} onClose={() => setMenu(false)} />
+      <ReasonSheet
+        visible={reporting}
+        title="Report post"
+        body={`Tell us what is wrong with this post by ${author.name}. Reports are private: ${author.name} is not told who reported it.`}
+        reasons={REPORT_REASONS}
+        confirmLabel="Send report"
+        destructive
+        notePlaceholder="Add details (optional)"
+        onSubmit={(reason, note) => {
+          reportContent('post', post.id, reason, note || undefined);
+          toast('Thanks. Our team will review this post.');
+        }}
+        onClose={() => setReporting(false)}
+      />
 
       <Pressable
         accessibilityRole="imagebutton"
@@ -248,3 +277,213 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
     </View>
   );
 });
+
+// ---------- Photos in comments (user note 2: members share photos only inside comments) ----------
+
+/** Most photos one comment can carry. */
+export const MAX_COMMENT_PHOTOS = 3;
+
+/** The small photo library offered when adding photos to a comment. */
+export const COMMENT_PHOTO_LIBRARY: ImgKey[] = ['feed_friends', 'feed_crowd', 'ev_dancing', 'feed_rooftop', 'ev_selfie', 'feed_picnic', 'ev_hands', 'feed_street', 'feed_club', 'ev_lasers2', 'feed_decks', 'ev_red_crowd'];
+
+/**
+ * Adds or removes `k` from the photos picked for a comment. Returns the new list, or undefined
+ * (after telling the user) when the limit is reached.
+ */
+export function togglePhotoPick(picked: ImgKey[], k: ImgKey, max = MAX_COMMENT_PHOTOS): ImgKey[] | undefined {
+  if (picked.includes(k)) return picked.filter((x) => x !== k);
+  if (picked.length >= max) {
+    toast(`You can add up to ${max} photos to a comment`);
+    return undefined;
+  }
+  return [...picked, k];
+}
+
+/** Bottom sheet with the photo library. Taps toggle photos in the parent's selection (numbered in order). */
+export function PhotoPickerSheet({ visible, selected, onToggle, onClose, max = MAX_COMMENT_PHOTOS }: { visible: boolean; selected: ImgKey[]; onToggle: (k: ImgKey) => void; onClose: () => void; max?: number }) {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const cell = Math.floor((Math.min(width, 520) - 40 - 16) / 3);
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close photo library" style={{ flex: 1 }} onPress={onClose} />
+        <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 16, gap: 12 }}>
+          <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
+          <Row justify="space-between" gap={12}>
+            <View style={{ flex: 1 }}>
+              <T v="h3" accessibilityRole="header">Add photos</T>
+              <T v="small">Up to {max} photos in one comment</T>
+            </View>
+            <T v="smallBold" color={colors.brand} accessibilityLabel={`${selected.length} of ${max} selected`}>{selected.length}/{max}</T>
+          </Row>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {COMMENT_PHOTO_LIBRARY.map((k, idx) => {
+              const i = selected.indexOf(k);
+              return (
+                <Pressable
+                  key={k}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Library photo ${idx + 1}${i >= 0 ? `, selected ${i + 1}` : ''}`}
+                  accessibilityState={{ selected: i >= 0 }}
+                  onPress={() => onToggle(k)}
+                  style={{ width: cell, height: cell }}
+                >
+                  <Photo src={k} style={{ flex: 1, borderRadius: 12, borderWidth: i >= 0 ? 3 : 0, borderColor: colors.brand }} />
+                  {i >= 0 ? (
+                    <View style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
+                      <T v="smallBold" color={colors.white}>{i + 1}</T>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+          <Button title={selected.length ? `Done · ${plural(selected.length, 'photo')}` : 'Done'} size="md" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/** Previews of the photos attached to a comment you are writing, each with a remove button. */
+export function ComposerPhotos({ photos, onRemove, max = MAX_COMMENT_PHOTOS }: { photos: ImgKey[]; onRemove: (k: ImgKey) => void; max?: number }) {
+  if (!photos.length) return null;
+  return (
+    <Row gap={10} style={{ marginBottom: 10, paddingTop: 6 }}>
+      {photos.map((p, i) => (
+        <View key={p} style={{ width: 64, height: 64 }}>
+          <Photo src={p} style={{ width: 64, height: 64 }} radius={10} accessibilityLabel={`Attached photo ${i + 1}`} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Remove photo ${i + 1}`}
+            onPress={() => onRemove(p)}
+            hitSlop={10}
+            style={{ position: 'absolute', top: -6, right: -6, width: 26, height: 26, borderRadius: 13, backgroundColor: colors.ink, borderWidth: 2, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Icon name="close" size={14} color={colors.white} />
+          </Pressable>
+        </View>
+      ))}
+      <T v="small" style={{ flex: 1 }}>{photos.length}/{max} photos</T>
+    </Row>
+  );
+}
+
+/** Full-screen photo viewer. Open it with the index of the photo to show first; swipe between photos. */
+export function PhotoViewer({ photos, index, onClose }: { photos: ImgKey[]; index?: number; onClose: () => void }) {
+  return (
+    <Modal visible={index != null} animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      {/* Mounted only while open, so it always starts on the tapped photo. */}
+      {index != null ? <PhotoViewerBody photos={photos} start={index} onClose={onClose} /> : null}
+    </Modal>
+  );
+}
+
+function PhotoViewerBody({ photos, start, onClose }: { photos: ImgKey[]; start: number; onClose: () => void }) {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [page, setPage] = useState(start);
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.black }}>
+      <FlatList
+        data={photos}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        initialScrollIndex={start}
+        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+        keyExtractor={(m, i) => `${m}-${i}`}
+        onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+        renderItem={({ item, index: i }) => <Photo src={item} contentFit="contain" style={{ width, height, backgroundColor: colors.black }} accessibilityLabel={`Photo ${i + 1} of ${photos.length}`} />}
+      />
+      <Row justify="space-between" style={{ position: 'absolute', top: insets.top + 8, left: 12, right: 8 }}>
+        {photos.length > 1 ? (
+          <View style={{ backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+            <Text style={{ color: colors.white, fontFamily: fonts.bodyBold, fontSize: 13 }}>{page + 1} / {photos.length}</Text>
+          </View>
+        ) : <View />}
+        <IconButton name="close" label="Close photo" color={colors.white} bg="rgba(0,0,0,0.45)" size={44} onPress={onClose} />
+      </Row>
+    </View>
+  );
+}
+
+/** Thumbnails of the photos in a comment; tapping one opens the full-screen viewer. */
+export function CommentPhotos({ photos, author, size = 76 }: { photos?: ImgKey[]; author?: string; size?: number }) {
+  const [open, setOpen] = useState<number>();
+  if (!photos?.length) return null;
+  return (
+    <>
+      <Row gap={6} style={{ marginTop: 6, flexWrap: 'wrap' }}>
+        {photos.map((p, i) => (
+          <Pressable
+            key={`${p}-${i}`}
+            accessibilityRole="imagebutton"
+            accessibilityLabel={`Photo ${i + 1} of ${photos.length}${author ? ` from ${author}` : ''}. Open full screen`}
+            onPress={() => setOpen(i)}
+            style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+          >
+            <Photo src={p} style={{ width: size, height: size }} radius={10} />
+          </Pressable>
+        ))}
+      </Row>
+      <PhotoViewer photos={photos} index={open} onClose={() => setOpen(undefined)} />
+    </>
+  );
+}
+
+// ---------- Friends (F10) ----------
+
+/**
+ * Add friend / Requested / Accept / Friends for a person. Hidden for you, venues and blocked accounts
+ * (a blocked account cannot be sent a request).
+ */
+export function FriendButton({ id, size = 'sm', style }: { id: string; size?: 'sm' | 'md'; style?: StyleProp<ViewStyle> }) {
+  const { status, request } = useFriendStatus(id);
+  const sendFriendRequest = useApp((s) => s.sendFriendRequest);
+  const respondFriendRequest = useApp((s) => s.respondFriendRequest);
+  const cancelFriendRequest = useApp((s) => s.cancelFriendRequest);
+  const removeFriend = useApp((s) => s.removeFriend);
+  const ensureConversation = useApp((s) => s.ensureConversation);
+  const [menu, setMenu] = useState(false);
+  const p = profileById(id);
+  if (!p || !canBefriend(id) || status === 'self' || status === 'blocked') return null;
+  const name = p.name;
+
+  const add = () => {
+    if (sendFriendRequest(id)) toast(`Friend request sent to ${name}`);
+    else toast(`A request with ${name} is already open`);
+  };
+  const accept = () => {
+    if (!request) return;
+    respondFriendRequest(request.id, true);
+    toast(`You and ${name} are now friends`);
+  };
+
+  const common = { size, style };
+  const sheetActions: SheetAction[] =
+    status === 'friends'
+      ? [
+          { label: `Message ${name}`, icon: 'message-text-outline', onPress: () => router.push(`/chat/${ensureConversation(id)}`) },
+          { label: 'Remove friend', icon: 'account-minus-outline', destructive: true, onPress: () => { removeFriend(id); toast(`${name} is no longer your friend`); } },
+        ]
+      : status === 'requested' && request
+        ? [{ label: 'Cancel friend request', icon: 'close-circle-outline', destructive: true, onPress: () => { cancelFriendRequest(request.id); toast('Friend request cancelled'); } }]
+        : [];
+
+  return (
+    <>
+      {status === 'none' ? (
+        <Button {...common} title="Add friend" icon="account-multiple-plus-outline" variant="light" accessibilityLabel={`Add ${name} as a friend`} onPress={add} />
+      ) : status === 'incoming' ? (
+        <Button {...common} title="Accept" icon="account-check-outline" accessibilityLabel={`Accept ${name}’s friend request`} onPress={accept} />
+      ) : status === 'requested' ? (
+        <Button {...common} title="Requested" icon="clock-outline" variant="secondary" accessibilityLabel={`Friend request sent to ${name}. Options`} onPress={() => setMenu(true)} />
+      ) : (
+        <Button {...common} title="Friends" icon="account-heart-outline" variant="secondary" accessibilityLabel={`You and ${name} are friends. Options`} onPress={() => setMenu(true)} />
+      )}
+      <ActionSheet visible={menu} title={status === 'friends' ? `You and ${name} are friends` : `Request sent to ${name}`} actions={sheetActions} onClose={() => setMenu(false)} />
+    </>
+  );
+}
