@@ -73,6 +73,22 @@ async function downscaleImages(page) {
   }).catch(() => {});
 }
 
+// Chrome shrinks the whole printout (up to 1.5x) when a horizontal scroller's content is wider than the
+// page, e.g. the onboarding pager. Pinning each horizontal scroller to its on-screen box keeps 1:1 scale.
+async function pinScrollers(page) {
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) {
+      const cs = getComputedStyle(el);
+      // Only purely horizontal scrollers: pinning a vertical one would stop the full-length capture growing.
+      if (cs.overflowX === 'visible' || el.scrollWidth <= el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) continue;
+      const r = el.getBoundingClientRect();
+      el.style.width = `${r.width}px`;
+      el.style.height = `${r.height}px`;
+      el.style.contain = 'strict';
+    }
+  }).catch(() => {});
+}
+
 async function setRole(page, role) {
   await page.evaluate((r) => {
     const raw = localStorage.getItem('domtak-app');
@@ -148,6 +164,7 @@ const ACTIONS = {
       if (shot.actions?.length) await settle(page, 600);
 
       await downscaleImages(page);
+      await pinScrollers(page);
       const phonePdf = `${outDir}/${shot.name}.pdf`;
       await page.pdf({ path: phonePdf, width: `${W}px`, height: `${H}px`, printBackground: true, pageRanges: '1' });
       const entry = { ...shot, phonePdf, fullPdf: null, fullHeight: H };
@@ -163,6 +180,7 @@ const ACTIONS = {
             extra = await extraScroll(page);
           }
           await downscaleImages(page);
+          await pinScrollers(page);
           const fullPdf = `${outDir}/${shot.name}--full.pdf`;
           await page.pdf({ path: fullPdf, width: `${W}px`, height: `${h}px`, printBackground: true, pageRanges: '1' });
           entry.fullPdf = fullPdf;

@@ -17,6 +17,8 @@ const SLIDES: { image: ImgKey; title: string; tagline: string }[] = [
 export default function Onboarding() {
   const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
+  // Each slide fills the space between the Skip row and the footer, with its content centred.
+  const [slideHeight, setSlideHeight] = useState(0);
   const list = useRef<FlatList>(null);
   const complete = useApp((s) => s.completeOnboarding);
 
@@ -41,6 +43,8 @@ export default function Onboarding() {
       </Row>
       <FlatList
         ref={list}
+        style={{ flex: 1 }}
+        onLayout={(e) => setSlideHeight(e.nativeEvent.layout.height)}
         data={SLIDES}
         horizontal
         pagingEnabled
@@ -49,8 +53,8 @@ export default function Onboarding() {
         onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         renderItem={({ item }) => (
-          <View style={{ width, paddingHorizontal: 32, justifyContent: 'center', gap: 36 }}>
-            <Photo src={item.image} contentFit="contain" style={{ width: '100%', height: 260, backgroundColor: 'transparent' }} accessibilityLabel="" />
+          <View style={{ width, height: slideHeight || undefined, paddingHorizontal: 32, justifyContent: 'center', gap: 36 }}>
+            <Photo src={item.image} contentFit="contain" style={{ width: '100%', height: slideHeight ? Math.min(320, slideHeight * 0.48) : 260, backgroundColor: 'transparent' }} accessibilityLabel="" />
             <T v="h1" style={{ fontSize: 32, lineHeight: 40 }}>{item.title}</T>
           </View>
         )}
