@@ -6,7 +6,7 @@ import { Pressable, Text, View } from 'react-native';
 import { profileById, profiles, venueById } from '../data/mock';
 import type { EventItem, Profile, Venue } from '../data/types';
 import { compact, dayOfMonth, euro, eventWhen, monthShort, priceRange, time } from '../lib/format';
-import { overlayVenue, useApp, useRating } from '../store/useApp';
+import { OWN_VENUE_ID, overlayVenue, useApp, useRating, useVenue } from '../store/useApp';
 import { colors, fonts, radius, shadow } from '../theme';
 import { Avatar, Button, Icon, IconButton, Photo, RatingBadge, Row, T } from './ui';
 
@@ -46,21 +46,41 @@ export function GoingFaces({ count }: { count: number }) {
 
 const isFree = (event: EventItem) => event.ticketTypes.every((t) => t.price === 0);
 
-export function EventCard({ event }: { event: EventItem }) {
-  const venue = venueById(event.venueId);
+/**
+ * The one Sponsored label for event cards: boosted events (Pro → Promote, pass `sponsored`) and
+ * sponsored partner events (event.sponsored) look the same and are never labelled twice.
+ */
+export function SponsoredPill() {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: colors.gold }}>
+      <Icon name="star-four-points-outline" size={12} color={colors.brandDark} />
+      <Text style={{ fontFamily: fonts.bodyBold, fontSize: 11, lineHeight: 14, color: colors.brandDark }}>Sponsored</Text>
+    </View>
+  );
+}
+
+/** Whether a card shows the Sponsored pill: a running boost or a sponsored partner event. */
+const showsSponsored = (event: EventItem, sponsored?: boolean) => !!sponsored || !!event.sponsored;
+const cardLabel = (event: EventItem, sponsored: boolean) => `${sponsored ? 'Sponsored, ' : ''}${event.title}, ${eventWhen(event.start, event.end)}`;
+
+/** Pass `sponsored` (e.g. isPromoted(promotions, event)) to mark a boosted event. */
+export function EventCard({ event, sponsored: boosted }: { event: EventItem; sponsored?: boolean }) {
+  // Includes the owner's listing edits when the event is at their own venue (Moon Club).
+  const venue = useVenue(event.venueId);
+  const sponsored = showsSponsored(event, boosted);
   const wished = useApp((s) => s.wishlist.events.includes(event.id));
   const toggleWish = useApp((s) => s.toggleWish);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${event.title}, ${eventWhen(event.start, event.end)}`} onPress={() => router.push(`/event/${event.id}`)} style={{ borderRadius: radius.xl, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(2) }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={cardLabel(event, sponsored)} onPress={() => router.push(`/event/${event.id}`)} style={{ borderRadius: radius.xl, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(2) }}>
       <View style={{ height: 200 }}>
         <Photo src={event.cover} style={{ position: 'absolute', inset: 0 }} />
         <LinearGradient colors={scrim} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 120 }} />
         <View style={{ position: 'absolute', top: 12, right: 12 }}>
           <HeartToggle on={wished} onPress={() => toggleWish('events', event.id)} label={wished ? 'Remove from wishlist' : 'Save to wishlist'} />
         </View>
-        {event.sponsored ? (
-          <View style={{ position: 'absolute', top: 14, left: 12, backgroundColor: colors.gold, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-            <Text style={{ fontFamily: fonts.bodyBold, fontSize: 11, color: colors.brandDark }}>SPONSORED</Text>
+        {sponsored ? (
+          <View style={{ position: 'absolute', top: 12, left: 12, height: 40, justifyContent: 'center', pointerEvents: 'none' }}>
+            <SponsoredPill />
           </View>
         ) : null}
         <Row style={{ position: 'absolute', left: 16, right: 16, bottom: 14 }} align="flex-end" justify="space-between">
@@ -87,10 +107,13 @@ export function EventCard({ event }: { event: EventItem }) {
   );
 }
 
-export function EventRow({ event }: { event: EventItem }) {
+/** Pass `sponsored` (e.g. isPromoted(promotions, event)) to mark a boosted event. */
+export function EventRow({ event, sponsored: boosted }: { event: EventItem; sponsored?: boolean }) {
+  const sponsored = showsSponsored(event, boosted);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${event.title}, ${eventWhen(event.start, event.end)}`} onPress={() => router.push(`/event/${event.id}`)} style={{ flexDirection: 'row', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 10, alignItems: 'center', ...shadow(1) }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={cardLabel(event, sponsored)} onPress={() => router.push(`/event/${event.id}`)} style={{ flexDirection: 'row', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 10, alignItems: 'center', ...shadow(1) }}>
       <View style={{ flex: 1, gap: 4, paddingLeft: 6 }}>
+        {sponsored ? <SponsoredPill /> : null}
         <T v="title" numberOfLines={1}>{event.title}</T>
         <T v="small">{time(event.start)} – {time(event.end)}</T>
         <Row gap={12}>
@@ -113,10 +136,17 @@ export function DateBadge({ iso, size = 56 }: { iso: string; size?: number }) {
   );
 }
 
-export function MiniEventCard({ event, width = 220 }: { event: EventItem; width?: number }) {
+/** Pass `sponsored` (e.g. isPromoted(promotions, event)) to mark a boosted event. */
+export function MiniEventCard({ event, width = 220, sponsored: boosted }: { event: EventItem; width?: number; sponsored?: boolean }) {
+  const sponsored = showsSponsored(event, boosted);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${event.title}, ${eventWhen(event.start, event.end)}`} onPress={() => router.push(`/event/${event.id}`)} style={{ width, borderRadius: radius.lg, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(1) }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={cardLabel(event, sponsored)} onPress={() => router.push(`/event/${event.id}`)} style={{ width, borderRadius: radius.lg, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(1) }}>
       <Photo src={event.cover} style={{ height: 120 }} />
+      {sponsored ? (
+        <View style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none' }}>
+          <SponsoredPill />
+        </View>
+      ) : null}
       <View style={{ padding: 10, gap: 4 }}>
         <T v="title" numberOfLines={1}>{event.title}</T>
         <T v="small" numberOfLines={1}>{eventWhen(event.start, event.end)}</T>
@@ -185,6 +215,8 @@ export function VenueCard({ venue: base }: { venue: Venue }) {
   const listing = useApp((s) => s.venueListing);
   const venue = useMemo(() => overlayVenue(base, listing), [base, listing]);
   const { rating } = useRating(venue.id);
+  // The venue owner manages their own venue instead of booking it (same as the venue page).
+  const isOwner = useApp((s) => s.user.role === 'venue') && venue.id === OWN_VENUE_ID;
   const wished = useApp((s) => s.wishlist.venues.includes(venue.id));
   const toggleWish = useApp((s) => s.toggleWish);
   return (
@@ -211,7 +243,11 @@ export function VenueCard({ venue: base }: { venue: Venue }) {
         <VenueFacts venue={venue} />
         <Row justify="space-between">
           <T v="small" color={colors.inkSoft}>+{compact(venue.followers)} followers</T>
-          <Button title="Book" accessibilityLabel={`Book ${venue.name}`} size="sm" onPress={() => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id } })} style={{ paddingHorizontal: 24 }} />
+          {isOwner ? (
+            <Button title="Edit listing" icon="storefront-edit-outline" accessibilityLabel={`Edit the ${venue.name} listing`} size="sm" onPress={() => router.navigate('/pro/venue-listing')} style={{ paddingHorizontal: 16 }} />
+          ) : (
+            <Button title="Book" accessibilityLabel={`Book ${venue.name}`} size="sm" onPress={() => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id } })} style={{ paddingHorizontal: 24 }} />
+          )}
         </Row>
       </View>
     </Pressable>

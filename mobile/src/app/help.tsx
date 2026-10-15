@@ -9,10 +9,10 @@ import { toast } from '../store/toast';
 import { colors } from '../theme';
 
 const FAQ = [
-  { id: 'escrow', q: 'How does escrow protect my booking?', a: 'When a musician or venue accepts, you pay into Domtak escrow. The money is only released to them 24 hours after the event. If they cancel, you get a full refund.' },
+  { id: 'escrow', q: 'How does escrow protect my booking?', a: 'When a musician or venue accepts, you pay into Domtak escrow. The money is only released to them 24 hours after the event, and you can report a problem for up to 48 hours after it. If they cancel, you get a full refund.' },
   { id: 'refunds', q: 'When do I get my refund?', a: 'Refunds go back to your original payment method within 3–5 business days. Ticket refunds follow the organizer’s policy shown on the event page.' },
   { id: 'receipts', q: 'Where are my receipts?', a: 'Receipts are emailed after each payment. You can also open any paid booking under Your bookings and tap “View receipt”.' },
-  { id: 'disputes', q: 'Something went wrong at my event', a: 'Open the booking and tap “Report a problem” within 48 hours. Funds stay frozen while our team reviews evidence from both sides.' },
+  { id: 'disputes', q: 'Something went wrong at my event', a: 'Open the booking and tap “Report a problem”. Report within 48 hours; if the payment hasn’t been released yet it stays frozen while we review evidence from both sides. Escrow releases payments 24 hours after the event, so the sooner you report, the better.' },
   { id: 'tickets', q: 'My QR code won’t scan', a: 'Turn your screen brightness up and make sure the ticket says “Valid”. Door staff can also type the 8-character code under the QR.' },
   { id: 'safety', q: 'How do I block or report someone?', a: 'Open their profile or chat, tap ••• and choose Block or Report. Blocked users can’t message you or see your posts.' },
   { id: 'promo', q: 'How do promo codes work?', a: 'Check a code below, then enter it in the Promo code box at ticket checkout. Codes work on any paid ticket and come off the ticket price; the service fee stays the same.' },
