@@ -1,16 +1,21 @@
-import { useEffect } from 'react';
-import { Modal, Pressable, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useToast } from '../store/toast';
 import { colors, fonts } from '../theme';
 import { Icon, type IconName } from './Icon';
+import { Button, Field, Radio } from './ui';
 
 export interface SheetAction {
   label: string;
   icon?: IconName;
   destructive?: boolean;
   onPress: () => void;
+  /** Second line under the label. */
+  sub?: string;
+  /** Shown greyed out and not tappable. */
+  disabled?: boolean;
 }
 
 /** Bottom sheet with a list of actions (the "•••" menus). `cancelLabel` names the dismiss button (default "Cancel"). */
@@ -27,14 +32,19 @@ export function ActionSheet({ visible, title, actions, onClose, cancelLabel = 'C
             <Pressable
               key={a.label}
               accessibilityRole="button"
+              accessibilityState={a.disabled ? { disabled: true } : undefined}
+              disabled={a.disabled}
               onPress={() => {
                 onClose();
                 a.onPress();
               }}
-              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 52, opacity: pressed ? 0.7 : 1 })}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 52, opacity: a.disabled ? 0.45 : pressed ? 0.7 : 1 })}
             >
               {a.icon ? <Icon name={a.icon} size={22} color={a.destructive ? colors.danger : colors.ink} /> : null}
-              <Text style={{ fontFamily: fonts.bodyBold, fontSize: 16, color: a.destructive ? colors.danger : colors.ink }}>{a.label}</Text>
+              <View style={{ flex: 1, paddingVertical: a.sub ? 6 : 0 }}>
+                <Text style={{ fontFamily: fonts.bodyBold, fontSize: 16, color: a.destructive ? colors.danger : colors.ink }}>{a.label}</Text>
+                {a.sub ? <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.muted, marginTop: 2 }}>{a.sub}</Text> : null}
+              </View>
             </Pressable>
           ))}
           <Pressable accessibilityRole="button" accessibilityLabel={cancelLabel} onPress={onClose} style={{ minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
@@ -43,6 +53,61 @@ export function ActionSheet({ visible, title, actions, onClose, cancelLabel = 'C
         </View>
       </View>
     </Modal>
+  );
+}
+
+export interface ReasonSheetProps {
+  visible: boolean;
+  title: string;
+  /** Explanation above the reasons, e.g. what happens to the payment. */
+  body?: string;
+  reasons: string[];
+  confirmLabel: string;
+  destructive?: boolean;
+  /** Ask for an extra note; required when `noteRequired`. */
+  notePlaceholder?: string;
+  noteRequired?: boolean;
+  onSubmit: (reason: string, note: string) => void;
+  onClose: () => void;
+}
+
+/** Bottom sheet that asks for a reason (and optional note) before cancelling, reporting, declining… */
+export function ReasonSheet(props: ReasonSheetProps) {
+  return (
+    <Modal visible={props.visible} transparent animationType="slide" onRequestClose={props.onClose}>
+      {/* Mounted only while open, so each opening starts with a fresh choice. */}
+      {props.visible ? <ReasonSheetBody {...props} /> : null}
+    </Modal>
+  );
+}
+
+function ReasonSheetBody({ title, body, reasons, confirmLabel, destructive, notePlaceholder, noteRequired, onSubmit, onClose }: ReasonSheetProps) {
+  const insets = useSafeAreaInsets();
+  const [reason, setReason] = useState<string>();
+  const [note, setNote] = useState('');
+  const ready = !!reason && (!noteRequired || note.trim().length > 0);
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1 }} onPress={onClose} />
+      <View accessibilityViewIsModal style={{ maxHeight: '85%', backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, paddingBottom: insets.bottom + 16 }}>
+        <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong, marginBottom: 12 }} />
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, gap: 6 }} keyboardShouldPersistTaps="handled">
+          <Text accessibilityRole="header" style={{ fontFamily: fonts.displaySemi, fontSize: 18, color: colors.ink }}>{title}</Text>
+          {body ? <Text style={{ fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.muted, marginBottom: 6 }}>{body}</Text> : null}
+          <View accessibilityRole="radiogroup">
+            {reasons.map((r) => (
+              <Pressable key={r} accessibilityRole="radio" accessibilityState={{ checked: reason === r }} onPress={() => setReason(r)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 }}>
+                <Radio selected={reason === r} />
+                <Text style={{ flex: 1, fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.ink }}>{r}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {notePlaceholder ? <Field placeholder={notePlaceholder} value={note} onChangeText={setNote} multiline accessibilityLabel={noteRequired ? `${notePlaceholder} (required)` : notePlaceholder} /> : null}
+          <Button title={confirmLabel} variant={destructive ? 'danger' : 'primary'} size="md" disabled={!ready} onPress={() => { onClose(); onSubmit(reason ?? '', note.trim()); }} style={{ marginTop: 10 }} />
+          <Button title="Cancel" variant="ghost" size="md" onPress={onClose} />
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -42,6 +42,12 @@ export default function RootLayout() {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
 
+  // Requests still awaiting the provider after their 24-hour deadline expire once saved data is loaded
+  // (financial release is tracked separately on each booking).
+  useEffect(() => {
+    if (hydrated) useApp.getState().expireOverdue();
+  }, [hydrated]);
+
   if (!ready) return null;
 
   return (

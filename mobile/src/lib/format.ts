@@ -44,6 +44,44 @@ export function isoDay(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** Local ISO timestamp without a time zone, e.g. "2026-10-14T12:00:00" (parse() reads it back as local time). */
+export function isoLocal(d: Date) {
+  return `${isoDay(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** The demo clock as a local ISO timestamp. Use for "now" stamps in store actions (never the real clock). */
+export function nowIso() {
+  return isoLocal(TODAY);
+}
+
+/** `iso` (or a Date) moved by `h` hours, as a local ISO timestamp. */
+export function addHours(iso: string | Date, h: number) {
+  const d = typeof iso === 'string' ? parse(iso) : iso;
+  return isoLocal(new Date(d.getTime() + h * 3_600_000));
+}
+
+/** Whole hours from `now` until `iso` (negative when it is in the past). */
+export function hoursUntil(iso: string, now: Date = TODAY) {
+  return (parse(iso).getTime() - now.getTime()) / 3_600_000;
+}
+
+/** "just now", "45 min ago", "3 h ago", "2 days ago", or the short date for older times. */
+export function ago(iso: string, now: Date = TODAY) {
+  const mins = Math.round((now.getTime() - parse(iso).getTime()) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const h = Math.round(mins / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  if (d < 7) return `${d} day${d === 1 ? '' : 's'} ago`;
+  return shortDate(iso);
+}
+
+/** "Thu 22 Oct, 22:00" */
+export function dateTime(iso: string) {
+  return `${shortDate(iso)}, ${time(iso)}`;
+}
+
 /** German-style euro: €1.200 or €25,00 */
 export function euro(n: number, cents = false) {
   const fixed = cents ? n.toFixed(2) : Math.round(n).toString();
@@ -75,6 +113,11 @@ export function priceRange(prices: number[]) {
   if (max === 0) return 'Free entry';
   if (min === max) return euro(min);
   return `${min === 0 ? 'Free' : euro(min)} – ${euro(max)}`;
+}
+
+/** Plural helper: plural(3, 'guest') -> "3 guests". */
+export function plural(n: number, word: string, many = `${word}s`) {
+  return `${n} ${n === 1 ? word : many}`;
 }
 
 export function uid(prefix = 'id') {

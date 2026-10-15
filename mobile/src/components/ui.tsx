@@ -18,6 +18,9 @@ import {
 } from 'react-native';
 
 import { img, type ImgKey } from '../data/images';
+import type { Booking, BookingStatus, PaymentState } from '../data/types';
+import { bookingLabel, bookingTone, deadlineTone, PAYMENT_LABEL, PAYMENT_PROVIDER_LABEL, PAYMENT_TONE, STATUS_LABEL, STATUS_TONE, timeLeft, type Tone } from '../lib/booking';
+import { euro, TODAY } from '../lib/format';
 import { colors, fonts, radius, shadow, type } from '../theme';
 import { Icon, type IconName } from './Icon';
 
@@ -372,6 +375,188 @@ export function Banner({ icon, children, tone = 'brand' }: { icon: IconName; chi
     </Row>
   );
 }
+
+// ---------- Blueprint building blocks ----------
+
+/** Booking status pill. Pass `booking` to get quote-aware wording ("Quote received"). */
+export function StatusPill({ status, booking }: { status?: BookingStatus; booking?: Pick<Booking, 'status' | 'pricing' | 'quote'> }) {
+  if (booking) return <Pill label={bookingLabel(booking)} tone={bookingTone(booking)} />;
+  if (!status) return null;
+  return <Pill label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />;
+}
+
+/** Payment state pill; `provider` shows the provider / admin wording (e.g. "Payout pending"). */
+export function PaymentPill({ state, provider }: { state?: PaymentState; provider?: boolean }) {
+  if (!state) return null;
+  return <Pill label={provider ? PAYMENT_PROVIDER_LABEL[state] : PAYMENT_LABEL[state]} tone={PAYMENT_TONE[state]} icon="credit-card-outline" />;
+}
+
+/** Response deadline pill: "23 h left" / "Expired". Renders nothing without a deadline. */
+export function TimeLeft({ deadline, now = TODAY, prefix }: { deadline?: string; now?: Date; prefix?: string }) {
+  if (!deadline) return null;
+  const left = timeLeft(deadline, now);
+  return <Pill label={prefix ? `${prefix} ${left.toLowerCase()}` : left} tone={deadlineTone(deadline, now)} icon="timer-sand" />;
+}
+
+export interface LineItem {
+  label: string;
+  amount: number;
+  note?: string;
+}
+
+/** Price breakdown with an optional total. Pass total={false} to hide the total row. */
+export function LineItems({ items, total, totalLabel = 'Total', cents = false, style }: { items: LineItem[]; total?: number | false; totalLabel?: string; cents?: boolean; style?: StyleProp<ViewStyle> }) {
+  const sum = total === undefined ? items.reduce((n, i) => n + i.amount, 0) : total;
+  return (
+    <View style={[{ gap: 8 }, style]}>
+      {items.map((i, idx) => (
+        <Row key={`${i.label}-${idx}`} justify="space-between" align="flex-start" gap={12} accessibilityLabel={`${i.label}${i.note ? `, ${i.note}` : ''}: ${euro(i.amount, cents)}`}>
+          <View style={{ flex: 1, gap: 1 }}>
+            <T v="body">{i.label}</T>
+            {i.note ? <T v="small">{i.note}</T> : null}
+          </View>
+          <T v="bodyBold">{euro(i.amount, cents)}</T>
+        </Row>
+      ))}
+      {sum !== false ? (
+        <>
+          <Divider style={{ marginVertical: 2 }} />
+          <Row justify="space-between" accessibilityLabel={`${totalLabel}: ${euro(sum, cents)}`}>
+            <T v="bodyBold">{totalLabel}</T>
+            <T v="h3">{euro(sum, cents)}</T>
+          </Row>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+/** Thin progress bar, value 0–1. */
+export function ProgressBar({ value, color = colors.brand, height = 8, label }: { value: number; color?: string; height?: number; label?: string }) {
+  const pct = Math.max(0, Math.min(1, value));
+  return (
+    <View accessibilityRole="progressbar" accessibilityLabel={label} accessibilityValue={{ min: 0, max: 100, now: Math.round(pct * 100) }} style={{ height, borderRadius: height / 2, backgroundColor: colors.track, overflow: 'hidden' }}>
+      <View style={{ width: `${pct * 100}%`, height, borderRadius: height / 2, backgroundColor: color }} />
+    </View>
+  );
+}
+
+export interface ChecklistItem {
+  label: string;
+  done: boolean;
+  hint?: string;
+  /** Where to fix it; shown as a tappable row while not done. */
+  onPress?: () => void;
+}
+
+/** Completion checklist with progress (profile readiness, event setup…). */
+export function Checklist({ items, title }: { items: ChecklistItem[]; title?: string }) {
+  const done = items.filter((i) => i.done).length;
+  return (
+    <View style={{ gap: 8 }}>
+      {title ? (
+        <Row justify="space-between">
+          <T v="title">{title}</T>
+          <T v="smallBold" color={done === items.length ? colors.success : colors.brand}>{done} of {items.length} done</T>
+        </Row>
+      ) : null}
+      <ProgressBar value={items.length ? done / items.length : 0} color={done === items.length ? colors.success : colors.brand} label={title ? `${title}: ${done} of ${items.length} done` : undefined} />
+      {items.map((i) => {
+        const body = (
+          <Row gap={12} style={{ minHeight: 44 }}>
+            <Icon name={i.done ? 'check-circle' : 'checkbox-blank-circle-outline'} size={22} color={i.done ? colors.success : colors.disabled} />
+            <View style={{ flex: 1 }}>
+              <T v={i.done ? 'body' : 'bodyBold'} color={i.done ? colors.muted : colors.ink}>{i.label}</T>
+              {i.hint && !i.done ? <T v="small">{i.hint}</T> : null}
+            </View>
+            {i.onPress && !i.done ? <Icon name="chevron-right" size={20} color={colors.subtle} /> : null}
+          </Row>
+        );
+        return i.onPress && !i.done ? (
+          <Pressable key={i.label} accessibilityRole="button" accessibilityLabel={`${i.label}, to do`} onPress={i.onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+            {body}
+          </Pressable>
+        ) : (
+          <View key={i.label} accessible accessibilityLabel={`${i.label}, ${i.done ? 'done' : 'to do'}`}>
+            {body}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Vertical step tracker. `failed` marks the current step as a problem (e.g. payment failed). */
+export function Steps({ steps, current, failed }: { steps: { title: string; note?: string }[]; current: number; failed?: boolean }) {
+  return (
+    <View accessibilityLabel={`Step ${Math.max(0, current) + 1} of ${steps.length}: ${steps[current]?.title ?? ''}${failed ? ', needs attention' : ''}`}>
+      {steps.map((st, i) => {
+        const done = i < current;
+        const cur = i === current;
+        const ring = cur ? (failed ? colors.danger : colors.brand) : colors.borderStrong;
+        return (
+          <Row key={`${st.title}-${i}`} gap={14} align="flex-start">
+            <View style={{ alignItems: 'center', width: 24 }}>
+              <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: done ? colors.brand : cur && failed ? colors.danger : colors.surface, borderWidth: done || (cur && failed) ? 0 : cur ? 4 : 2, borderColor: ring, alignItems: 'center', justifyContent: 'center' }}>
+                {done ? <Icon name="check" size={14} color={colors.white} /> : cur && failed ? <Icon name="exclamation" size={14} color={colors.white} /> : null}
+              </View>
+              {i < steps.length - 1 ? <View style={{ width: 2, height: 34, backgroundColor: done ? colors.brand : colors.track }} /> : null}
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <T v={cur ? 'bodyBold' : 'body'} color={cur && failed ? colors.danger : i > current ? colors.subtle : colors.ink}>{st.title}</T>
+              {st.note ? <T v="small" style={{ fontSize: 12 }}>{st.note}</T> : null}
+            </View>
+          </Row>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Musician score badge: "92%" with a thumbs-up (would book again). Shows "New" without verified bookings. */
+export function BookAgainBadge({ pct, total, dark = true }: { pct: number | null; total?: number; dark?: boolean }) {
+  const label = pct == null ? 'New' : `${pct}%`;
+  const a11y = pct == null ? 'No verified bookings yet' : `${pct}% would book again${total != null ? `, from ${total} verified booking${total === 1 ? '' : 's'}` : ''}`;
+  return (
+    <Row gap={4} accessibilityLabel={a11y} style={{ backgroundColor: dark ? colors.brandDark : colors.brandSoft, paddingHorizontal: 10, height: 30, borderRadius: 15, alignSelf: 'flex-start' }}>
+      <Icon name={pct == null ? 'account-music-outline' : 'thumb-up'} size={15} color={dark ? colors.gold : colors.brand} />
+      <Text style={{ color: dark ? colors.white : colors.brand, fontFamily: fonts.bodyBold, fontSize: 14 }}>{label}</Text>
+    </Row>
+  );
+}
+
+/** Praise tags with counts, e.g. "On time · 12". */
+export function TagCounts({ tags }: { tags: { tag: string; count: number }[] }) {
+  if (!tags.length) return null;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {tags.map((t) => (
+        <View key={t.tag} accessible accessibilityLabel={`${t.tag}, mentioned ${t.count} time${t.count === 1 ? '' : 's'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: colors.brandTint, borderWidth: 1, borderColor: colors.border }}>
+          <Text style={{ fontFamily: fonts.bodyBold, fontSize: 13, color: colors.brand }}>{t.tag}</Text>
+          <Text style={{ fontFamily: fonts.bodyBold, fontSize: 12, color: colors.muted }}>{t.count}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** One fact with an icon, e.g. parking or garden on a venue page. `available={false}` greys it out. */
+export function InfoRow({ icon, label, value, available = true }: { icon: IconName; label: string; value?: string; available?: boolean }) {
+  return (
+    <Row gap={12} align="flex-start" style={{ minHeight: 44, paddingVertical: 4 }} accessibilityLabel={`${label}${value ? `: ${value}` : ''}`}>
+      <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: available ? colors.brandSoft : colors.chipIdle, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={20} color={available ? colors.brand : colors.disabled} />
+      </View>
+      <View style={{ flex: 1, gap: 1 }}>
+        <T v="bodyBold" color={available ? colors.ink : colors.muted}>{label}</T>
+        {value ? <T v="small">{value}</T> : null}
+      </View>
+    </Row>
+  );
+}
+
+/** Tone names shared with lib/booking (success, warning, danger, brand, neutral). */
+export type { Tone };
 
 const styles = StyleSheet.create({
   verified: { position: 'absolute', right: -2, bottom: -2, backgroundColor: '#8B5CF6', borderWidth: 2, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },

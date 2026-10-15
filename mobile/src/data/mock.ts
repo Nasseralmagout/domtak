@@ -2,13 +2,21 @@ import type {
   AppNotification,
   Attendee,
   Booking,
+  Community,
   Conversation,
   EventItem,
+  FriendRequest,
+  GuestInvite,
   IncomingRequest,
   Post,
   Profile,
+  QueuedApplication,
+  Report,
   Story,
+  SupportCase,
   Venue,
+  VenueGarden,
+  VenueParking,
 } from './types';
 
 export const GENRES = ['Techno', 'House', 'Hip Hop', 'Indie', 'Jazz', 'Rock', 'Pop', 'D&B', 'Electronic', 'Acoustic', 'Trance', 'Soul'];
@@ -20,12 +28,18 @@ export const profiles: Profile[] = [
     bio: "I'm a passionate electronic music enthusiast who found my calling in the vibrant techno scene of Berlin. Originally from Munich, I moved here five years ago to immerse myself in the city's legendary nightlife and produce my own records.",
     genres: ['Techno', 'House'], feePerHour: 300, instruments: ['CDJ Pioneer 3000', 'Ableton'], links: { soundcloud: true, spotify: true, youtube: true },
     gallery: ['feed_club', 'feed_decks', 'ev_club_dark', 'ev_lasers'],
+    charges: { travel: 40, travelNote: 'Within Berlin', equipment: 120, equipmentNote: 'Own CDJ setup when the venue has none' },
+    lessons: [
+      { id: 'adam-l1', title: 'DJ basics on CDJs', instrument: 'DJ', format: 'at-studio', location: 'Studio in Kreuzberg', durationMin: 90, price: 70, level: 'Beginner', description: 'Beatmatching, phrasing and your first 30-minute mix on club gear.' },
+      { id: 'adam-l2', title: 'Ableton production coaching', instrument: 'Production', format: 'online', durationMin: 60, price: 55, level: 'Intermediate', description: 'Arrangement, sound design and feedback on your own tracks.' },
+    ],
   },
   {
     id: 'soso', name: 'Soso', handle: '@soso.wav', kind: 'dj', title: 'DJ/Producer', avatar: 'dj_soso', cover: 'dj_soso',
     city: 'Berlin, Friedrichshain', verified: true, followers: 12400, following: 310, rating: 4.8, eventsCount: 128,
     bio: 'Hypnotic techno and late-night grooves. Resident at Moon Club, touring across Europe.',
     genres: ['Techno', 'Trance'], feePerHour: 420, links: { soundcloud: true, spotify: true }, gallery: ['ev_lasers2', 'ev_purple_arena', 'feed_crowd'],
+    charges: { travel: 80, travelNote: 'Taxi for records and gear' },
   },
   {
     id: 'dako', name: 'Dako', handle: '@dako.sea', kind: 'dj', title: 'DJ', avatar: 'dj_dako', cover: 'dj_dako',
@@ -65,6 +79,11 @@ export const profiles: Profile[] = [
     city: 'Berlin, Kreuzberg', verified: true, followers: 4100, following: 260, rating: 4.8, eventsCount: 33,
     bio: 'Acoustic sets, afro-pop and everything in between. I bring my own PA for small venues.', genres: ['Acoustic', 'Pop'], feePerHour: 180,
     instruments: ['Acoustic guitar', 'Vocals'], links: { spotify: true, youtube: true, soundcloud: true }, gallery: ['m_acoustic', 'feed_picnic'],
+    charges: { travel: 25, travelNote: 'Within Berlin', equipment: 60, equipmentNote: 'Own PA for up to 80 guests' },
+    lessons: [
+      { id: 'sara-l1', title: 'Acoustic guitar for beginners', instrument: 'Guitar', format: 'in-person', location: 'Kreuzberg or at your place', durationMin: 60, price: 45, level: 'Beginner', description: 'Chords, strumming patterns and your first full song.' },
+      { id: 'sara-l2', title: 'Singing while playing', instrument: 'Vocals', format: 'online', durationMin: 45, price: 35, level: 'All levels', description: 'Coordinate voice and guitar without losing the groove.' },
+    ],
   },
   {
     id: 'dana', name: 'Dana', handle: '@dana.riffs', kind: 'musician', title: 'Guitarist / Vocal', avatar: 'm_dana', cover: 'm_dana',
@@ -80,22 +99,33 @@ export const profiles: Profile[] = [
     id: 'luca', name: 'Luca Sax', handle: '@lucasax', kind: 'musician', title: 'Saxophonist', avatar: 'm_sax', cover: 'm_sax_street',
     city: 'Berlin, Prenzlauer Berg', verified: true, followers: 3300, following: 140, rating: 4.9, eventsCount: 58,
     bio: 'Jazz & house sax for clubs, rooftops and weddings.', genres: ['Jazz', 'House'], feePerHour: 200, instruments: ['Alto sax'], links: { spotify: true, youtube: true },
+    charges: { travel: 30, travelNote: 'Within Berlin' },
+    lessons: [
+      { id: 'luca-l1', title: 'Jazz saxophone', instrument: 'Saxophone', format: 'at-studio', location: 'Studio in Prenzlauer Berg', durationMin: 60, price: 50, level: 'Intermediate', description: 'Improvisation, swing feel and standards.' },
+      { id: 'luca-l2', title: 'Sax workshop for groups', instrument: 'Saxophone', format: 'in-person', durationMin: 120, quote: true, level: 'All levels', description: 'For schools, bands and team events. Priced on request.' },
+    ],
   },
   {
     id: 'jonah', name: 'Jonah Keys', handle: '@jonahkeys', kind: 'musician', title: 'Pianist', avatar: 'm_pianist', cover: 'm_pianist',
     city: 'Berlin, Charlottenburg', followers: 2200, following: 101, rating: 4.8, eventsCount: 27,
     bio: 'Classical training, neo-soul heart.', genres: ['Jazz', 'Soul'], feePerHour: 190, instruments: ['Piano', 'Rhodes'], links: { spotify: true },
+    lessons: [
+      { id: 'jonah-l1', title: 'Piano: classical to neo-soul', instrument: 'Piano', format: 'in-person', location: 'Charlottenburg', durationMin: 60, price: 55, level: 'Beginner to advanced', description: 'Technique, voicings and playing by ear.' },
+    ],
   },
   {
     id: 'nightowls', name: 'Night Owls', handle: '@nightowls.band', kind: 'band', title: 'Indie band · 4 members', avatar: 'band_jam', cover: 'band_stage',
     city: 'Berlin, Neukölln', verified: true, followers: 15800, following: 64, rating: 4.8, eventsCount: 96,
     bio: 'Four friends, one van, too many pedals. New album out this winter.', genres: ['Indie', 'Rock'], feePerHour: 600, links: { spotify: true, youtube: true },
     gallery: ['band_arena', 'ev_red_crowd'],
+    pricing: 'quote',
+    charges: { travel: 120, travelNote: 'Van and crew within Berlin', equipment: 350, equipmentNote: 'Backline and PA' },
   },
   {
     id: 'streetjazz', name: 'Spree Street Jazz', handle: '@spreejazz', kind: 'band', title: 'Jazz quartet', avatar: 'band_street', cover: 'band_street',
     city: 'Berlin, Mitte', followers: 4300, following: 80, rating: 4.9, eventsCount: 120,
     bio: 'Swing and bebop for every occasion.', genres: ['Jazz'], feePerHour: 450, links: { youtube: true },
+    charges: { travel: 60, travelNote: 'Within Berlin' },
   },
   {
     id: 'voltage', name: 'Voltage', handle: '@voltage', kind: 'band', title: 'Rock band · 5 members', avatar: 'band_arena', cover: 'band_arena',
@@ -142,6 +172,14 @@ export const venues: Venue[] = [
     occasions: ['Concert / Musical', 'Club night', 'Birthday', 'Corporate event', 'PR & marketing event', 'Album release'],
     rating: 4.8, followers: 182000, mapPos: { x: 58, y: 62 },
     description: 'Two dark rooms, a Funktion-One main floor and a beach garden for chill-out sets. Located by the Spree in Kreuzberg.',
+    parkingDetails: { available: true, spaces: 12, kind: 'on-site', notes: 'Courtyard spaces, reserve with your booking' },
+    garden: { available: true, capacity: 120, covered: false, notes: 'Beach garden by the Spree, music outside until 22:00' },
+    facilities: ['Funktion-One sound', 'Two dance floors', 'Green room', 'Cloakroom', 'Two bars', 'Step-free entrance'],
+    requirements: ['Guests 18+', 'Damage deposit €500', 'Security required from 150 guests'],
+    pricing: 'listed',
+    catering: { available: true, pricePerGuest: 22, minGuests: 50, notes: 'Finger food and a drinks package' },
+    security: { available: true, guestsPerGuard: 75, pricePerGuard: 190, requiredFrom: 150, notes: 'Licensed door staff' },
+    extraCharges: [{ label: 'Sound engineer', amount: 180 }, { label: 'Cleaning', amount: 150 }],
   },
   {
     id: 'moonvenue', name: 'Moon Venue', area: 'Wannsee', city: 'Berlin', postcode: '14109', cover: 'ven_moon', gallery: ['ven_garden', 'ven_loft'],
@@ -149,6 +187,14 @@ export const venues: Venue[] = [
     occasions: ['Wedding', 'Birthday', 'Dinner event / Private dining', 'Gala / Award ceremony', 'Christmas party', 'Seminar & workshop'],
     rating: 4.9, followers: 910000, mapPos: { x: 18, y: 78 },
     description: 'A lakeside pergola with flowers, long tables and space for a live band. Perfect for weddings and summer dinners.',
+    parkingDetails: { available: true, spaces: 40, kind: 'on-site', notes: 'Free car park at the entrance' },
+    garden: { available: true, capacity: 180, covered: true, notes: 'Lakeside pergola with heaters' },
+    facilities: ['Pergola', 'Long tables', 'Dance floor', 'Heaters', 'Kitchen', 'Bridal room'],
+    requirements: ['Outdoor music until 22:00', 'Damage deposit €800'],
+    pricing: 'listed',
+    catering: { available: true, pricePerGuest: 35, minGuests: 40, notes: 'Seasonal three-course dinner' },
+    security: { available: true, guestsPerGuard: 50, pricePerGuard: 180, notes: 'Optional for private events' },
+    extraCharges: [{ label: 'Flower decoration', amount: 450 }],
   },
   {
     id: 'royalhall', name: 'Royal Hall', area: 'Charlottenburg', city: 'Berlin', postcode: '10585', cover: 'ven_hall', gallery: ['ven_garden'],
@@ -156,24 +202,50 @@ export const venues: Venue[] = [
     occasions: ['Concert / Musical / Theater', 'Gala / Award ceremony', 'Fair / Exhibition', 'Corporate event', 'General meeting'],
     rating: 4.7, followers: 54000, mapPos: { x: 28, y: 44 },
     description: 'Historic concert hall with a chandelier ballroom and backstage areas.',
+    parkingDetails: { available: true, spaces: 80, kind: 'garage', notes: 'Underground garage, €8 per car' },
+    garden: { available: false },
+    facilities: ['Chandelier ballroom', 'Backstage rooms', 'Cloakroom', 'Lift', 'Seating for 400'],
+    requirements: ['Curfew 23:30', 'Fire safety briefing before the event'],
+    pricing: 'quote',
+    catering: { available: true, pricePerGuest: 48, minGuests: 100, notes: 'Partner caterer, gala menus' },
+    security: { available: true, guestsPerGuard: 100, pricePerGuard: 210, requiredFrom: 200, notes: 'Required for public events' },
+    extraCharges: [{ label: 'Lighting technician', amount: 260 }],
   },
   {
     id: 'forest', name: 'Waldbühne Lichtung', area: 'Grunewald', city: 'Berlin', postcode: '14193', cover: 'ven_forest', gallery: ['feed_openair'],
     type: 'Open air', pricePerNight: 950, capacity: 900, rooms: 1, stages: 1, parking: false, equipment: 'Stage only',
     occasions: ['Festival', 'Open air concert', 'Family event'], rating: 4.6, followers: 23000, mapPos: { x: 10, y: 50 },
     description: 'A forest clearing for open-air concerts and day festivals.',
+    parkingDetails: { available: false, kind: 'nearby', notes: 'No parking on site. S-Bahn Grunewald is a 10-minute walk.' },
+    garden: { available: true, capacity: 900, covered: false, notes: 'The whole venue is an outdoor forest clearing' },
+    facilities: ['Open-air stage', 'Power supply', 'Toilet units', 'Food truck spaces'],
+    requirements: ['Music until 22:00', 'Waste plan required', 'Bad-weather plan required'],
+    pricing: 'listed',
+    security: { available: true, guestsPerGuard: 100, pricePerGuard: 170, requiredFrom: 100, notes: 'Required for every event' },
   },
   {
     id: 'loft', name: 'Spree Loft', area: 'Friedrichshain', city: 'Berlin', postcode: '10243', cover: 'ven_loft', gallery: ['feed_rooftop'],
     type: 'Loft', pricePerNight: 650, capacity: 120, rooms: 2, stages: 1, parking: false, equipment: 'Sound system',
     occasions: ['Birthday', 'Listening session', 'Album release', 'Seminar & workshop'], rating: 4.7, followers: 8100, mapPos: { x: 70, y: 52 },
     description: 'Plants, daylight and a warm sound system — ideal for listening sessions and private parties.',
+    parkingDetails: { available: false, kind: 'street', notes: 'No private parking. Paid street parking on Stralauer Allee.' },
+    garden: { available: false },
+    facilities: ['Hi-fi sound system', 'Daylight', 'Kitchenette', 'Cushion seating'],
+    requirements: ['Quiet after 22:00', 'No confetti or open flames'],
+    pricing: 'listed',
   },
   {
     id: 'arcada', name: 'Arcada Rooftop', area: 'Mitte', city: 'Berlin', postcode: '10117', cover: 'ven_garden', gallery: ['feed_rooftop'],
     type: 'Bar', pricePerNight: 900, capacity: 150, rooms: 1, stages: 1, parking: false, equipment: 'Sound & light',
     occasions: ['Birthday', 'PR & marketing event', 'Corporate event'], rating: 4.5, followers: 12000, mapPos: { x: 50, y: 40 },
     description: 'Rooftop bar with skyline views and a DJ booth.',
+    parkingDetails: { available: false, kind: 'garage', notes: 'Public garage at Alexanderplatz, 5-minute walk' },
+    garden: { available: true, capacity: 150, covered: false, notes: 'Rooftop terrace with a skyline view' },
+    facilities: ['DJ booth', 'Bar', 'Lift', 'Heated terrace'],
+    requirements: ['Outdoor music until 23:00', 'Minimum drinks spend €1.000'],
+    pricing: 'listed',
+    catering: { available: true, pricePerGuest: 28, minGuests: 30, notes: 'Street-food buffet' },
+    security: { available: true, guestsPerGuard: 60, pricePerGuard: 175, requiredFrom: 100, notes: 'Door staff for the lift entrance' },
   },
 ];
 
@@ -274,6 +346,7 @@ export const posts: Post[] = [
       { id: 'c1', authorId: 'suzi', text: 'Best set of the year!!', time: '1h', likes: 24 },
       { id: 'c2', authorId: 'toni', text: 'When is the next one?', time: '54m', likes: 8 },
       { id: 'c3', authorId: 'adam', text: '@toni 22 Oct at Moon Club!', time: '40m', likes: 31 },
+      { id: 'c8', authorId: 'kofi', text: 'My view from the front row', time: '30m', likes: 6, photos: ['feed_crowd'] },
     ],
   },
   {
@@ -366,22 +439,73 @@ export const notifications: AppNotification[] = [
 export const initialBookings: Booking[] = [
   {
     id: 'b1', type: 'musician', targetId: 'adam', eventTitle: 'Shakira birthday', date: '2026-12-24', startTime: '20:00', endTime: '00:00', hours: 4,
-    location: 'Downtown 1341, Berlin', guests: 80, equipment: 'CDJ Pioneer 3000 provided', extras: 'None', note: 'House-to-techno journey please!', amount: 1200, status: 'pending', createdAt: '2026-10-12',
+    location: 'Downtown 1341, Berlin', guests: 80, equipment: 'CDJ Pioneer 3000 provided', extras: 'None', note: 'House-to-techno journey please!', amount: 1200, status: 'pending', createdAt: '2026-10-13',
+    deadline: '2026-10-14T20:00:00', reminderAt: '2026-10-14T08:00:00', payment: 'authorized', pricing: 'listed', charges: { base: 1200 },
+    timeline: [
+      { at: '2026-10-13T20:00:00', label: 'Request sent · payment pending the provider’s decision' },
+      { at: '2026-10-14T08:00:00', label: 'Reminder sent to Adam (12 h without a response)' },
+    ],
   },
   {
     id: 'b2', type: 'musician', targetId: 'sara', eventTitle: 'Rooftop warm-up', date: '2026-11-06', startTime: '19:00', endTime: '22:00', hours: 3,
     location: 'Arcada Rooftop, Mitte', guests: 60, equipment: 'Venue PA', extras: 'None', note: '', amount: 540, status: 'accepted', createdAt: '2026-10-09',
+    deadline: '2026-10-10T10:00:00', reminderAt: '2026-10-09T22:00:00', payment: 'capture_pending', pricing: 'listed', charges: { base: 540 },
+    timeline: [
+      { at: '2026-10-09T10:00:00', label: 'Request sent · payment pending the provider’s decision' },
+      { at: '2026-10-09T16:20:00', label: 'Sara accepted · finalizing payment' },
+    ],
   },
   {
     id: 'b3', type: 'venue', targetId: 'moonvenue', eventTitle: 'Winter wedding', date: '2026-12-12', startTime: '15:00', endTime: '02:00', hours: 11,
-    location: 'Moon Venue, Wannsee', guests: 120, equipment: 'Sound & light', extras: 'Heaters', note: '', amount: 1200, status: 'confirmed', createdAt: '2026-09-30',
+    location: 'Moon Venue, Wannsee', guests: 120, equipment: 'Sound & light', extras: 'Heaters, catering for 120, security', note: '', amount: 5940, status: 'confirmed', createdAt: '2026-09-30',
+    payment: 'paid', pricing: 'listed', paymentAttempts: 1, paymentRef: 'PAY-7Q2M',
+    // Catering 120 × €35 and security ceil(120 / 50) = 3 guards × €180 depend on attendance.
+    charges: { base: 1200, catering: 4200, security: 540 },
+    timeline: [
+      { at: '2026-09-30T11:00:00', label: 'Request sent · payment pending the provider’s decision' },
+      { at: '2026-09-30T18:40:00', label: 'Moon Venue accepted · finalizing payment' },
+      { at: '2026-09-30T18:41:00', label: 'Payment verified · booking confirmed' },
+    ],
   },
   {
     id: 'b4', type: 'venue', targetId: 'loft', eventTitle: 'Listening party', date: '2026-09-20', startTime: '20:00', endTime: '23:00', hours: 3,
     location: 'Spree Loft, Friedrichshain', guests: 40, equipment: 'Sound system', extras: 'None', note: '', amount: 650, status: 'declined', createdAt: '2026-09-01',
-  },  {
+    payment: 'released', pricing: 'listed', charges: { base: 650 }, paymentRef: 'REL-41KD',
+    timeline: [
+      { at: '2026-09-01T09:00:00', label: 'Request sent · payment pending the provider’s decision' },
+      { at: '2026-09-01T15:30:00', label: 'Spree Loft declined · payment authorization released' },
+      { at: '2026-09-03T10:00:00', label: 'Release completed (reference REL-41KD)' },
+    ],
+  },
+  {
     id: 'b5', type: 'musician', targetId: 'adam', eventTitle: 'Office summer party', date: '2026-09-26', startTime: '19:00', endTime: '23:00', hours: 4,
     location: 'Spree Loft, Friedrichshain', guests: 90, equipment: 'Provided by venue / host', extras: 'None', note: '', amount: 1200, status: 'completed', createdAt: '2026-09-02',
+    payment: 'paid', pricing: 'listed', charges: { base: 1200 }, paymentAttempts: 1, paymentRef: 'PAY-2H8C',
+  },
+  {
+    id: 'b6', type: 'musician', targetId: 'nightowls', eventTitle: 'Company winter party', date: '2026-12-05', startTime: '20:00', endTime: '22:00', hours: 2,
+    location: 'Royal Hall, Charlottenburg', guests: 250, equipment: 'Band brings backline and PA', extras: 'Two 45-minute sets', note: 'Indie covers plus a few of your own songs.', amount: 2270, status: 'requested', createdAt: '2026-10-11',
+    payment: 'not_started', pricing: 'quote',
+    quote: {
+      version: 1, status: 'sent', total: 2270, validUntil: '2026-10-21', note: 'Two sets with a 30-minute break. Travel and backline are listed separately.',
+      items: [{ label: 'Performance · two 45-minute sets', amount: 1800 }, { label: 'Travel · van and crew', amount: 120 }, { label: 'Equipment · backline and PA', amount: 350 }],
+    },
+    timeline: [
+      { at: '2026-10-11T14:00:00', label: 'Quote requested' },
+      { at: '2026-10-12T19:10:00', label: 'Night Owls sent quote v1 · €2.270' },
+    ],
+  },
+  {
+    id: 'b7', type: 'venue', targetId: 'arcada', eventTitle: 'Friends’ rooftop dinner', date: '2026-11-20', startTime: '19:00', endTime: '23:00', hours: 4,
+    location: 'Arcada Rooftop, Mitte', guests: 40, equipment: 'Sound & light', extras: 'Catering for 40', note: '', amount: 2020, status: 'payment_failed', createdAt: '2026-10-12',
+    payment: 'failed', pricing: 'listed', paymentAttempts: 1,
+    // Catering is priced per guest: 40 × €28.
+    charges: { base: 900, catering: 1120 },
+    timeline: [
+      { at: '2026-10-12T09:30:00', label: 'Request sent · payment pending the provider’s decision' },
+      { at: '2026-10-13T11:05:00', label: 'Arcada Rooftop accepted · finalizing payment' },
+      { at: '2026-10-13T11:06:00', label: 'Payment failed · no charge recorded' },
+    ],
   },
 ];
 
@@ -389,23 +513,34 @@ export const incomingRequests: IncomingRequest[] = [
   {
     id: 'r1', requester: 'Anderson Pack', initials: 'AP', requesterRole: 'Fan · private event', title: 'Shakira birthday', date: 'Thu 24 Dec 2026', time: '20:00 – 00:00',
     hours: 4, location: 'Downtown 1341, Berlin', guests: 80, equipment: 'CDJ Pioneer 3000 provided',
-    message: "Big fan of your Kreuzberg sets — we'd love a house-to-techno journey for the birthday.", offer: 1200, expires: '47 h', status: 'new',
+    message: "Big fan of your Kreuzberg sets — we'd love a house-to-techno journey for the birthday.", offer: 1200, expires: '21 h', status: 'new',
+    deadline: '2026-10-15T09:00:00', reminderAt: '2026-10-14T21:00:00', isoDate: '2026-12-24', kind: 'performance', pricing: 'listed', payment: 'authorized', charges: { base: 1200 },
   },
   {
     id: 'r2', requester: 'OG Collective', initials: 'OG', requesterRole: 'Organizer · verified', title: 'Bunker Floor Vol. 7', date: 'Sat 7 Nov 2026', time: '01:00 – 04:00',
-    hours: 3, location: 'Moon Club, Kreuzberg', guests: 300, equipment: 'Full club setup', message: 'Closing slot on the bunker floor. Same rider as last time.', offer: 900, expires: '20 h', status: 'new',
+    hours: 3, location: 'Moon Club, Kreuzberg', guests: 300, equipment: 'Full club setup', message: 'Closing slot on the bunker floor. Same rider as last time.', offer: 900, expires: '8 h', status: 'new',
+    deadline: '2026-10-14T20:00:00', reminderAt: '2026-10-14T08:00:00', isoDate: '2026-11-07', kind: 'performance', pricing: 'listed', payment: 'authorized', charges: { base: 900 },
   },
   {
     id: 'r3', requester: 'Lena K.', initials: 'LK', requesterRole: 'Fan · private event', title: 'Rooftop warm-up', date: 'Fri 13 Nov 2026', time: '19:00 – 22:00',
-    hours: 3, location: 'Arcada Rooftop, Mitte', guests: 60, equipment: 'Venue PA', message: 'Chill house for a company after-work.', offer: 750, expires: '3 days', status: 'new',
+    hours: 3, location: 'Arcada Rooftop, Mitte', guests: 60, equipment: 'Venue PA', message: 'Chill house for a company after-work.', offer: 750, expires: '22 h', status: 'new',
+    deadline: '2026-10-15T10:30:00', reminderAt: '2026-10-14T22:30:00', isoDate: '2026-11-13', kind: 'performance', pricing: 'listed', payment: 'authorized', charges: { base: 750 },
   },
   {
     id: 'r4', requester: 'Moon Club', initials: 'MC', requesterRole: 'Venue owner', title: 'NYE Main Floor', date: 'Thu 31 Dec 2026', time: '23:00 – 03:00',
     hours: 4, location: 'Moon Club, Kreuzberg', guests: 350, equipment: 'Full club setup', message: '', offer: 2400, expires: '—', status: 'accepted',
+    isoDate: '2026-12-31', kind: 'performance', pricing: 'listed', payment: 'paid', charges: { base: 2400 },
   },
   {
     id: 'r5', requester: 'Dance world', initials: 'DW', requesterRole: 'Organizer', title: 'Dance world Vol. 1', date: 'Sun 27 Sep 2026', time: '23:00 – 02:00',
     hours: 3, location: 'Moon Club, Kreuzberg', guests: 300, equipment: 'Full club setup', message: '', offer: 1000, expires: '—', status: 'past',
+    isoDate: '2026-09-27', kind: 'performance', pricing: 'listed', payment: 'paid_out', charges: { base: 1000 },
+  },
+  {
+    id: 'r6', requester: 'Kiez Kollektiv', initials: 'KK', requesterRole: 'Organizer · quote request', title: 'Warehouse opening', date: 'Sat 28 Nov 2026', time: '22:00 – 02:00',
+    hours: 4, location: 'Spree Loft, Friedrichshain', guests: 110, equipment: 'Sound system on site', message: 'Opening night of our new space. Budget around €1.500. Please send an itemised quote.', offer: 1500, expires: '23 h', status: 'new',
+    deadline: '2026-10-15T11:00:00', reminderAt: '2026-10-14T23:00:00', isoDate: '2026-11-28', kind: 'performance', pricing: 'quote', payment: 'not_started',
+    quote: { version: 0, status: 'requested', items: [], total: 0 },
   },
 ];
 
@@ -439,29 +574,77 @@ export const OCCASIONS = ['Birthday', 'Wedding', 'Corporate event', 'Club night'
 export const profileById = (id: string) => profiles.find((p) => p.id === id);
 export const venueById = (id: string) => venues.find((v) => v.id === id);
 
+export const PARKING_KIND_LABEL: Record<NonNullable<VenueParking['kind']>, string> = {
+  'on-site': 'On-site parking',
+  street: 'Street parking',
+  garage: 'Parking garage',
+  nearby: 'Parking nearby',
+};
+
+/** Parking for a venue. The `parking` flag decides availability; parkingDetails adds spaces, kind and notes. */
+export function venueParking(v: Pick<Venue, 'parking' | 'parkingDetails'>): VenueParking {
+  return { ...v.parkingDetails, available: v.parking };
+}
+
+/** Outdoor space (garden, terrace, clearing). Separate from parking. */
+export function venueGarden(v: Pick<Venue, 'garden'>): VenueGarden {
+  return v.garden ?? { available: false };
+}
+
+/** One line for parking, e.g. "On-site parking · 12 spaces" or "No parking on site". */
+export function parkingLine(v: Pick<Venue, 'parking' | 'parkingDetails'>) {
+  const p = venueParking(v);
+  if (!p.available) return 'No parking on site';
+  const kind = p.kind ? PARKING_KIND_LABEL[p.kind] : 'Parking';
+  return p.spaces ? `${kind} · ${p.spaces} spaces` : kind;
+}
+
+/** One line for the outdoor space, e.g. "Garden · up to 120 guests · covered" or "No outdoor space". */
+export function gardenLine(v: Pick<Venue, 'garden'>) {
+  const g = venueGarden(v);
+  if (!g.available) return 'No outdoor space';
+  return ['Garden / outdoor space', g.capacity ? `up to ${g.capacity} guests` : '', g.covered ? 'covered' : ''].filter(Boolean).join(' · ');
+}
+
 // ---------- Added for v1.1 screens ----------
 
 export interface ReviewItem {
   id: string;
   authorId: string;
   targetId: string;
+  /** Stars (venues). Musician reviews keep it for older screens; their score comes from recommend + tags. */
   rating: number;
   text: string;
   date: string;
   context: string;
+  /** Musician reviews: would the reviewer book this act again? */
+  recommend?: boolean;
+  /** Musician reviews: praise tags from PRAISE_TAGS (lib/ratings). */
+  tags?: string[];
+  /** Written after a booking completed through Domtak. Only verified reviews count toward scores. */
+  verified?: boolean;
 }
 
 export const reviews: ReviewItem[] = [
-  { id: 'rv1', authorId: 'maya', targetId: 'adam', rating: 5, text: 'Absolutely made our wedding. Read the room perfectly and kept the floor full until 3am.', date: '2026-09-28', context: 'Wedding · Moon Venue' },
-  { id: 'rv2', authorId: 'ben', targetId: 'adam', rating: 5, text: 'On time, professional, great sound. Booking again for NYE.', date: '2026-09-12', context: 'Club night · Moon Club' },
-  { id: 'rv3', authorId: 'clara', targetId: 'adam', rating: 4, text: 'Amazing set — chat replies were a bit slow before the gig.', date: '2026-08-30', context: 'Birthday · Arcada Rooftop' },
-  { id: 'rv4', authorId: 'nina', targetId: 'adam', rating: 5, text: 'The warm-up into peak time was perfect. Everyone asked who the DJ was.', date: '2026-08-02', context: 'Corporate event · Spree Loft' },
-  { id: 'rv5', authorId: 'toni', targetId: 'adam', rating: 4, text: 'Great music, arrived 20 minutes late but stayed longer to make up for it.', date: '2026-07-19', context: 'Private party · Kreuzberg' },
-  { id: 'rv6', authorId: 'leyla', targetId: 'sara', rating: 5, text: 'Her voice gave everyone goosebumps. Brought her own PA, zero hassle.', date: '2026-09-20', context: 'Garden party · Wannsee' },
-  { id: 'rv7', authorId: 'marc', targetId: 'sara', rating: 5, text: 'Perfect acoustic set for our café opening.', date: '2026-08-11', context: 'Opening · Friedrichshain' },
+  { id: 'rv1', authorId: 'maya', targetId: 'adam', rating: 5, text: 'Absolutely made our wedding. Read the room perfectly and kept the floor full until 3am.', date: '2026-09-28', context: 'Wedding · Moon Venue', recommend: true, tags: ['Read the crowd', 'Professional'], verified: true },
+  { id: 'rv2', authorId: 'ben', targetId: 'adam', rating: 5, text: 'On time, professional, great sound. Booking again for NYE.', date: '2026-09-12', context: 'Club night · Moon Club', recommend: true, tags: ['On time', 'Professional', 'Great sound'], verified: true },
+  { id: 'rv3', authorId: 'clara', targetId: 'adam', rating: 4, text: 'Amazing set — chat replies were a bit slow before the gig.', date: '2026-08-30', context: 'Birthday · Arcada Rooftop', recommend: true, tags: ['Great sound'], verified: true },
+  { id: 'rv4', authorId: 'nina', targetId: 'adam', rating: 5, text: 'The warm-up into peak time was perfect. Everyone asked who the DJ was.', date: '2026-08-02', context: 'Corporate event · Spree Loft', recommend: true, tags: ['Read the crowd', 'Great sound'], verified: true },
+  { id: 'rv5', authorId: 'toni', targetId: 'adam', rating: 4, text: 'Great music, arrived 20 minutes late but stayed longer to make up for it.', date: '2026-07-19', context: 'Private party · Kreuzberg', recommend: true, tags: ['Good value'], verified: true },
+  { id: 'rv6', authorId: 'leyla', targetId: 'sara', rating: 5, text: 'Her voice gave everyone goosebumps. Brought her own PA, zero hassle.', date: '2026-09-20', context: 'Garden party · Wannsee', recommend: true, tags: ['Great sound', 'Professional'], verified: true },
+  { id: 'rv7', authorId: 'marc', targetId: 'sara', rating: 5, text: 'Perfect acoustic set for our café opening.', date: '2026-08-11', context: 'Opening · Friedrichshain', recommend: true, tags: ['Read the crowd', 'Good value'], verified: true },
   { id: 'rv8', authorId: 'suzi', targetId: 'moonclub', rating: 5, text: 'Best sound system in Kreuzberg. Staff were super helpful with our album release.', date: '2026-09-05', context: 'Album release' },
   { id: 'rv9', authorId: 'kofi', targetId: 'moonclub', rating: 4, text: 'Great venue, the beach garden is a vibe. Queue management could be better.', date: '2026-08-21', context: 'Club night' },
   { id: 'rv10', authorId: 'lina', targetId: 'moonvenue', rating: 5, text: 'Dream wedding location. The pergola at sunset is unreal.', date: '2026-09-14', context: 'Wedding' },
+  { id: 'rv11', authorId: 'lina', targetId: 'soso', rating: 5, text: 'Three hypnotic hours. Nobody left the floor.', date: '2026-09-19', context: 'Club night · Moon Club', recommend: true, tags: ['Read the crowd', 'Great sound'], verified: true },
+  { id: 'rv12', authorId: 'kofi', targetId: 'soso', rating: 3, text: 'Great music, but started 40 minutes late and the set ran short.', date: '2026-08-08', context: 'Birthday · Friedrichshain', recommend: false, tags: [], verified: true },
+  { id: 'rv13', authorId: 'suzi', targetId: 'sameul', rating: 5, text: 'Our gala guests were in tears. Flawless from soundcheck to encore.', date: '2026-09-27', context: 'Gala · Royal Hall', recommend: true, tags: ['Professional', 'Great sound', 'On time'], verified: true },
+  { id: 'rv14', authorId: 'clara', targetId: 'luca', rating: 5, text: 'Sax over the DJ set on our rooftop was magic. Fair price too.', date: '2026-09-02', context: 'Rooftop party · Arcada Rooftop', recommend: true, tags: ['Good value', 'Read the crowd'], verified: true },
+  { id: 'rv15', authorId: 'maya', targetId: 'nightowls', rating: 5, text: 'Loud, tight and lovely to deal with. They arrived early to set up.', date: '2026-09-25', context: 'Company party · Royal Hall', recommend: true, tags: ['On time', 'Great sound', 'Professional'], verified: true },
+  { id: 'rv16', authorId: 'ben', targetId: 'nightowls', rating: 4, text: 'Great show. The quote listed travel and backline separately, no surprises.', date: '2026-08-15', context: 'Summer party · Grunewald', recommend: true, tags: ['Good value', 'Professional'], verified: true },
+  { id: 'rv17', authorId: 'marc', targetId: 'dako', rating: 2, text: 'Mostly the wrong genre for a wedding despite our brief.', date: '2026-09-06', context: 'Wedding · Wannsee', recommend: false, tags: [], verified: true },
+  { id: 'rv18', authorId: 'leyla', targetId: 'dako', rating: 5, text: 'The sunset set on the boat was perfect.', date: '2026-08-23', context: 'Boat party · Spree', recommend: true, tags: ['Read the crowd'], verified: true },
+  { id: 'rv19', authorId: 'nina', targetId: 'cats', rating: 5, text: 'Packed dance floor all night, and a fair price.', date: '2026-09-11', context: 'Birthday · Neukölln', recommend: true, tags: ['Read the crowd', 'Good value'], verified: true },
 ];
 
 export const reviewsFor = (targetId: string) => reviews.filter((r) => r.targetId === targetId);
@@ -555,3 +738,109 @@ export const eventDiscussion: Record<string, { id: string; authorId: string; tex
 /** Followers of a profile, derived from the sample accounts. */
 export const followersOf = (id: string) => profiles.filter((p) => p.id !== id && (p.kind === 'fan' || p.id.length % 2 === id.length % 2)).slice(0, 14);
 export const followingOf = (id: string) => profiles.filter((p) => p.id !== id && p.kind !== 'fan').slice(0, 12);
+
+// ---------- Blueprint: communities, friends, invitations, support, moderation ----------
+
+/** Platform-created music communities (F09). */
+export const communities: Community[] = [
+  {
+    id: 'techno-berlin', name: 'Techno Berlin', cover: 'ev_lasers2', members: 18400, genres: ['Techno', 'Trance'],
+    description: 'Club nights, bunker raves and the DJs behind them. Share sets, find a crew for the weekend and swap tips for the door.',
+    eventIds: ['darkmoon', 'bunker7', 'halloween'], postIds: ['p1', 'p6'],
+    rules: ['Be kind at the door and online', 'No ticket resale', 'Credit the photographer'],
+  },
+  {
+    id: 'jazz-soul', name: 'Jazz & Soul', cover: 'ev_concert_blue', members: 6200, genres: ['Jazz', 'Soul'],
+    description: 'Live sessions, smoky bars and soul nights. Musicians and listeners welcome.',
+    eventIds: ['livesoul', 'acoustic'], postIds: ['p7'],
+    rules: ['Respect the music: no talking during sets', 'Share gig photos in comments'],
+  },
+  {
+    id: 'indie-rock', name: 'Indie & Rock', cover: 'band_stage', members: 9800, genres: ['Indie', 'Rock'],
+    description: 'Guitars, small stages and big choruses. Album talk, gig buddies and band news.',
+    eventIds: ['nightowlstour', 'youngtalent'], postIds: ['p2'],
+    rules: ['No spoilers for setlists before the show', 'Be kind to new bands'],
+  },
+  {
+    id: 'hiphop-cyphers', name: 'Hip-Hop Cyphers', cover: 'ev_dance_world', members: 7400, genres: ['Hip Hop'],
+    description: 'Open mics, dance battles and producer meetups across Berlin.',
+    eventIds: ['danceworld'], postIds: ['p3'],
+    rules: ['Respect every MC', 'No hate speech'],
+  },
+  {
+    id: 'acoustic-sessions', name: 'Acoustic Sessions', cover: 'cat_acoustic', members: 4300, genres: ['Acoustic', 'Pop'],
+    description: 'Unplugged sets, garden concerts and songwriter circles.',
+    eventIds: ['acoustic', 'familyfest'], postIds: ['p4', 'p8'],
+    rules: ['Phones on silent during sets', 'Share your own songs in comments'],
+  },
+];
+
+export const communityById = (id: string) => communities.find((c) => c.id === id);
+
+/** Your friends at the start of the demo. */
+export const initialFriends: string[] = ['suzi', 'toni', 'leyla', 'kofi'];
+
+/** Two incoming friend invitations (F10). */
+export const initialFriendRequests: FriendRequest[] = [
+  { id: 'fr1', fromId: 'nina', toId: 'me', status: 'pending', at: '2026-10-13T18:20:00' },
+  { id: 'fr2', fromId: 'marc', toId: 'me', status: 'pending', at: '2026-10-14T09:05:00' },
+];
+
+/**
+ * Private events you were invited to as a guest. They are not in `events` (that list is public),
+ * so only invited guests reach them (useEvent resolves them).
+ */
+export const privateEvents: EventItem[] = [
+  {
+    id: 'suzibday', title: 'Suzi’s Rooftop Birthday', cover: 'ev_pool_party', category: 'Parties', genre: 'Pop', venueId: 'arcada', organizerId: 'suzi', hostId: 'suzi',
+    lineup: ['cats'], start: '2026-10-30T19:00:00', end: '2026-10-31T01:00:00',
+    ticketTypes: [{ id: 'guest', name: 'Guest', description: 'Cost sharing covers the DJ and the rooftop', price: 15, capacity: 40, sold: 12 }],
+    going: 12, rating: 0, distanceKm: 2.0, mapPos: { x: 49, y: 38 }, refundPolicy: 'Contributions are refunded if the party is cancelled',
+    description: 'Turning 30 on the Arcada rooftop with 4 Cats on the decks. Dress code: something sparkly.',
+    isPrivate: true, state: 'ready', expectedGuests: 40,
+    costSharing: { enabled: true, perGuest: 15, deadline: '2026-10-27', note: 'Covers the DJ and the rooftop hire' },
+  },
+];
+
+/** Invitations you received as a guest (F20). */
+export const initialGuestInvites: GuestInvite[] = [
+  { id: 'gi1', eventId: 'suzibday', fromId: 'suzi', status: 'invited', contribution: 15, payment: 'not_started', sentAt: '2026-10-12T20:15:00', message: 'Would love to have you there! €15 covers the DJ and the rooftop.' },
+];
+
+/** Your support cases (F27). */
+export const initialSupportCases: SupportCase[] = [
+  {
+    id: 'sc1', ref: 'DT-4821', topic: 'Payment release after a declined request', linked: { kind: 'booking', id: 'b4' }, status: 'resolved', createdAt: '2026-09-02T09:40:00',
+    messages: [
+      { from: 'me', text: 'Spree Loft declined my request. When will the authorization on my card disappear?', at: '2026-09-02T09:40:00' },
+      { from: 'support', text: 'The authorization was released on 3 September (reference REL-41KD). Your bank may take a few days to show it.', at: '2026-09-03T10:15:00' },
+    ],
+  },
+];
+
+/** Reports from other members waiting in the moderation queue (F25). Reporter identities are not shown. */
+export const initialReports: Report[] = [
+  { id: 'rp1', kind: 'comment', targetId: 'ed4', reason: 'Harassment or bullying', at: '2026-10-14T07:50:00', status: 'open', details: 'Comment in the Dance world discussion.' },
+  { id: 'rp2', kind: 'event', targetId: 'sosparty', reason: 'Misleading information', at: '2026-10-13T16:30:00', status: 'open', details: 'Says the lineup changed but the page was not updated.' },
+];
+
+/** Professional applications from other people in the admin review queue (F03). */
+export const applicationQueue: QueuedApplication[] = [
+  {
+    id: 'ap1', applicantName: 'Mara Lux', handle: '@maralux', avatar: 'dj_red', city: 'Berlin, Neukölln', role: 'musician', status: 'pending', submittedAt: '2026-10-14T08:10:00',
+    details: { 'Act type': 'DJ', 'Stage name': 'Mara Lux', Genres: 'Techno, Electro', 'Fee per hour': '€220', 'Links': 'SoundCloud, Instagram', 'Travel and equipment': 'Travel €30 · own controller' },
+    history: [{ at: '2026-10-14T08:10:00', status: 'pending' }],
+  },
+  {
+    id: 'ap2', applicantName: 'Kiez Garten', handle: '@kiezgarten', avatar: 'ven_garden', city: 'Berlin, Wedding', role: 'venue', status: 'info', submittedAt: '2026-10-12T15:00:00', decidedAt: '2026-10-13T10:20:00',
+    reason: 'We need a few more details before we can review the listing.', missing: ['Proof of permission to host events', 'Parking details', 'Capacity of the garden'],
+    details: { 'Venue name': 'Kiez Garten', Address: 'Wedding, 13353 Berlin', Capacity: '90', Pricing: '€450 per night' },
+    reviewer: 'Review team',
+    history: [{ at: '2026-10-12T15:00:00', status: 'pending' }, { at: '2026-10-13T10:20:00', status: 'info', note: 'Missing permission proof, parking details and garden capacity' }],
+  },
+  {
+    id: 'ap3', applicantName: 'Nachtwerk Events', handle: '@nachtwerk', avatar: 'ev_purple_arena', city: 'Berlin, Friedrichshain', role: 'organizer', status: 'pending', submittedAt: '2026-10-13T19:45:00',
+    details: { 'Organisation': 'Nachtwerk Events UG', 'Event types': 'Club nights, open airs', 'Past events': '12 in 2026', Website: 'nachtwerk.example' },
+    history: [{ at: '2026-10-13T19:45:00', status: 'pending' }],
+  },
+];
