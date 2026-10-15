@@ -4,35 +4,57 @@ import { useState } from 'react';
 import { Linking, Pressable, ScrollView, Share, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ActionSheet } from '../../components/ActionSheet';
-import { BackOverlay, EventRow, HeartToggle } from '../../components/cards';
+import { ActionSheet, ReasonSheet } from '../../components/ActionSheet';
+import { ArtistPricingCard, BackOverlay, EventRow, HeartToggle, LessonCard, RecommendBadge, ReviewTags } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
-import { Avatar, Banner, Button, Icon, IconButton, Photo, Row, SectionTitle, Stars, T } from '../../components/ui';
+import { Avatar, Banner, BookAgainBadge, Button, Icon, IconButton, Photo, Row, SectionTitle, Stars, T, TagCounts } from '../../components/ui';
 import { followersOf, profileById, reviewsFor } from '../../data/mock';
-import { compact, euro, shortDate } from '../../lib/format';
+import { compact, isoDay, plural, shortDate, TODAY } from '../../lib/format';
+import { isMusician, verifiedMusicianReviews } from '../../lib/ratings';
+import { OWN_ARTIST_ID, useArtist, useArtistServices } from '../../store/services';
 import { toast } from '../../store/toast';
-import { useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
+import { activeWorkspace, useAllEvents, useApp, useArtistScore, useFeedPosts, useRating } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
-const fmtRating = (n: number) => n.toFixed(1).replace('.', ',');
+const WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+const REPORT_REASONS = ['Fake or impersonating profile', 'Spam or scam', 'Harassment or hate', 'Inappropriate photos', 'Something else'];
+const TODAY_ISO = isoDay(TODAY);
+
+interface ReviewRow {
+  id: string;
+  authorId: string;
+  text: string;
+  date: string;
+  context: string;
+  rating: number;
+  recommend?: boolean;
+  tags: string[];
+}
 
 export default function ArtistProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
-  const artist = profileById(id ?? '');
+  // Includes the musician's published services (price, quote mode, charges, lessons) for their own profile.
+  const artist = useArtist(id);
+  const services = useArtistServices(id);
+  const score = useArtistScore(id ?? '');
+  const stars = useRating(id ?? '');
   const following = useApp((s) => (id ? !!s.following[id] : false));
   const wished = useApp((s) => (id ? s.wishlist.artists.includes(id) : false));
   const blocked = useApp((s) => s.blocked);
   const bookings = useApp((s) => s.bookings);
   const myReviews = useApp((s) => s.reviews);
   const user = useApp((s) => s.user);
+  const availability = useApp((s) => s.availability);
   const toggleFollow = useApp((s) => s.toggleFollow);
   const toggleWish = useApp((s) => s.toggleWish);
   const toggleBlock = useApp((s) => s.toggleBlock);
+  const reportContent = useApp((s) => s.reportContent);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const events = useAllEvents();
   const posts = useFeedPosts();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   if (!artist) {
     return (
@@ -42,6 +64,8 @@ export default function ArtistProfile() {
       </SafeAreaView>
     );
   }
+  // Musicians, DJs and bands are rated by "would book again", never stars.
+  const musician = isMusician(artist.id);
   const gigs = events.filter((e) => e.lineup.includes(artist.id)).sort((a, b) => a.start.localeCompare(b.start));
   const media = [...posts.filter((p) => p.authorId === artist.id).flatMap((p) => p.media), ...(artist.gallery ?? [])].slice(0, 6);
   const fans = followersOf(artist.id).filter((p) => !blocked.includes(p.id)).slice(0, 5);
@@ -51,29 +75,34 @@ export default function ArtistProfile() {
     artist.links?.spotify ? { icon: 'spotify' as const, color: '#1DB954', label: 'Spotify', url: 'https://open.spotify.com' } : null,
     artist.links?.youtube ? { icon: 'youtube' as const, color: '#FF0000', label: 'YouTube', url: 'https://youtube.com' } : null,
   ].filter((x): x is NonNullable<typeof x> => !!x);
+  const lessons = artist.lessons ?? [];
+  const quote = artist.pricing === 'quote' || !artist.feePerHour;
+  const isOwner = activeWorkspace(user) === 'musician' && artist.id === OWN_ARTIST_ID;
 
-  // Reviews: your own (from completed bookings) first, then everyone else, newest first.
-  const mine = bookings
-    .filter((b) => b.targetId === artist.id && myReviews[b.id])
+  // Reviews: your own (from completed bookings) first, then verified reviews from other customers, newest first.
+  const mine: ReviewRow[] = bookings
+    .filter((b) => b.targetId === artist.id && b.type !== 'venue' && myReviews[b.id] && (musician ? myReviews[b.id].recommend != null : myReviews[b.id].rating > 0))
     .map((b) => {
       const r = myReviews[b.id];
-      const tags = r.tags ?? [];
-      return { id: `mine-${b.id}`, authorId: 'me', rating: r.rating, text: r.text || (tags.length ? `Loved the ${tags.join(', ').toLowerCase()}.` : ''), date: b.date, context: b.eventTitle };
+      return { id: `mine-${b.id}`, authorId: 'me', rating: r.rating, recommend: r.recommend, tags: r.tags ?? [], text: r.text, date: b.date, context: b.eventTitle };
     });
-  const allReviews = [
-    ...mine,
-    ...reviewsFor(artist.id)
-      .filter((r) => !blocked.includes(r.authorId))
-      .sort((a, b) => b.date.localeCompare(a.date)),
-  ];
-  const reviewCount = allReviews.length;
-  const reviewsLabel = `${reviewCount} review${reviewCount === 1 ? '' : 's'}`;
-  const rating = reviewCount ? allReviews.reduce((n, r) => n + r.rating, 0) / reviewCount : artist.rating;
+  const others: ReviewRow[] = (musician ? verifiedMusicianReviews(artist.id, blocked) : reviewsFor(artist.id).filter((r) => !blocked.includes(r.authorId)))
+    .map((r) => ({ id: r.id, authorId: r.authorId, rating: r.rating, recommend: r.recommend, tags: r.tags ?? [], text: r.text, date: r.date, context: r.context }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const allReviews = [...mine, ...others];
+  const reviewCount = musician ? score.total : stars.count;
+  const reviewsLabel = plural(reviewCount, musician ? 'verified booking' : 'review');
   const followerCount = artist.followers + (following ? 1 : 0);
   const isBlocked = blocked.includes(artist.id);
 
+  // Optional published availability (F05): helps planning, never confirms a booking.
+  const openDays = WEEK.filter((d) => availability.days[d]);
+  const blockedSoon = availability.blockedDates.filter((d) => d >= TODAY_ISO).sort().slice(0, 4);
+  const showCalendar = !!services?.showCalendar;
+
   const openConnections = (tab: 'followers' | 'following') => router.push(`/connections/${artist.id}?tab=${tab}`);
   const openRatings = () => router.push(`/ratings/${artist.id}`);
+  const book = () => router.push({ pathname: '/booking/new', params: { type: 'musician', id: artist.id } });
   const block = () => {
     if (isBlocked) {
       toggleBlock(artist.id);
@@ -88,7 +117,7 @@ export default function ArtistProfile() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        <View style={{ height: 380 }}>
+        <View style={{ height: 360 }}>
           <Photo src={artist.cover ?? artist.avatar} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
           <LinearGradient colors={['rgba(0,0,0,0.35)', 'transparent', 'rgba(20,10,40,0.9)']} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
           <SafeAreaView edges={['top']} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 4 }}>
@@ -104,9 +133,9 @@ export default function ArtistProfile() {
                 <Text style={{ color: colors.white, fontFamily: fonts.display, fontSize: 32, flexShrink: 1 }}>{artist.name}</Text>
                 {artist.verified ? <Icon name="check-decagram" size={22} color="#A78BFA" /> : null}
               </Row>
-              <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }}>{artist.title}</Text>
+              <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }}>{artist.title} · {artist.city}</Text>
             </View>
-            {isBlocked ? null : (
+            {isBlocked || isOwner ? null : (
               <Button
                 title={following ? 'Following' : 'Follow'}
                 accessibilityLabel={following ? `Unfollow ${artist.name}` : `Follow ${artist.name}`}
@@ -120,7 +149,7 @@ export default function ArtistProfile() {
           </Row>
         </View>
 
-        <View style={{ padding: 16, gap: 18 }}>
+        <View style={{ padding: 16, gap: 20 }}>
           <Row gap={16} style={{ flexWrap: 'wrap' }}>
             <Pressable
               accessibilityRole="button"
@@ -155,26 +184,54 @@ export default function ArtistProfile() {
             </Banner>
           ) : null}
 
-          <Row gap={16} style={{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, ...shadow(1) }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                rating
-                  ? `Rated ${fmtRating(rating)} out of 5${reviewCount ? ` from ${reviewsLabel}` : ''}. See reviews`
-                  : 'No rating yet. See reviews'
-              }
-              onPress={openRatings}
-              style={({ pressed }) => ({ flex: 1, alignItems: 'center', minHeight: 44, opacity: pressed ? 0.6 : 1 })}
-            >
-              <T v="h3">{rating ? fmtRating(rating) : '—'}</T>
-              <Stars value={rating ?? 0} size={12} />
-              <T v="small" style={{ fontSize: 11 }}>{reviewCount ? reviewsLabel : rating ? 'Rating' : 'No reviews'}</T>
-            </Pressable>
-            <View style={{ width: 1, height: 36, backgroundColor: colors.divider }} />
-            <View style={{ flex: 1, alignItems: 'center' }}><T v="h3">{artist.eventsCount ?? 0}</T><T v="small">Gigs played</T></View>
-            <View style={{ width: 1, height: 36, backgroundColor: colors.divider }} />
-            <View style={{ flex: 1, alignItems: 'center' }}><T v="h3">&lt;2h</T><T v="small">Replies</T></View>
-          </Row>
+          {/* Score: "would book again" from verified bookings (musicians), stars for anyone else. */}
+          <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, gap: 12, ...shadow(1) }}>
+            <Row gap={16}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  musician
+                    ? score.recommendPct == null
+                      ? 'No verified bookings yet. See reviews'
+                      : `${score.recommendPct}% would book again, from ${reviewsLabel}. See reviews`
+                    : `Rated ${stars.rating.toFixed(1)} out of 5. See reviews`
+                }
+                onPress={openRatings}
+                style={({ pressed }) => ({ flex: 1.3, alignItems: 'center', minHeight: 44, opacity: pressed ? 0.6 : 1 })}
+              >
+                {musician ? (
+                  <>
+                    <Row gap={4}>
+                      <Icon name={score.recommendPct == null ? 'account-music-outline' : 'thumb-up'} size={18} color={colors.brand} />
+                      <T v="h3">{score.recommendPct == null ? 'New' : `${score.recommendPct}%`}</T>
+                    </Row>
+                    <T v="small" style={{ fontSize: 11 }} center>{score.recommendPct == null ? 'No verified bookings' : 'would book again'}</T>
+                  </>
+                ) : (
+                  <>
+                    <T v="h3">{stars.rating ? stars.rating.toFixed(1).replace('.', ',') : 'New'}</T>
+                    <Stars value={stars.rating} size={12} />
+                  </>
+                )}
+              </Pressable>
+              <View style={{ width: 1, height: 36, backgroundColor: colors.divider }} />
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <T v="h3">{reviewCount}</T>
+                <T v="small" style={{ fontSize: 11 }} center>{musician ? 'verified bookings' : 'reviews'}</T>
+              </View>
+              <View style={{ width: 1, height: 36, backgroundColor: colors.divider }} />
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <T v="h3">{artist.eventsCount ?? 0}</T>
+                <T v="small" style={{ fontSize: 11 }} center>gigs played</T>
+              </View>
+            </Row>
+            {musician && score.topTags.length ? (
+              <View style={{ gap: 8 }}>
+                <T v="label">What bookers praise</T>
+                <TagCounts tags={score.topTags.slice(0, 4)} />
+              </View>
+            ) : null}
+          </View>
 
           <View style={{ gap: 6 }}>
             <T v="h3">About me</T>
@@ -187,12 +244,47 @@ export default function ArtistProfile() {
               {artist.instruments?.map((ins) => <Row key={ins} gap={4}><Icon name="speaker" size={18} color={colors.brandDeep} /><T v="body">{ins}</T></Row>)}
             </Row>
           </View>
-          {artist.feePerHour ? (
-            <View style={{ gap: 6 }}>
-              <T v="h3">Book me</T>
-              <T v="body" color={colors.inkSoft}>My booking fee is <T v="bodyBold">{euro(artist.feePerHour)}</T> per hour. Payment is held in Domtak escrow until the gig is confirmed.</T>
+
+          {musician ? (
+            <View style={{ gap: 10 }}>
+              <T v="h3" accessibilityRole="header">Services and pricing</T>
+              <ArtistPricingCard artist={artist} services={services} />
+              <Banner icon="shield-check-outline">
+                {`Requests reach ${artist.name} with payment pending their decision. If they decline or don’t answer within 24 hours, the payment is released or refunded.`}
+              </Banner>
             </View>
           ) : null}
+
+          {musician && showCalendar ? (
+            <View style={{ gap: 10 }}>
+              <T v="h3" accessibilityRole="header">Availability</T>
+              <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, gap: 8, ...shadow(1) }}>
+                <Row gap={10}>
+                  <Icon name="calendar-week" size={20} color={colors.brand} />
+                  <T v="bodyBold" style={{ flex: 1 }}>{openDays.length ? `Usually plays ${openDays.join(', ')}` : 'No regular days published'}</T>
+                </Row>
+                <T v="small">Minimum booking {plural(availability.minHours, 'hour')}{blockedSoon.length ? ` · not available ${blockedSoon.map(shortDate).join(', ')}` : ''}</T>
+                <T v="small" color={colors.inkSoft}>The calendar helps you plan. It never confirms a booking: {artist.name} still accepts or declines each request.</T>
+              </View>
+            </View>
+          ) : null}
+
+          {lessons.length ? (
+            <View style={{ gap: 10 }}>
+              <View style={{ gap: 2 }}>
+                <T v="h3" accessibilityRole="header">Lessons</T>
+                <T v="small">Booked separately from performances, with their own price and terms.</T>
+              </View>
+              {lessons.map((l) => <LessonCard key={l.id} lesson={l} onPress={() => router.push(`/lesson/${l.id}` as never)} />)}
+              {services?.lessonTerms?.trim() ? (
+                <View style={{ gap: 2 }}>
+                  <T v="label">Lesson terms</T>
+                  <T v="small">{services.lessonTerms.trim()}</T>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
           {links.length ? (
             <View style={{ gap: 10 }}>
               <T v="h3">Listen to me</T>
@@ -225,12 +317,10 @@ export default function ArtistProfile() {
           <View style={{ gap: 12 }}>
             <Row justify="space-between">
               <T v="h3">Reviews</T>
-              {reviewCount && rating ? (
-                <Row gap={6}>
-                  <Icon name="star" size={18} color={colors.star} />
-                  <T v="bodyBold">{fmtRating(rating)}</T>
-                  <T v="small">({reviewCount})</T>
-                </Row>
+              {musician ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="See all reviews" onPress={openRatings} hitSlop={8}>
+                  <BookAgainBadge pct={score.recommendPct} total={score.total} />
+                </Pressable>
               ) : null}
             </Row>
             {allReviews.slice(0, 3).map((r) => {
@@ -240,20 +330,24 @@ export default function ArtistProfile() {
               return (
                 <Row key={r.id} gap={12} align="flex-start" style={{ backgroundColor: colors.surface, padding: 12, borderRadius: radius.md, ...shadow(1) }}>
                   <Avatar src={isMine ? user.avatar : p?.avatar} size={36} label={authorName} />
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Row justify="space-between"><T v="bodyBold" numberOfLines={1} style={{ flexShrink: 1 }}>{authorName}</T><Stars value={r.rating} size={12} /></Row>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Row justify="space-between" gap={8}>
+                      <T v="bodyBold" numberOfLines={1} style={{ flexShrink: 1 }}>{authorName}</T>
+                      {musician ? r.recommend != null ? <RecommendBadge recommend={r.recommend} /> : null : <Stars value={r.rating} size={12} />}
+                    </Row>
                     <T v="small" style={{ fontSize: 12 }} numberOfLines={1}>{r.context} · {shortDate(r.date)}</T>
-                    {r.text ? <T v="small" color={colors.inkSoft} style={{ marginTop: 2 }}>{r.text}</T> : null}
+                    {musician ? <ReviewTags tags={r.tags} /> : null}
+                    {r.text ? <T v="small" color={colors.inkSoft}>{r.text}</T> : null}
                   </View>
                 </Row>
               );
             })}
-            {reviewCount ? (
-              <Button title={reviewCount === 1 ? 'See review' : `See all ${reviewsLabel}`} variant="secondary" size="md" icon="star-outline" onPress={openRatings} />
+            {allReviews.length ? (
+              <Button title={`See all reviews (${allReviews.length})`} variant="secondary" size="md" icon={musician ? 'thumb-up-outline' : 'star-outline'} onPress={openRatings} />
             ) : (
               <View style={{ backgroundColor: colors.surface, padding: 16, borderRadius: radius.md, gap: 4, ...shadow(1) }}>
-                <T v="bodyBold">No reviews yet</T>
-                <T v="small">Book {artist.name} through Domtak and be the first to leave a review.</T>
+                <T v="bodyBold">No verified bookings yet</T>
+                <T v="small">{`Scores only come from bookings completed through Domtak. Book ${artist.name} and you can say whether you’d book them again.`}</T>
               </View>
             )}
           </View>
@@ -261,10 +355,19 @@ export default function ArtistProfile() {
       </ScrollView>
       {isBlocked ? null : (
         <BottomBar>
-          <Row gap={12}>
-            <Button title="Message" variant="secondary" size="lg" style={{ flex: 1 }} onPress={() => router.push(`/chat/${ensureConversation(artist.id)}`)} />
-            <Button title="Book" size="lg" style={{ flex: 1.4 }} onPress={() => router.push({ pathname: '/booking/new', params: { type: 'musician', id: artist.id } })} />
-          </Row>
+          {isOwner ? (
+            <View style={{ gap: 8 }}>
+              <T v="small" center>This is how bookers see your profile.</T>
+              <Button title="Edit services and pricing" icon="pencil-outline" onPress={() => router.navigate('/pro/services' as never)} />
+            </View>
+          ) : musician ? (
+            <Row gap={12}>
+              <Button title="Message" variant="secondary" size="lg" style={{ flex: 1 }} onPress={() => router.push(`/chat/${ensureConversation(artist.id)}`)} />
+              <Button title={quote ? 'Request quote' : 'Book'} accessibilityLabel={quote ? `Request a quote from ${artist.name}` : `Book ${artist.name}`} size="lg" style={{ flex: 1.4 }} onPress={book} />
+            </Row>
+          ) : (
+            <Button title="Message" size="lg" onPress={() => router.push(`/chat/${ensureConversation(artist.id)}`)} />
+          )}
         </BottomBar>
       )}
       <ActionSheet
@@ -273,12 +376,26 @@ export default function ArtistProfile() {
         onClose={() => setMenuOpen(false)}
         actions={[
           { label: 'Share profile', icon: 'share-variant-outline', onPress: () => Share.share({ message: `${artist.name} (${artist.handle}) on Domtak: ${artist.title} from ${artist.city}` }).catch(() => {}) },
-          { label: 'See all reviews', icon: 'star-outline', onPress: openRatings },
+          { label: 'See all reviews', icon: musician ? 'thumb-up-outline' : 'star-outline', onPress: openRatings },
           isBlocked
             ? { label: `Unblock ${artist.name}`, icon: 'account-check-outline', onPress: block }
             : { label: `Block ${artist.name}`, icon: 'account-cancel-outline', destructive: true, onPress: block },
-          { label: 'Report profile', icon: 'flag-outline', destructive: true, onPress: () => toast('Thanks, our team will review this profile') },
+          { label: 'Report profile', icon: 'flag-outline', destructive: true, onPress: () => setReportOpen(true) },
         ]}
+      />
+      <ReasonSheet
+        visible={reportOpen}
+        title={`Report ${artist.name}`}
+        body={`Our team reviews every report against the community rules. ${artist.name} won’t see who reported them.`}
+        reasons={REPORT_REASONS}
+        confirmLabel="Send report"
+        destructive
+        notePlaceholder="Anything else we should know (optional)"
+        onClose={() => setReportOpen(false)}
+        onSubmit={(reason, note) => {
+          reportContent('profile', artist.id, reason, note || undefined);
+          toast('Report sent. Our team will review this profile.');
+        }}
       />
     </View>
   );

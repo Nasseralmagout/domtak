@@ -2,14 +2,16 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Share, View, useWindowDimensions } from 'react-native';
 
-import { ActionSheet } from '../../components/ActionSheet';
+import { ActionSheet, ReasonSheet } from '../../components/ActionSheet';
 import { EventRow, FollowButton } from '../../components/cards';
 import { Screen, ScreenHeader, goBack } from '../../components/layout';
+import { FriendButton, REPORT_REASONS } from '../../components/PostCard';
 import { Avatar, Banner, Button, EmptyState, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
 import { followersOf, profileById, venueById } from '../../data/mock';
-import { compact } from '../../lib/format';
+import { compact, plural } from '../../lib/format';
+import { canBefriend, useFriendProfiles, useFriendRequests, useFriendStatus } from '../../store/social';
 import { toast } from '../../store/toast';
-import { ROLE_LABEL, isPro, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
+import { activeWorkspace, canPostToFeed, ROLE_LABEL, isPro, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 function Stat({ value, label, onPress }: { value: string; label: string; onPress?: () => void }) {
@@ -43,6 +45,27 @@ function Shortcut({ icon, label, onPress }: { icon: IconName; label: string; onP
   );
 }
 
+/** A wide shortcut card on your own profile (Friends, Communities). */
+function LinkTile({ icon, title, sub, badge, onPress }: { icon: IconName; title: string; sub: string; badge?: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${sub}`}
+      onPress={onPress}
+      style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 60, paddingHorizontal: 12, borderRadius: radius.lg, backgroundColor: colors.surface, opacity: pressed ? 0.8 : 1, ...shadow(1) })}
+    >
+      <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={20} color={colors.brand} />
+        {badge ? <View style={{ position: 'absolute', top: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: colors.warningStrong, borderWidth: 2, borderColor: colors.white }} /> : null}
+      </View>
+      <View style={{ flex: 1 }}>
+        <T v="bodyBold" numberOfLines={1}>{title}</T>
+        <T v="small" numberOfLines={1}>{sub}</T>
+      </View>
+    </Pressable>
+  );
+}
+
 export default function ProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const isMe = id === 'me';
@@ -56,6 +79,15 @@ export default function ProfileScreen() {
   const toggleBlock = useApp((s) => s.toggleBlock);
   const toggleFollow = useApp((s) => s.toggleFollow);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const reportContent = useApp((s) => s.reportContent);
+  const respondFriendRequest = useApp((s) => s.respondFriendRequest);
+  const removeFriend = useApp((s) => s.removeFriend);
+  const joinedCommunities = useApp((s) => s.joinedCommunities);
+  const reportedProfile = useApp((s) => s.reports.some((r) => r.byMe && r.targetId === id && r.status === 'open'));
+  const friendState = useFriendStatus(id ?? '');
+  const myFriends = useFriendProfiles();
+  const { incoming: incomingRequests } = useFriendRequests();
   const posts = useFeedPosts();
   const events = useAllEvents();
   const [tab, setTab] = useState<'posts' | 'events' | 'saved' | 'about'>(id === 'me' ? 'posts' : 'about');
@@ -113,7 +145,7 @@ export default function ProfileScreen() {
           <T v="h2" color={colors.brandDeep}>{name}</T>
           <Row gap={4}><Icon name="map-marker-outline" size={16} color={colors.muted} /><T v="small">{city}</T></Row>
           <View style={{ alignSelf: 'flex-start', marginTop: 2, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: colors.brandSoft }}>
-            <T v="caption">{isMe ? ROLE_LABEL[user.role].toUpperCase() : p!.title.toUpperCase()}</T>
+            <T v="caption">{isMe ? ROLE_LABEL[activeWorkspace(user)].toUpperCase() : p!.title.toUpperCase()}</T>
           </View>
         </View>
       </Row>
@@ -142,10 +174,44 @@ export default function ProfileScreen() {
           </View>
         </Banner>
       ) : (
-        <Row gap={10}>
-          <Button title="Message" size="md" style={{ flex: 1.4 }} onPress={() => router.push(`/chat/${ensureConversation(p!.id)}`)} />
-          <View style={{ flex: 1 }}><FollowButton id={p!.id} size="md" /></View>
-        </Row>
+        <View style={{ gap: 10 }}>
+          {friendState.status === 'incoming' && friendState.request ? (
+            <Banner icon="account-plus-outline">
+              <View style={{ gap: 8 }}>
+                <T v="smallBold" color={colors.brand}>{name} sent you a friend request</T>
+                <Row gap={10}>
+                  <Button
+                    title="Accept"
+                    icon="account-check-outline"
+                    size="sm"
+                    accessibilityLabel={`Accept friend request from ${name}`}
+                    onPress={() => {
+                      respondFriendRequest(friendState.request!.id, true);
+                      toast(`You and ${name} are now friends`);
+                    }}
+                  />
+                  <Button
+                    title="Decline"
+                    variant="secondary"
+                    size="sm"
+                    accessibilityLabel={`Decline friend request from ${name}`}
+                    onPress={() => {
+                      respondFriendRequest(friendState.request!.id, false);
+                      toast(`Request from ${name} declined. They are not told.`);
+                    }}
+                  />
+                </Row>
+              </View>
+            </Banner>
+          ) : null}
+          <Row gap={8}>
+            {canBefriend(p!.id) && friendState.status !== 'incoming' ? (
+              <View style={{ flex: 1 }}><FriendButton id={p!.id} size="md" /></View>
+            ) : null}
+            <View style={{ flex: 1 }}><FollowButton id={p!.id} size="md" /></View>
+            <IconButton name="message-text-outline" label={`Message ${name}`} color={colors.brand} bg={colors.brandSoft} size={46} iconSize={22} onPress={() => router.push(`/chat/${ensureConversation(p!.id)}`)} />
+          </Row>
+        </View>
       )}
 
       {isMe ? (
@@ -153,7 +219,20 @@ export default function ProfileScreen() {
           <Shortcut icon="ticket-confirmation-outline" label="Tickets" onPress={() => router.push('/my-bookings?tab=tickets')} />
           <Shortcut icon="basket-outline" label="Bookings" onPress={() => router.push('/my-bookings?tab=musician')} />
           <Shortcut icon="heart-outline" label="Wishlist" onPress={() => router.push('/wishlist')} />
-          {isPro(user.role) ? <Shortcut icon="view-grid-outline" label="Workspace" onPress={() => router.push('/pro/workspace')} /> : <Shortcut icon="check-decagram" label="Go Pro" onPress={() => router.push('/pro-verification')} />}
+          {isPro(activeWorkspace(user)) ? <Shortcut icon="view-grid-outline" label="Workspace" onPress={() => router.push('/pro/workspace')} /> : <Shortcut icon="check-decagram" label="Go Pro" onPress={() => router.push('/pro-verification')} />}
+        </Row>
+      ) : null}
+
+      {isMe ? (
+        <Row gap={10}>
+          <LinkTile
+            icon={incomingRequests.length ? 'account-multiple-plus-outline' : 'account-multiple-outline'}
+            title="Friends"
+            sub={incomingRequests.length ? plural(incomingRequests.length, 'new request') : plural(myFriends.length, 'friend')}
+            badge={incomingRequests.length > 0}
+            onPress={() => router.push(incomingRequests.length ? '/friends?tab=requests' : '/friends')}
+          />
+          <LinkTile icon="account-group-outline" title="Communities" sub={joinedCommunities.length ? `${joinedCommunities.length} joined` : 'Find your scene'} onPress={() => router.push('/communities')} />
         </Row>
       ) : null}
 
@@ -177,8 +256,18 @@ export default function ProfileScreen() {
         ) : (
           <View style={{ alignItems: 'center', padding: 24, gap: 10 }}>
             <Icon name={tab === 'saved' ? 'bookmark-outline' : 'camera-outline'} size={40} color={colors.brand} />
-            <T v="body" color={colors.muted} center>{tab === 'saved' ? 'Posts you save appear here.' : 'Share your first night out.'}</T>
-            {tab === 'posts' && isMe ? <Button title="Create post" size="md" onPress={() => router.push('/new-post')} /> : null}
+            <T v="body" color={colors.muted} center>
+              {tab === 'saved'
+                ? 'Posts you save appear here.'
+                : !isMe
+                  ? 'No posts yet.'
+                  : canPostToFeed(user)
+                    ? 'Share your first night out.'
+                    : 'Posting photos and videos to the feed is for verified professionals. You can add photos to comments.'}
+            </T>
+            {tab === 'posts' && isMe ? (
+              canPostToFeed(user) ? <Button title="Create post" size="md" onPress={() => router.push('/new-post')} /> : <Button title="Where to share photos" variant="light" size="md" onPress={() => router.push('/new-post')} />
+            ) : null}
           </View>
         )
       ) : null}
@@ -208,8 +297,29 @@ export default function ProfileScreen() {
             isBlocked
               ? { label: `Unblock ${name}`, icon: 'account-check-outline', onPress: block }
               : { label: `Block ${name}`, icon: 'account-cancel-outline', destructive: true, onPress: block },
-            { label: 'Report profile', icon: 'flag-outline', destructive: true, onPress: () => toast('Thanks, our team will review this profile') },
+            ...(friendState.status === 'friends'
+              ? [{ label: 'Remove friend', icon: 'account-minus-outline' as const, destructive: true, onPress: () => { removeFriend(p.id); toast(`${name} is no longer your friend`); } }]
+              : []),
+            reportedProfile
+              ? { label: 'Reported', sub: 'Our team is reviewing this profile', icon: 'flag-outline', disabled: true, onPress: () => {} }
+              : { label: 'Report profile', icon: 'flag-outline', destructive: true, onPress: () => setReporting(true) },
           ]}
+        />
+      ) : null}
+      {p ? (
+        <ReasonSheet
+          visible={reporting}
+          title={`Report ${name}`}
+          body="Tell us what is wrong with this profile. They are not told who reported them. To stop contact right away, block them as well."
+          reasons={['Fake account or impersonation', ...REPORT_REASONS]}
+          confirmLabel="Send report"
+          destructive
+          notePlaceholder="Add details (optional)"
+          onSubmit={(reason, note) => {
+            reportContent('profile', p.id, reason, note || undefined);
+            toast('Thanks. Our team will review this profile.');
+          }}
+          onClose={() => setReporting(false)}
         />
       ) : null}
     </Screen>

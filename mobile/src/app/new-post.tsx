@@ -3,20 +3,133 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
-import { Button, Chip, Field, Icon, Photo, Row, T, Toggle } from '../components/ui';
+import { Button, Card, Chip, Divider, Field, Icon, type IconName, Photo, Pill, Row, T, Toggle } from '../components/ui';
 import type { ImgKey } from '../data/images';
 import type { PostVisibility } from '../data/types';
 import { toast } from '../store/toast';
-import { useApp } from '../store/useApp';
-import { colors } from '../theme';
+import { APPLICATION_STATUS_LABEL, APPLICATION_STATUS_TONE, canPostToFeed, isPro, ROLE_LABEL, useApp } from '../store/useApp';
+import { colors, radius, shadow } from '../theme';
 
 const LIBRARY: ImgKey[] = ['feed_friends', 'feed_crowd', 'ev_dancing', 'feed_rooftop', 'ev_selfie', 'feed_picnic', 'ev_hands', 'feed_street', 'feed_castle'];
 /** "Camera roll" shots offered by the upload tile in this build. */
 const CAMERA_ROLL: ImgKey[] = ['feed_club', 'ev_lasers2', 'feed_decks', 'ev_red_crowd', 'feed_openair', 'ev_purple_arena'];
 
+/** Where members can still share photos: inside comments (user note 2). */
+const PHOTO_PLACES: { icon: IconName; title: string; sub: string; href: string }[] = [
+  { icon: 'comment-outline', title: 'Comments on posts', sub: 'Open any post in your feed and tap the photo button', href: '/(tabs)' },
+  { icon: 'comment-text-multiple-outline', title: 'Event discussions', sub: 'Share the view from the dance floor with other guests', href: '/(tabs)/events' },
+  { icon: 'account-group-outline', title: 'Communities', sub: 'Comment on posts in the music communities you join', href: '/communities' },
+];
+
+/**
+ * Members (and professionals not working in an approved workspace) cannot post to the feed or stories.
+ * Explains why, routes to the professional application, or offers to switch to an approved workspace.
+ */
+function PostingNotAllowed({ isStory }: { isStory: boolean }) {
+  const user = useApp((s) => s.user);
+  const switchWorkspace = useApp((s) => s.switchWorkspace);
+  const approvedPro = (user.approvedRoles ?? []).find((r) => isPro(r));
+  const app = user.application;
+  const what = isStory ? 'Stories' : 'Feed posts';
+
+  return (
+    <Screen
+      header={<ScreenHeader title={isStory ? 'New story' : 'New post'} close onBack={() => goBack('/(tabs)')} />}
+      footer={
+        <BottomBar>
+          <Button title="Back" variant="secondary" onPress={() => goBack('/(tabs)')} />
+        </BottomBar>
+      }
+    >
+      <View style={{ alignItems: 'center', gap: 12, paddingTop: 12 }}>
+        <View style={{ width: 104, height: 104, borderRadius: 52, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="shield-account-outline" size={48} color={colors.brand} />
+        </View>
+        <T v="h2" center>{what} are for verified professionals</T>
+        <T v="body" color={colors.muted} center>
+          Posting photos and videos to the feed is for verified professionals. You can add photos to comments.
+        </T>
+      </View>
+
+      {approvedPro ? (
+        <Card style={{ gap: 10 }}>
+          <Row gap={8}>
+            <Icon name="check-decagram" size={20} color={colors.success} />
+            <T v="title" style={{ flex: 1 }}>You’re approved as {ROLE_LABEL[approvedPro].toLowerCase()}</T>
+          </Row>
+          <T v="small">You’re in your member workspace right now. Switch to your professional workspace to post to the feed and share stories.</T>
+          <Button
+            title={`Switch to ${ROLE_LABEL[approvedPro]}`}
+            size="md"
+            icon="swap-horizontal"
+            onPress={() => {
+              if (switchWorkspace(approvedPro)) toast(`Switched to your ${ROLE_LABEL[approvedPro]} workspace`);
+              else toast('This workspace is not approved yet');
+            }}
+          />
+        </Card>
+      ) : app ? (
+        <Card style={{ gap: 10 }}>
+          <Row justify="space-between" gap={8}>
+            <T v="title" style={{ flex: 1 }}>Your {ROLE_LABEL[app.role].toLowerCase()} application</T>
+            <Pill label={APPLICATION_STATUS_LABEL[app.status]} tone={APPLICATION_STATUS_TONE[app.status]} />
+          </Row>
+          <T v="small">
+            {app.status === 'pending'
+              ? 'Our team is reviewing it. You can post once it is approved.'
+              : app.status === 'info'
+                ? `We need more information: ${app.missing?.join(', ') || app.reason || 'open your application to see what is missing'}.`
+                : app.status === 'rejected'
+                  ? `It was not approved${app.reason ? `: ${app.reason}` : ''}. You can update it and apply again.`
+                  : 'Approved. Switch to your professional workspace to post.'}
+          </T>
+          <Button title={app.status === 'pending' ? 'View application' : 'Update application'} size="md" variant="secondary" onPress={() => router.push('/apply' as never)} />
+        </Card>
+      ) : (
+        <Card style={{ gap: 10 }}>
+          <T v="title">Are you an artist, venue or organizer?</T>
+          <T v="small">Apply for a professional account. Our team reviews every application, and your member account keeps working meanwhile.</T>
+          <Button title="Apply as a professional" size="md" icon="check-decagram" onPress={() => router.push('/apply' as never)} />
+        </Card>
+      )}
+
+      <T v="label">Where you can share photos</T>
+      <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingHorizontal: 14, paddingVertical: 4, ...shadow(1) }}>
+        {PHOTO_PLACES.map((p, i) => (
+          <View key={p.href}>
+            {i > 0 ? <Divider /> : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${p.title}. ${p.sub}`}
+              onPress={() => router.push(p.href as never)}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, opacity: pressed ? 0.7 : 1 })}
+            >
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name={p.icon} size={20} color={colors.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <T v="bodyBold">{p.title}</T>
+                <T v="small">{p.sub}</T>
+              </View>
+              <Icon name="chevron-right" size={22} color={colors.subtle} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </Screen>
+  );
+}
+
 export default function NewPost() {
   const { story } = useLocalSearchParams<{ story?: string }>();
   const isStory = story === '1';
+  const user = useApp((s) => s.user);
+  if (!canPostToFeed(user)) return <PostingNotAllowed isStory={isStory} />;
+  return <Composer isStory={isStory} roleLabel={ROLE_LABEL[user.role]} />;
+}
+
+/** The full composer for approved professionals in their professional workspace. */
+function Composer({ isStory, roleLabel }: { isStory: boolean; roleLabel: string }) {
   const addPost = useApp((s) => s.addPost);
   const [picked, setPicked] = useState<ImgKey[]>(['feed_friends']);
   const [uploads, setUploads] = useState<ImgKey[]>([]);
@@ -75,7 +188,7 @@ export default function NewPost() {
   return (
     <Screen
       keyboard
-      header={<ScreenHeader title={isStory ? 'New story' : 'New post'} close onBack={() => goBack('/(tabs)')} />}
+      header={<ScreenHeader title={isStory ? 'New story' : 'New post'} subtitle={`Posting as ${roleLabel}`} close onBack={() => goBack('/(tabs)')} />}
       footer={
         <BottomBar>
           <Button title={isStory ? 'Share story' : 'Publish'} onPress={publish} disabled={!picked.length} />

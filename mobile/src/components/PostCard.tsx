@@ -68,6 +68,8 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const liked = useApp((s) => !!s.likes[post.id]);
   const saved = useApp((s) => !!s.saves[post.id]);
   const extra = useApp((s) => s.extraComments[post.id]);
+  const removedContent = useApp((s) => s.removedContent);
+  const blocked = useApp((s) => s.blocked);
   const toggleLike = useApp((s) => s.toggleLike);
   const toggleSave = useApp((s) => s.toggleSave);
   const followingAuthor = useApp((s) => !!s.following[post.authorId]);
@@ -87,7 +89,8 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const author = authorFor(post.authorId, user, venueListing);
   if (!author) return null;
   const mediaH = Math.round(width * 1.12);
-  const commentCount = post.comments.length + (extra?.length ?? 0);
+  // Same comments the post screen shows: removed ones and blocked authors are left out.
+  const commentCount = [...post.comments, ...(extra ?? [])].filter((c) => !removedContent.includes(c.id) && !blocked.includes(c.authorId)).length;
   const bookable = author.kind === 'dj' || author.kind === 'musician' || author.kind === 'band';
   const authorHref = author.id === 'me' ? '/profile/me' : bookable ? `/artist/${author.id}` : author.kind === 'venue' ? `/venue/${author.id}` : `/profile/${author.id}`;
 

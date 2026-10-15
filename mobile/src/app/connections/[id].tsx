@@ -4,11 +4,13 @@ import { Pressable, Share, View } from 'react-native';
 
 import { FollowButton, PersonRow } from '../../components/cards';
 import { Screen, ScreenHeader, goBack } from '../../components/layout';
-import { Avatar, Card, Divider, EmptyState, Field, Pill, Row, Segmented, T } from '../../components/ui';
+import { Avatar, Card, Divider, EmptyState, Field, Icon, Pill, Row, Segmented, T } from '../../components/ui';
 import type { ImgKey } from '../../data/images';
 import { followersOf, followingOf, profileById, venueById } from '../../data/mock';
-import { compact } from '../../lib/format';
+import { compact, plural } from '../../lib/format';
+import { useFriendProfiles, useFriendRequests } from '../../store/social';
 import { useApp } from '../../store/useApp';
+import { colors, radius, shadow } from '../../theme';
 
 type Tab = 'followers' | 'following';
 
@@ -69,6 +71,8 @@ export default function Connections() {
   const [q, setQ] = useState('');
   // Keep people you unfollow from this screen in the list until you leave, so the row does not jump away.
   const [seenFollowing] = useState(() => Object.keys(useApp.getState().following));
+  const myFriends = useFriendProfiles();
+  const { incoming } = useFriendRequests();
 
   const profile = isMe ? undefined : profileById(id);
   const venue = isMe || profile ? undefined : venueById(id);
@@ -131,6 +135,25 @@ export default function Connections() {
 
   return (
     <Screen header={<ScreenHeader title={name} subtitle={subtitle} />} keyboard>
+      {isMe ? (
+        // Friends (F10) are separate from followers: a mutual connection that can be messaged and invited.
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Friends, ${plural(myFriends.length, 'friend')}${incoming.length ? `, ${plural(incoming.length, 'new request')}` : ''}`}
+          onPress={() => router.push(incoming.length ? '/friends?tab=requests' : '/friends')}
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingHorizontal: 14, borderRadius: radius.lg, backgroundColor: colors.surface, opacity: pressed ? 0.8 : 1, ...shadow(1) })}
+        >
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="account-multiple-outline" size={20} color={colors.brand} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <T v="bodyBold">Friends</T>
+            <T v="small">{plural(myFriends.length, 'friend')}{incoming.length ? ` · ${plural(incoming.length, 'new request')}` : ''}</T>
+          </View>
+          {incoming.length ? <Pill label={String(incoming.length)} tone="warning" /> : null}
+          <Icon name="chevron-right" size={22} color={colors.subtle} />
+        </Pressable>
+      ) : null}
       <Segmented
         options={[
           { key: 'followers', label: `${compact(followerTotal)} Followers` },

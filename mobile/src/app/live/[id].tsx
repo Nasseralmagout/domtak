@@ -68,6 +68,7 @@ function FloatingHeart({ heart, onDone }: { heart: FloatHeart; onDone: (seed: nu
 
 function LiveViewer({ story, author }: { story: Story; author: Profile }) {
   const user = useApp((s) => s.user);
+  const blocked = useApp((s) => s.blocked);
   const following = useApp((s) => !!s.following[author.id]);
   const toggleFollow = useApp((s) => s.toggleFollow);
 
@@ -211,7 +212,8 @@ function LiveViewer({ story, author }: { story: Story; author: Profile }) {
                 contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end', gap: 8, paddingTop: 8 }}
                 accessibilityLabel="Live chat"
               >
-                {chat.map((line) => (
+                {/* Lines from accounts you blocked are hidden. */}
+                {chat.filter((line) => !line.authorId || !blocked.includes(line.authorId)).map((line) => (
                   <Row key={line.id} align="flex-start" gap={8}>
                     <Pressable accessibilityRole="button" accessibilityLabel={line.mine ? 'Open your profile' : `Open ${line.name}’s profile`} onPress={() => openProfile(line.authorId)} hitSlop={8}>
                       <Avatar src={line.avatar} size={30} label={line.name} />

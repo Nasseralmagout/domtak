@@ -1,23 +1,60 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BackOverlay, EventRow, HeartToggle, VenueFacts } from '../../components/cards';
+import { BackOverlay, EventRow, HeartToggle, gardenShort } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
-import { Avatar, Button, Icon, Photo, RatingBadge, Row, SectionTitle, Stars, T } from '../../components/ui';
-import { followersOf, profileById, reviewsFor } from '../../data/mock';
-import { compact, euro, parse, shortDate, TODAY } from '../../lib/format';
-import { OWN_VENUE_ID, useAllEvents, useApp, useRating, useVenue } from '../../store/useApp';
+import { Avatar, Banner, Button, Card, Chip, Divider, Icon, type IconName, InfoRow, LineItems, Photo, RatingBadge, Row, SectionTitle, Stars, Stepper, T } from '../../components/ui';
+import { followersOf, PARKING_KIND_LABEL, profileById, reviewsFor, venueGarden, venueParking } from '../../data/mock';
+import { compact, euro, parse, plural, shortDate, TODAY } from '../../lib/format';
+import { cateringCost, guardsFor, securityCost, securityRequired, toLineItems, venueEstimate } from '../../lib/pricing';
+import { useServices } from '../../store/services';
+import { toast } from '../../store/toast';
+import { activeWorkspace, OWN_VENUE_ID, useAllEvents, useApp, useRating, useVenue } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
+
+/** One clearly separated block on the venue page. */
+function Section({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
+  return (
+    <View style={{ gap: 10 }}>
+      <Row gap={8}>
+        <Icon name={icon} size={20} color={colors.brandDeep} />
+        <T v="h3" color={colors.brandDeep} accessibilityRole="header">{title}</T>
+      </Row>
+      {children}
+    </View>
+  );
+}
+
+/** One cell of the key-facts block. */
+function Fact({ icon, value, label, onPress, a11y }: { icon: IconName; value: string; label: string; onPress?: () => void; a11y: string }) {
+  const body = (
+    <>
+      <Icon name={icon} size={20} color={colors.brand} />
+      <T v="h3" numberOfLines={1}>{value}</T>
+      <T v="small" numberOfLines={1}>{label}</T>
+    </>
+  );
+  const style = { width: '50%' as const, padding: 12, gap: 2, minHeight: 88 };
+  return onPress ? (
+    <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} style={({ pressed }) => [style, { opacity: pressed ? 0.6 : 1 }]}>
+      {body}
+    </Pressable>
+  ) : (
+    <View accessible accessibilityLabel={a11y} style={style}>
+      {body}
+    </View>
+  );
+}
 
 export default function VenueDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
-  // Includes the owner's saved listing edits (Pro → Venue listing) for their own venue.
+  // Includes the owner's published listing (Pro → Venue listing) for their own venue.
   const venue = useVenue(id);
-  // Same review average as the venue cards and /ratings.
+  // Same review average as the venue cards and /ratings. Venues keep star ratings.
   const { rating, count: reviewCount } = useRating(id ?? '');
   const wished = useApp((s) => (id ? s.wishlist.venues.includes(id) : false));
   const following = useApp((s) => (id ? !!s.following[id] : false));
@@ -28,8 +65,12 @@ export default function VenueDetail() {
   const bookings = useApp((s) => s.bookings);
   const myReviews = useApp((s) => s.reviews);
   const user = useApp((s) => s.user);
+  const venueDraft = useServices((s) => s.venueDraft);
   const events = useAllEvents();
   const [slide, setSlide] = useState(0);
+  const [guestsPicked, setGuests] = useState<number>();
+  const [withCatering, setWithCatering] = useState(true);
+  const [withSecurity, setWithSecurity] = useState(false);
 
   if (!venue) {
     return (
@@ -47,12 +88,35 @@ export default function VenueDetail() {
   const fans = followersOf(venue.id).filter((p) => !blocked.includes(p.id)).slice(0, 5);
   const half = Math.ceil(venue.occasions.length / 2);
   const followerCount = venue.followers + (following ? 1 : 0);
-  // The venue owner previewing their own public page edits it instead of following, messaging or booking themselves.
-  const isOwner = user.role === 'venue' && venue.id === OWN_VENUE_ID;
+  // The approved venue owner previewing their own public page edits it instead of following, messaging or booking themselves.
+  const isOwner = activeWorkspace(user) === 'venue' && venue.id === OWN_VENUE_ID;
+  const quote = venue.pricing === 'quote';
+
+  const parking = venueParking(venue);
+  const garden = venueGarden(venue);
+  const catering = venue.catering?.available ? venue.catering : undefined;
+  const security = venue.security?.available ? venue.security : undefined;
+  const facilities = venue.facilities ?? [];
+  const requirements = venue.requirements ?? [];
+  const extraCharges = venue.extraCharges ?? [];
+
+  // Live estimate: catering and security depend on how many guests come.
+  const guests = Math.min(venue.capacity, guestsPicked ?? Math.min(120, venue.capacity));
+  const mustHaveSecurity = securityRequired(venue, guests);
+  const includeSecurity = !!security && (withSecurity || mustHaveSecurity);
+  const includeCatering = !!catering && withCatering;
+  const guards = security ? guardsFor(guests, security.guestsPerGuard) : 0;
+  const estimate = venueEstimate(venue, { guests, catering: includeCatering, security: includeSecurity });
+  const quickLine = [
+    catering ? `catering ${euro(cateringCost(venue, guests))}` : '',
+    security ? `security ${euro(securityCost(venue, guests))} (${plural(guards, 'guard')})` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   // Reviews: your own (from completed bookings) first, then guests, newest first.
   const mine = bookings
-    .filter((b) => b.targetId === venue.id && myReviews[b.id])
+    .filter((b) => b.targetId === venue.id && myReviews[b.id] && myReviews[b.id].rating > 0)
     .map((b) => {
       const r = myReviews[b.id];
       const tags = r.tags ?? [];
@@ -67,11 +131,19 @@ export default function VenueDetail() {
   const reviewsLabel = `${reviewCount} review${reviewCount === 1 ? '' : 's'}`;
   const ratingText = rating.toFixed(1).replace('.', ',');
   const openRatings = () => router.push(`/ratings/${venue.id}`);
+  const book = () => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id, guests: String(guests) } });
+
+  const parkingValue = parking.available
+    ? [parking.spaces ? plural(parking.spaces, 'space') : '', parking.notes ?? ''].filter(Boolean).join(' · ') || 'Ask the venue for details'
+    : parking.notes || 'Plan another way to arrive';
+  const gardenValue = garden.available
+    ? [garden.capacity ? `Up to ${garden.capacity} guests` : '', garden.covered ? 'Covered' : 'Open air, not covered', garden.notes ?? ''].filter(Boolean).join(' · ')
+    : garden.notes || 'All space is indoors';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        <View style={{ height: 340 }}>
+        <View style={{ height: 320 }}>
           <FlatList
             data={gallery}
             horizontal
@@ -79,7 +151,7 @@ export default function VenueDetail() {
             showsHorizontalScrollIndicator={false}
             keyExtractor={(g, i) => `${g}-${i}`}
             onMomentumScrollEnd={(e) => setSlide(Math.round(e.nativeEvent.contentOffset.x / width))}
-            renderItem={({ item }) => <Photo src={item} style={{ width, height: 340 }} />}
+            renderItem={({ item }) => <Photo src={item} style={{ width, height: 320 }} />}
           />
           <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.35)', 'transparent', 'rgba(20,10,40,0.9)']} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
           <SafeAreaView edges={['top']} style={{ position: 'absolute', left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 4 }}>
@@ -89,30 +161,53 @@ export default function VenueDetail() {
           <Row style={{ position: 'absolute', left: 20, right: 16, bottom: 18 }} justify="space-between" align="flex-end">
             <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={{ color: colors.white, fontFamily: fonts.display, fontSize: 30 }}>{venue.name}</Text>
-              <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }}>{venue.city}, {venue.postcode}</Text>
+              <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 14 }}>{venue.type} · {venue.area}, {venue.city} {venue.postcode}</Text>
             </View>
-            <Row gap={8}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Rated ${ratingText} out of 5${reviewCount ? ` from ${reviewsLabel}` : ''}. See reviews`} onPress={openRatings} hitSlop={8}>
-                <RatingBadge value={rating} />
-              </Pressable>
-              {isOwner ? null : (
-                <Button
-                  title={following ? 'Following' : 'Follow'}
-                  accessibilityLabel={following ? `Unfollow ${venue.name}` : `Follow ${venue.name}`}
-                  icon={following ? 'check' : 'plus'}
-                  size="sm"
-                  hitSlop={4}
-                  onPress={() => toggleFollow(venue.id)}
-                />
-              )}
-            </Row>
+            {isOwner ? null : (
+              <Button
+                title={following ? 'Following' : 'Follow'}
+                accessibilityLabel={following ? `Unfollow ${venue.name}` : `Follow ${venue.name}`}
+                icon={following ? 'check' : 'plus'}
+                size="sm"
+                hitSlop={4}
+                onPress={() => toggleFollow(venue.id)}
+              />
+            )}
           </Row>
           <Row gap={5} style={{ position: 'absolute', top: 70, alignSelf: 'center' }}>
             {gallery.map((g, i) => <View key={`${g}-${i}`} style={{ width: i === slide ? 18 : 6, height: 6, borderRadius: 3, backgroundColor: i === slide ? colors.white : 'rgba(255,255,255,0.5)' }} />)}
           </Row>
         </View>
 
-        <View style={{ padding: 16, gap: 18 }}>
+        <View style={{ padding: 16, gap: 22 }}>
+          {isOwner && venueDraft ? (
+            <Banner icon="file-document-edit-outline" tone="warning">
+              <View style={{ gap: 6 }}>
+                <T v="small" color={colors.warning}>You have unpublished changes in a draft. Guests see this published version until you publish.</T>
+                <Button title="Open draft" size="sm" variant="secondary" hitSlop={4} style={{ alignSelf: 'flex-start' }} onPress={() => router.navigate('/pro/venue-listing')} />
+              </View>
+            </Banner>
+          ) : null}
+
+          {/* Key facts at a glance */}
+          <Card padded={false} style={{ flexDirection: 'row', flexWrap: 'wrap', paddingVertical: 4 }}>
+            <Fact icon="account-group-outline" value={String(venue.capacity)} label="guests at most" a11y={`Capacity: up to ${venue.capacity} guests`} />
+            <Fact icon="door" value={`${venue.rooms} · ${venue.stages}`} label={`${venue.rooms === 1 ? 'room' : 'rooms'} · ${venue.stages === 1 ? 'stage' : 'stages'}`} a11y={`${plural(venue.rooms, 'room')} and ${plural(venue.stages, 'stage')}`} />
+            <Fact
+              icon="cash-multiple"
+              value={quote ? 'Quote' : euro(venue.pricePerNight)}
+              label={quote ? 'Request a quote' : 'per night'}
+              a11y={quote ? 'Price on request. Request a quote.' : `${euro(venue.pricePerNight)} per night`}
+            />
+            <Fact
+              icon="star"
+              value={reviewCount ? ratingText : 'New'}
+              label={reviewCount ? reviewsLabel : 'No reviews yet'}
+              a11y={reviewCount ? `Rated ${ratingText} out of 5 from ${reviewsLabel}. See reviews` : 'No reviews yet. See reviews'}
+              onPress={openRatings}
+            />
+          </Card>
+
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${compact(followerCount)} followers. Show followers`}
@@ -123,18 +218,133 @@ export default function VenueDetail() {
             <T v="bodyBold" color={colors.brandDeep}>{compact(followerCount)} <T v="body" color={colors.brandDeep}>Followers</T></T>
             <Icon name="chevron-right" size={20} color={colors.brandDeep} />
           </Pressable>
-          <Row gap={8}>
-            <Icon name="rotate-3d-variant" size={22} color={colors.ink} />
-            <T v="h3">Overview 360°</T>
-          </Row>
-          <Row gap={8} style={{ flexWrap: 'wrap' }}>
-            <View style={pill}><Text style={pillText}>{euro(venue.pricePerNight)}/Night</Text></View>
-            <View style={pill}><Text style={pillText}>{venue.equipment}</Text></View>
-          </Row>
-          <VenueFacts venue={venue} />
 
-          <View style={{ gap: 10 }}>
-            <T v="h3" color={colors.brandDeep}>Occasions</T>
+          <Section icon="text-box-outline" title="About">
+            <T v="body" color={colors.inkSoft}>{venue.description}</T>
+          </Section>
+
+          {/* Parking and garden are two separate items. */}
+          <Section icon="parking" title="Parking">
+            <Card>
+              <InfoRow
+                icon="parking"
+                label={parking.available ? (parking.kind ? PARKING_KIND_LABEL[parking.kind] : 'Parking available') : 'No parking on site'}
+                value={parkingValue}
+                available={parking.available}
+              />
+            </Card>
+          </Section>
+
+          <Section icon="tree-outline" title="Garden and outdoor space">
+            <Card>
+              <InfoRow icon="tree-outline" label={garden.available ? gardenShort(venue) : 'No garden or outdoor space'} value={gardenValue} available={garden.available} />
+            </Card>
+          </Section>
+
+          <Section icon="speaker" title="Facilities and equipment">
+            <Card style={{ gap: 10 }}>
+              <InfoRow icon="speaker" label={venue.equipment} value="Equipment included with the venue" />
+              {facilities.length ? (
+                <Row gap={8} style={{ flexWrap: 'wrap' }}>
+                  {facilities.map((f) => (
+                    <Row key={f} gap={4} style={{ paddingHorizontal: 10, height: 30, borderRadius: 15, backgroundColor: colors.brandTint }}>
+                      <Icon name="check" size={14} color={colors.brand} />
+                      <T v="smallBold" color={colors.inkSoft}>{f}</T>
+                    </Row>
+                  ))}
+                </Row>
+              ) : (
+                <T v="small">No other facilities listed yet.</T>
+              )}
+            </Card>
+          </Section>
+
+          <Section icon="clipboard-check-outline" title="Requirements">
+            <Card style={{ gap: 8 }}>
+              {requirements.length ? (
+                requirements.map((r) => (
+                  <Row key={r} gap={10} align="flex-start">
+                    <Icon name="alert-circle-outline" size={18} color={colors.warningStrong} />
+                    <T v="body" style={{ flex: 1 }}>{r}</T>
+                  </Row>
+                ))
+              ) : (
+                <T v="small">The venue has not listed any special requirements.</T>
+              )}
+            </Card>
+          </Section>
+
+          <Section icon="silverware-fork-knife" title="Catering and security">
+            <Card style={{ gap: 12 }}>
+              <InfoRow
+                icon="silverware-fork-knife"
+                label={catering ? `Catering · ${euro(catering.pricePerGuest)} per guest` : 'No catering through the venue'}
+                value={catering ? [catering.minGuests ? `Minimum ${catering.minGuests} guests` : '', catering.notes ?? ''].filter(Boolean).join(' · ') || 'Priced per guest' : 'Bring your own caterer or ask the venue.'}
+                available={!!catering}
+              />
+              <InfoRow
+                icon="shield-account-outline"
+                label={security ? `Security · ${euro(security.pricePerGuard)} per guard` : 'No security through the venue'}
+                value={
+                  security
+                    ? [`1 guard per ${security.guestsPerGuard} guests`, security.requiredFrom != null ? `required from ${security.requiredFrom} guests` : 'optional', security.notes ?? ''].filter(Boolean).join(' · ')
+                    : 'Arrange your own door staff if you need them.'
+                }
+                available={!!security}
+              />
+              {catering || security ? (
+                <>
+                  <Divider />
+                  <Row justify="space-between" gap={12}>
+                    <View style={{ flex: 1 }}>
+                      <T v="bodyBold">Guests</T>
+                      <T v="small">Up to {venue.capacity}</T>
+                    </View>
+                    <Stepper value={guests} onChange={setGuests} min={10} max={venue.capacity} step={10} label="guests" />
+                  </Row>
+                  <T v="bodyBold" accessibilityLiveRegion="polite">For {guests} guests: {quickLine}</T>
+                  <Row gap={8} style={{ flexWrap: 'wrap' }}>
+                    {catering ? <Chip label="Include catering" icon={includeCatering ? 'check' : 'plus'} selected={includeCatering} onPress={() => setWithCatering(!withCatering)} /> : null}
+                    {security ? (
+                      <Chip
+                        label={mustHaveSecurity ? 'Security required' : 'Include security'}
+                        icon={includeSecurity ? 'check' : 'plus'}
+                        selected={includeSecurity}
+                        accessibilityLabel={mustHaveSecurity ? `Security is required from ${security.requiredFrom} guests` : undefined}
+                        onPress={() => (mustHaveSecurity ? toast(`${venue.name} requires security from ${security.requiredFrom} guests`) : setWithSecurity(!withSecurity))}
+                      />
+                    ) : null}
+                  </Row>
+                  {estimate.items.length ? (
+                    <LineItems items={toLineItems(estimate.items)} total={estimate.total} totalLabel={quote ? 'Estimate without venue hire' : 'Estimated total'} />
+                  ) : (
+                    <T v="small">Pick catering or security to see an estimate.</T>
+                  )}
+                  <T v="small">
+                    {quote
+                      ? 'Venue hire is priced on request. The venue sends an itemised quote and you decide whether to accept it.'
+                      : 'Estimate before the service fee. The venue confirms the final price when it accepts your request.'}
+                  </T>
+                </>
+              ) : null}
+            </Card>
+          </Section>
+
+          {extraCharges.length ? (
+            <Section icon="receipt-text-outline" title="Other charges">
+              <Card style={{ gap: 6 }}>
+                {extraCharges.map((x) => (
+                  <Row key={x.label} justify="space-between" accessibilityLabel={`${x.label}: ${euro(x.amount)}`}>
+                    <T v="body">{x.label}</T>
+                    <T v="bodyBold">{euro(x.amount)}</T>
+                  </Row>
+                ))}
+                <T v="small">Listed separately from the venue hire. Your request shows which ones apply.</T>
+              </Card>
+            </Section>
+          ) : null}
+
+          <Section icon="party-popper" title="Occasions">
             <Row align="flex-start" gap={12}>
               {[venue.occasions.slice(0, half), venue.occasions.slice(half)].map((col, ci) => (
                 <View key={ci} style={{ flex: 1, gap: 8 }}>
@@ -142,15 +352,12 @@ export default function VenueDetail() {
                 </View>
               ))}
             </Row>
-          </View>
-          <View style={{ gap: 6 }}>
-            <T v="h3" color={colors.brandDeep}>Description</T>
-            <T v="body" color={colors.inkSoft}>{venue.description}</T>
-          </View>
-          <Row gap={10} style={{ backgroundColor: colors.brandTint, padding: 14, borderRadius: 16 }}>
-            <Icon name="shield-check-outline" size={22} color={colors.brand} />
-            <T v="small" color="#2E1D5E" style={{ flex: 1 }}>Booking guarantee: your payment stays in escrow until the venue confirms your date.</T>
-          </Row>
+          </Section>
+
+          <Banner icon="shield-check-outline">
+            Requests reach the venue with payment pending their decision. If the venue declines or doesn’t answer within 24 hours, the payment is released or refunded. A date that looks free still needs the venue’s acceptance.
+          </Banner>
+
           {upcoming.length ? (
             <View style={{ gap: 10 }}>
               <SectionTitle title="Upcoming here" />
@@ -162,11 +369,9 @@ export default function VenueDetail() {
             <Row justify="space-between">
               <T v="h3" color={colors.brandDeep}>Reviews</T>
               {reviewCount ? (
-                <Row gap={6}>
-                  <Stars value={rating} size={14} />
-                  <T v="bodyBold">{ratingText}</T>
-                  <T v="small">({reviewCount})</T>
-                </Row>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Rated ${ratingText} out of 5 from ${reviewsLabel}. See reviews`} onPress={openRatings} hitSlop={8}>
+                  <RatingBadge value={rating} />
+                </Pressable>
               ) : null}
             </Row>
             {allReviews.slice(0, 2).map((r) => {
@@ -202,15 +407,15 @@ export default function VenueDetail() {
             <Button title="Edit listing" icon="storefront-edit-outline" onPress={() => router.navigate('/pro/venue-listing')} />
           </View>
         ) : (
-          <Row gap={12}>
-            <Button title="Message" variant="secondary" style={{ flex: 1 }} onPress={() => router.push(`/chat/${ensureConversation(venue.id)}`)} />
-            <Button title="Book" style={{ flex: 1.4 }} onPress={() => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id } })} />
-          </Row>
+          <View style={{ gap: 8 }}>
+            <T v="small" center>{quote ? 'Price on request · the venue replies with an itemised quote' : `${euro(venue.pricePerNight)} per night${catering || security ? ' · catering and security depend on guest count' : ''}`}</T>
+            <Row gap={12}>
+              <Button title="Message" variant="secondary" icon="message-text-outline" style={{ flex: 1 }} onPress={() => router.push(`/chat/${ensureConversation(venue.id)}`)} />
+              <Button title={quote ? 'Request quote' : 'Book'} accessibilityLabel={quote ? `Request a quote from ${venue.name}` : `Book ${venue.name}`} style={{ flex: 1.4 }} onPress={book} />
+            </Row>
+          </View>
         )}
       </BottomBar>
     </View>
   );
 }
-
-const pill = { backgroundColor: colors.brandDark, borderRadius: 16, paddingHorizontal: 16, height: 36, justifyContent: 'center' as const };
-const pillText = { color: colors.white, fontFamily: fonts.bodyBold, fontSize: 15 };

@@ -1,12 +1,16 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
+import { ReasonSheet } from '../../components/ActionSheet';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
-import { authorFor } from '../../components/PostCard';
+import { authorFor, CommentPhotos, ComposerPhotos, MAX_COMMENT_PHOTOS, PhotoPickerSheet, REPORT_REASONS, togglePhotoPick } from '../../components/PostCard';
 import { Avatar, Button, EmptyState, Icon, IconButton, Photo, Pill, Row, T } from '../../components/ui';
+import type { ImgKey } from '../../data/images';
 import { eventDiscussion, profileById, venueById } from '../../data/mock';
+import type { Comment } from '../../data/types';
 import { eventWhen } from '../../lib/format';
+import { toast } from '../../store/toast';
 import { overlayVenue, useApp, useEvent, type VenueListing } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
@@ -42,10 +46,24 @@ export default function EventComments() {
   // Hearts are saved with the rest of your activity, so they survive leaving the screen and restarts.
   const likedComments = useApp((s) => s.likedComments);
   const toggleCommentLike = useApp((s) => s.toggleCommentLike);
+  const blocked = useApp((s) => s.blocked);
+  const removed = useApp((s) => s.removedContent);
+  const reports = useApp((s) => s.reports);
+  const reportContent = useApp((s) => s.reportContent);
   const [text, setText] = useState('');
+  const [photos, setPhotos] = useState<ImgKey[]>([]);
+  const [picker, setPicker] = useState(false);
+  const [reportId, setReportId] = useState<string>();
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<ScrollView>(null);
   const justSent = useRef(false);
+
+  // Removed comments and blocked authors are hidden; comments you reported (still open) show "Reported".
+  const comments = useMemo<Comment[]>(
+    () => (event ? [...(eventDiscussion[event.id] ?? []), ...(extra ?? [])].filter((c) => !removed.includes(c.id) && !blocked.includes(c.authorId)) : []),
+    [event, extra, removed, blocked],
+  );
+  const reported = useMemo(() => new Set(reports.filter((r) => r.byMe && r.status === 'open').map((r) => r.targetId)), [reports]);
 
   if (!event) {
     return (
@@ -61,16 +79,21 @@ export default function EventComments() {
     );
   }
 
-  const comments = [...(eventDiscussion[event.id] ?? []), ...(extra ?? [])];
   const count = comments.length;
   const myTicket = tickets.find((t) => t.eventId === event.id && t.status === 'valid');
+  const canSend = !!text.trim() || photos.length > 0;
 
   const send = () => {
-    const t = text.trim();
-    if (!t) return;
+    if (!canSend) return;
     justSent.current = true;
-    addComment(`event:${event.id}`, t);
+    addComment(`event:${event.id}`, text.trim(), photos.length ? photos : undefined);
     setText('');
+    setPhotos([]);
+  };
+
+  const togglePhoto = (k: ImgKey) => {
+    const next = togglePhotoPick(photos, k);
+    if (next) setPhotos(next);
   };
 
   const reply = (name: string, authorId: string) => {
@@ -92,8 +115,16 @@ export default function EventComments() {
       header={<ScreenHeader title={event.title} subtitle={`${count} ${count === 1 ? 'comment' : 'comments'} · Discussion`} onBack={() => goBack(`/event/${event.id}`)} />}
       footer={
         <BottomBar style={{ paddingTop: 8 }}>
-          <Row gap={10}>
-            <Avatar src={user.avatar} size={36} label={user.name} />
+          <ComposerPhotos photos={photos} onRemove={(k) => setPhotos(photos.filter((x) => x !== k))} />
+          <Row gap={8}>
+            <IconButton
+              name="image-plus"
+              label={photos.length ? `Add photo, ${photos.length} of ${MAX_COMMENT_PHOTOS} attached` : 'Add photo to your comment'}
+              color={colors.brand}
+              bg={photos.length ? colors.brandSoft : 'transparent'}
+              size={44}
+              onPress={() => setPicker(true)}
+            />
             <View style={{ flex: 1, minHeight: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surface, justifyContent: 'center', paddingHorizontal: 14 }}>
               <TextInput
                 ref={inputRef}
@@ -101,14 +132,15 @@ export default function EventComments() {
                 onChangeText={setText}
                 onSubmitEditing={send}
                 returnKeyType="send"
-                placeholder="Ask a question or say hi…"
+                placeholder={photos.length ? 'Say something about your photos…' : 'Ask a question or say hi…'}
                 placeholderTextColor={colors.subtle}
                 accessibilityLabel="Write a comment about this event"
                 style={{ fontFamily: fonts.body, fontSize: 16, color: colors.ink, minHeight: 46 }}
               />
             </View>
-            <IconButton name="send" label="Post comment" color={colors.brand} disabled={!text.trim()} onPress={send} />
+            <IconButton name="send" label="Post comment" color={canSend ? colors.brand : colors.disabled} disabled={!canSend} onPress={send} />
           </Row>
+          <PhotoPickerSheet visible={picker} selected={photos} onToggle={togglePhoto} onClose={() => setPicker(false)} />
         </BottomBar>
       }
     >
@@ -141,7 +173,7 @@ export default function EventComments() {
           <EmptyState
             icon="comment-text-multiple-outline"
             title="No comments yet"
-            body="Ask about set times, the dress code or who else is going. The organizer and other guests will see it."
+            body="Ask about set times, the dress code or who else is going, or share a photo. The organizer and other guests will see it."
             action="Write the first comment"
             onAction={() => inputRef.current?.focus()}
           />
@@ -173,7 +205,8 @@ export default function EventComments() {
                         <T v="smallBold">{c.authorId === 'me' ? 'You' : name}</T>
                         {isOrganizer ? <Pill label="Organizer" tone="brand" /> : isHost ? <Pill label="Venue" tone="brand" icon="map-marker-outline" /> : null}
                       </Row>
-                      <T v="body">{c.text}</T>
+                      {c.text ? <T v="body">{c.text}</T> : null}
+                      <CommentPhotos photos={c.photos} author={c.authorId === 'me' ? 'you' : name} size={84} />
                     </View>
                     <Row gap={16} style={{ paddingLeft: 4 }}>
                       <T v="small" style={{ fontSize: 12 }}>{c.time === 'now' ? 'Just now' : c.time}</T>
@@ -182,6 +215,15 @@ export default function EventComments() {
                         <Pressable accessibilityRole="button" accessibilityLabel={`Reply to ${name}`} onPress={() => reply(name, c.authorId)} hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}>
                           <T v="smallBold" style={{ fontSize: 12 }} color={colors.brand}>Reply</T>
                         </Pressable>
+                      ) : null}
+                      {c.authorId !== 'me' ? (
+                        reported.has(c.id) ? (
+                          <T v="small" style={{ fontSize: 12 }} color={colors.subtle}>Reported</T>
+                        ) : (
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Report comment by ${name}`} onPress={() => setReportId(c.id)} hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}>
+                            <T v="smallBold" style={{ fontSize: 12 }} color={colors.muted}>Report</T>
+                          </Pressable>
+                        )
                       ) : null}
                     </Row>
                   </View>
@@ -202,6 +244,21 @@ export default function EventComments() {
           </View>
         )}
       </ScrollView>
+      <ReasonSheet
+        visible={!!reportId}
+        title="Report comment"
+        body="Tell us what is wrong with this comment. The author is not told who reported it."
+        reasons={REPORT_REASONS}
+        confirmLabel="Send report"
+        destructive
+        notePlaceholder="Add details (optional)"
+        onSubmit={(reason, note) => {
+          if (!reportId) return;
+          reportContent('comment', reportId, reason, note || undefined);
+          toast('Thanks. Our team will review this comment.');
+        }}
+        onClose={() => setReportId(undefined)}
+      />
     </Screen>
   );
 }

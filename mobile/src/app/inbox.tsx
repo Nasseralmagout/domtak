@@ -7,9 +7,10 @@ import { Avatar, EmptyState, Field, Icon, Pill, Row, Segmented, T } from '../com
 import type { ImgKey } from '../data/images';
 import { profileById, profiles, venueById } from '../data/mock';
 import type { BookingStatus, Conversation } from '../data/types';
-import { STATUS_LABEL, STATUS_TONE } from '../lib/booking';
-import { shortDate } from '../lib/format';
-import { overlayVenue, useApp, type VenueListing } from '../store/useApp';
+import { bookingLabel, bookingTone, timeLeft } from '../lib/booking';
+import { plural, shortDate } from '../lib/format';
+import { useFriendProfiles, useFriendRequests } from '../store/social';
+import { canAcceptBookings, overlayVenue, useApp, type VenueListing } from '../store/useApp';
 import { colors, shadow } from '../theme';
 
 const ONLINE = ['adam', 'sameul', 'sara', 'dana', 'mo', 'soso'];
@@ -57,11 +58,15 @@ export default function Inbox() {
   const allRequests = useApp((s) => s.requests);
   const bookings = useApp((s) => s.bookings);
   const blocked = useApp((s) => s.blocked);
-  const role = useApp((s) => s.user.role);
+  const user = useApp((s) => s.user);
   const venueListing = useApp((s) => s.venueListing);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const [tab, setTab] = useState<'messages' | 'requests'>('messages');
   const [q, setQ] = useState('');
+  const friends = useFriendProfiles();
+  const { incoming: friendRequests } = useFriendRequests();
+  // Booking requests are answered in an approved musician or venue workspace; everyone else sees booking chats.
+  const providerInbox = canAcceptBookings(user);
 
   const query = q.trim().toLowerCase();
   const matches = (...texts: (string | undefined)[]) => !query || texts.some((t) => t?.toLowerCase().includes(query));
@@ -90,9 +95,36 @@ export default function Inbox() {
 
   const noResults = <EmptyState icon="magnify-close" title="No matches" body={`Nothing in your inbox matches “${q.trim()}”.`} action="Clear search" onAction={() => setQ('')} />;
 
+  const requestNames = friendRequests.map((r) => profileById(r.fromId)?.name).filter(Boolean) as string[];
+  const friendSub = friendRequests.length
+    ? requestNames.length === 1
+      ? `${requestNames[0]} wants to be friends`
+      : `${requestNames[0]} and ${plural(requestNames.length - 1, 'other')} want to be friends`
+    : `${plural(friends.length, 'friend')} · find people and manage requests`;
+
   return (
     <Screen header={<ScreenHeader title="Inbox" />} contentStyle={{ gap: 14 }}>
       <Field placeholder="Search here" accessibilityLabel="Search inbox" value={q} onChangeText={setQ} icon="magnify" returnKeyType="search" />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={friendRequests.length ? `Friend requests, ${friendRequests.length} waiting. ${friendSub}` : `Friends. ${friendSub}`}
+        onPress={() => router.push(friendRequests.length ? '/friends?tab=requests' : '/friends')}
+        style={rowStyle}
+      >
+        <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={friendRequests.length ? 'account-multiple-plus-outline' : 'account-multiple-outline'} size={26} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <T v="bodyBold">{friendRequests.length ? 'Friend requests' : 'Friends'}</T>
+          <T v="small" numberOfLines={1}>{friendSub}</T>
+        </View>
+        {friendRequests.length ? (
+          <View style={{ minWidth: 26, height: 26, borderRadius: 13, paddingHorizontal: 7, backgroundColor: colors.warningStrong, alignItems: 'center', justifyContent: 'center' }}>
+            <T v="smallBold" color={colors.white}>{friendRequests.length}</T>
+          </View>
+        ) : null}
+        <Icon name="chevron-right" size={22} color={colors.subtle} />
+      </Pressable>
       {online.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
           {online.map((p) => (
@@ -110,7 +142,7 @@ export default function Inbox() {
         dark
         options={[
           { key: 'messages', label: 'Messages' },
-          { key: 'requests', label: role === 'fan' ? `Booking chats (${bookingChatsAll.length})` : `Requests (${newRequests.length})` },
+          { key: 'requests', label: providerInbox ? `Requests (${newRequests.length})` : `Booking chats (${bookingChatsAll.length})` },
         ]}
         value={tab}
         onChange={setTab}
@@ -142,7 +174,7 @@ export default function Inbox() {
         ) : (
           <EmptyState icon="email-outline" title="No messages yet" body="Say hi to an artist, venue or friend. Your conversations show up here." action="Find people" onAction={() => router.push('/search')} />
         )
-      ) : role === 'fan' ? (
+      ) : !providerInbox ? (
         bookingChats.length ? (
           bookingChats.map((b) => {
             const p = who(b.targetId);
@@ -152,7 +184,7 @@ export default function Inbox() {
               <Pressable
                 key={b.id}
                 accessibilityRole="button"
-                accessibilityLabel={`Chat with ${p?.name} about ${b.eventTitle}, ${STATUS_LABEL[b.status]}`}
+                accessibilityLabel={`Chat with ${p?.name} about ${b.eventTitle}, ${bookingLabel(b)}`}
                 onPress={() => openChat(b.targetId)}
                 style={rowStyle}
               >
@@ -172,7 +204,7 @@ export default function Inbox() {
                   </Row>
                   <Row justify="space-between" gap={8}>
                     <T v="small" numberOfLines={1} style={{ flex: 1 }} color={conv?.unread ? colors.ink : colors.muted}>{preview}</T>
-                    <Pill label={STATUS_LABEL[b.status]} tone={STATUS_TONE[b.status]} />
+                    <Pill label={bookingLabel(b)} tone={bookingTone(b)} />
                   </Row>
                 </View>
               </Pressable>
@@ -190,16 +222,19 @@ export default function Inbox() {
           />
         )
       ) : requests.length ? (
-        requests.map((r) => (
-          <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Request from ${r.requester}: ${r.title}, ${r.date}, expires in ${r.expires}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={rowStyle}>
-            <Avatar label={r.initials} size={48} />
-            <View style={{ flex: 1 }}>
-              <T v="bodyBold">{r.requester}</T>
-              <T v="small" numberOfLines={1}>{r.title} · {r.date}</T>
-            </View>
-            <T v="smallBold" color={colors.warning}>{r.expires}</T>
-          </Pressable>
-        ))
+        requests.map((r) => {
+          const left = r.deadline ? timeLeft(r.deadline) : r.expires;
+          return (
+            <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Request from ${r.requester}: ${r.title}, ${r.date}, ${left}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={rowStyle}>
+              <Avatar label={r.initials} size={48} />
+              <View style={{ flex: 1 }}>
+                <T v="bodyBold">{r.requester}</T>
+                <T v="small" numberOfLines={1}>{r.title} · {r.date}</T>
+              </View>
+              <T v="smallBold" color={colors.warning}>{left}</T>
+            </Pressable>
+          );
+        })
       ) : query && newRequests.length ? (
         noResults
       ) : (

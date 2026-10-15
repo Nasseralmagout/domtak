@@ -2,12 +2,14 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, TextInput, View } from 'react-native';
 
-import { ActionSheet } from '../../components/ActionSheet';
+import { ActionSheet, ReasonSheet } from '../../components/ActionSheet';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
+import { FriendButton, REPORT_REASONS } from '../../components/PostCard';
 import { Avatar, Banner, Button, Chip, EmptyState, Icon, IconButton, Photo, Row, T } from '../../components/ui';
 import type { ImgKey } from '../../data/images';
 import { profileById } from '../../data/mock';
 import type { Message } from '../../data/types';
+import { canBefriend } from '../../store/social';
 import { toast } from '../../store/toast';
 import { useApp, useVenue } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
@@ -77,6 +79,7 @@ export default function Chat() {
   const ensureConversation = useApp((s) => s.ensureConversation);
   const toggleBlock = useApp((s) => s.toggleBlock);
   const toggleMessageLike = useApp((s) => s.toggleMessageLike);
+  const reportContent = useApp((s) => s.reportContent);
   // Links may carry the conversation id or the other party's id. (A string selector stays stable.)
   const convId = useApp((s) => (s.conversations.find((c) => c.id === id) ?? s.conversations.find((c) => c.withId === id))?.id);
   const conv = conversations.find((c) => c.id === convId);
@@ -117,6 +120,7 @@ export default function Chat() {
   const [tray, setTray] = useState(false);
   const [recording, setRecording] = useState<number>();
   const [menu, setMenu] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [muted, setMuted] = useState(() => mutedChats.has(convId ?? id ?? ''));
   const list = useRef<FlatList>(null);
 
@@ -134,6 +138,23 @@ export default function Chat() {
     return (
       <Screen header={<ScreenHeader title="Chat" onBack={() => goBack('/inbox')} />}>
         <EmptyState icon="message-off-outline" title="Conversation not found" body="This chat may have been deleted." action="Back to messages" onAction={() => router.replace('/inbox')} />
+      </Screen>
+    );
+  }
+  // A blocked account cannot start a new conversation (F10): unblock first.
+  if (!conv && blockedList.includes(other.id)) {
+    return (
+      <Screen header={<ScreenHeader title={other.name} subtitle={other.title} onBack={() => goBack('/inbox')} />}>
+        <EmptyState
+          icon="block-helper"
+          title={`You blocked ${other.name}`}
+          body="You can’t start a conversation with a blocked account, and they can’t message you. Unblock them to chat again."
+          action={`Unblock ${other.name}`}
+          onAction={() => {
+            toggleBlock(other.id);
+            toast(`${other.name} is unblocked`);
+          }}
+        />
       </Screen>
     );
   }
@@ -276,7 +297,10 @@ export default function Chat() {
             <Avatar src={other.avatar} size={72} verified={other.verified} />
             <T v="title">{other.name}</T>
             <T v="small">{other.meta}</T>
-            <Button title={profileAction} variant="light" size="sm" onPress={() => router.push(profileHref as never)} style={{ marginTop: 4 }} />
+            <Row gap={8} style={{ marginTop: 4 }}>
+              <Button title={profileAction} variant="light" size="sm" onPress={() => router.push(profileHref as never)} />
+              {!other.isVenue && !isBlocked && canBefriend(other.id) && person?.kind === 'fan' ? <FriendButton id={other.id} /> : null}
+            </Row>
             {conv.messages.length ? <T v="small" style={{ fontSize: 11, marginTop: 6 }}>Long-press a message to like it</T> : null}
           </View>
         }
@@ -309,9 +333,23 @@ export default function Chat() {
             },
           },
           { label: isBlocked ? `Unblock ${other.name}` : `Block ${other.name}`, icon: 'block-helper', destructive: !isBlocked, onPress: () => { toggleBlock(other.id); toast(isBlocked ? `${other.name} is unblocked` : `${other.name} is blocked`); } },
-          { label: 'Report conversation', icon: 'flag-outline', destructive: true, onPress: () => toast('Thanks, our team will review this conversation') },
+          { label: 'Report conversation', icon: 'flag-outline', destructive: true, onPress: () => setReporting(true) },
         ]}
         onClose={() => setMenu(false)}
+      />
+      <ReasonSheet
+        visible={reporting}
+        title="Report conversation"
+        body={`Tell us what is wrong in your chat with ${other.name}. Our team reviews the messages you report. ${other.name} is not told who reported it.`}
+        reasons={REPORT_REASONS}
+        confirmLabel="Send report"
+        destructive
+        notePlaceholder="Add details (optional)"
+        onSubmit={(reason, note) => {
+          reportContent('message', conv.id, reason, note || undefined);
+          toast('Thanks. Our team will review this conversation.');
+        }}
+        onClose={() => setReporting(false)}
       />
     </Screen>
   );

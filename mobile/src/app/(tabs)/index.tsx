@@ -7,12 +7,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateBadge, EventCard, MiniEventCard } from '../../components/cards';
 import { DomtakHeader } from '../../components/layout';
 import { PostCard } from '../../components/PostCard';
-import { Avatar, Icon, Photo, Pill, Row, Segmented, T } from '../../components/ui';
+import { Avatar, Chip, Icon, Photo, Pill, Row, Segmented, T } from '../../components/ui';
 import { profileById, profiles, stories } from '../../data/mock';
 import type { EventItem, Post } from '../../data/types';
-import { parse, TODAY } from '../../lib/format';
+import { compact, parse, TODAY } from '../../lib/format';
 import { isPromoted } from '../../lib/promotions';
-import { useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
+import { isDiscoverable } from '../../store/filters';
+import { memberCount, useCommunities, useFriendRequests } from '../../store/social';
+import { canPostToFeed, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
 import { colors, fonts, shadow } from '../../theme';
 
 type FeedTab = 'forYou' | 'following' | 'nearby';
@@ -21,24 +23,30 @@ type Item =
   | { kind: 'post'; post: Post }
   | { kind: 'artists' }
   | { kind: 'events' }
+  | { kind: 'communities' }
   | { kind: 'sponsored' };
 
 function StoriesRow() {
   const user = useApp((s) => s.user);
+  const blocked = useApp((s) => s.blocked);
+  // Stories are for approved professionals in their professional workspace (user note 2); members watch only.
+  const canPost = canPostToFeed(user);
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 14, paddingVertical: 12 }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Add to your story" onPress={() => router.push('/new-post?story=1')} style={{ alignItems: 'center', gap: 6, width: 72 }}>
-        <View>
-          <Avatar src={user.avatar} size={68} label={user.name} />
-          <View style={{ position: 'absolute', right: 0, bottom: 0, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand, borderWidth: 2, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="plus" size={16} color={colors.white} />
+      {canPost ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Add to your story" onPress={() => router.push('/new-post?story=1')} style={{ alignItems: 'center', gap: 6, width: 72 }}>
+          <View>
+            <Avatar src={user.avatar} size={68} label={user.name} />
+            <View style={{ position: 'absolute', right: 0, bottom: 0, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand, borderWidth: 2, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="plus" size={16} color={colors.white} />
+            </View>
           </View>
-        </View>
-        <T v="small" numberOfLines={1} color={colors.ink}>Your story</T>
-      </Pressable>
+          <T v="small" numberOfLines={1} color={colors.ink}>Your story</T>
+        </Pressable>
+      ) : null}
       {stories.map((s) => {
         const p = profileById(s.authorId);
-        if (!p) return null;
+        if (!p || blocked.includes(p.id)) return null;
         return (
           <Pressable key={s.id} accessibilityRole="button" accessibilityLabel={s.live ? `${p.name} is live now, watch stream` : `${p.name}’s story`} onPress={() => router.push(s.live ? `/live/${s.id}` : `/story/${s.id}`)} style={{ alignItems: 'center', gap: 6, width: 72 }}>
             <LinearGradient colors={s.live ? ['#F2B632', '#E5484D'] : ['#8B5CF6', '#3B1F8B']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' }}>
@@ -59,11 +67,67 @@ function StoriesRow() {
   );
 }
 
+/** Quick links into the social side: platform communities (F09) and friends (F10). */
+function SocialLinks() {
+  const { incoming } = useFriendRequests();
+  const n = incoming.length;
+  return (
+    <Row gap={8} style={{ paddingHorizontal: 12, paddingTop: 12 }}>
+      <Chip label="Communities" icon="account-group-outline" accessibilityLabel="Open music communities" onPress={() => router.push('/communities')} />
+      <Chip
+        label={n ? `Friends (${n})` : 'Friends'}
+        icon={n ? 'account-multiple-plus-outline' : 'account-multiple-outline'}
+        accessibilityLabel={n ? `Friends, ${n} new friend request${n === 1 ? '' : 's'}` : 'Open friends'}
+        onPress={() => router.push(n ? '/friends?tab=requests' : '/friends')}
+      />
+    </Row>
+  );
+}
+
+/** Platform-created music communities, the ones you joined first (F09). */
+function CommunitiesStrip() {
+  const { joined, others, joinedIds } = useCommunities();
+  const list = [...joined, ...others];
+  return (
+    <View style={{ backgroundColor: colors.surface, paddingVertical: 14, marginBottom: 10 }}>
+      <Row justify="space-between" style={{ paddingHorizontal: 14, marginBottom: 10 }}>
+        <T v="h3">Music communities</T>
+        <Pressable accessibilityRole="button" accessibilityLabel="See all communities" onPress={() => router.push('/communities')} hitSlop={12}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
+      </Row>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, gap: 12, paddingBottom: 4 }}>
+        {list.map((c) => {
+          const isIn = joinedIds.includes(c.id);
+          return (
+            <Pressable
+              key={c.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${c.name}, ${compact(memberCount(c, isIn))} members${isIn ? ', joined' : ''}`}
+              onPress={() => router.push(`/community/${c.id}`)}
+              style={{ width: 168, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.surface, ...shadow(1) }}
+            >
+              <Photo src={c.cover} style={{ height: 96 }} />
+              {isIn ? (
+                <View style={{ position: 'absolute', top: 8, left: 8 }}>
+                  <Pill label="Joined" tone="success" icon="check" />
+                </View>
+              ) : null}
+              <View style={{ padding: 10, gap: 2 }}>
+                <T v="smallBold" numberOfLines={1}>{c.name}</T>
+                <T v="small" numberOfLines={1} style={{ fontSize: 12 }}>{compact(memberCount(c, isIn))} members · {c.genres.join(', ')}</T>
+              </View>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
 function NextGigs() {
   const events = useAllEvents();
   const artists = profiles.filter((p) => ['dj', 'musician', 'band'].includes(p.kind));
-  // "Next" means not ended yet, and only events you can open (others' private events are invite-only).
-  const upcoming = events.filter((e) => (!e.isPrivate || e.organizerId === 'me') && parse(e.end) >= TODAY);
+  // "Next" means not ended yet, and only events you can open (others' private events are invite-only; drafts and cancelled events are not discoverable).
+  const upcoming = events.filter((e) => isDiscoverable(e) && parse(e.end) >= TODAY);
   const rows = artists
     .map((a) => ({ a, next: upcoming.filter((e) => e.lineup.includes(a.id)).sort((x, y) => x.start.localeCompare(y.start))[0] }))
     .filter((r) => r.next)
@@ -99,7 +163,7 @@ function useDiscoverEvents() {
   const promotions = useApp((s) => s.promotions);
   return useMemo(() => {
     const open = events
-      .filter((e) => (!e.isPrivate || e.organizerId === 'me') && parse(e.end) >= TODAY)
+      .filter((e) => isDiscoverable(e) && parse(e.end) >= TODAY)
       .sort((a, b) => a.start.localeCompare(b.start));
     const promoted = new Set(open.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
     const list: EventItem[] = [...open.filter((e) => promoted.has(e.id)), ...open.filter((e) => !promoted.has(e.id))];
@@ -167,9 +231,11 @@ export default function Home() {
       out.push({ kind: 'post', post: p });
       if (i === 0) out.push({ kind: 'artists' });
       if (i === 2) out.push({ kind: 'events' });
+      if (i === 3) out.push({ kind: 'communities' });
       if (i === 4 && tab !== 'following') out.push({ kind: 'sponsored' });
     });
     if (posts.length < 3) out.push({ kind: 'events' });
+    if (posts.length < 4) out.push({ kind: 'communities' });
     return out;
   }, [allPosts, tab, following]);
 
@@ -187,6 +253,7 @@ export default function Home() {
               <Icon name="magnify" size={22} color={colors.muted} />
               <T v="body" color={colors.subtle}>Search events, artists, venues</T>
             </Pressable>
+            <SocialLinks />
             <StoriesRow />
             <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
               <Segmented options={[{ key: 'forYou', label: 'For You' }, { key: 'following', label: 'Following' }, { key: 'nearby', label: 'Nearby' }]} value={tab} onChange={setTab} />
@@ -197,6 +264,7 @@ export default function Home() {
           if (item.kind === 'post') return <PostCard post={item.post} />;
           if (item.kind === 'artists') return <NextGigs />;
           if (item.kind === 'events') return <UpcomingEvents />;
+          if (item.kind === 'communities') return <CommunitiesStrip />;
           return <Sponsored />;
         }}
         ListEmptyComponent={<T v="body" center style={{ padding: 32 }}>Follow artists to fill your feed.</T>}

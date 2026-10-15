@@ -40,6 +40,7 @@ export default function StoryViewer() {
   const sendMessage = useApp((s) => s.sendMessage);
   const likes = useApp((s) => s.likes);
   const toggleLike = useApp((s) => s.toggleLike);
+  const blocked = useApp((s) => s.blocked);
 
   const storyIndex = pos.story;
   const frame = pos.frame;
@@ -77,6 +78,11 @@ export default function StoryViewer() {
 
   const send = () => {
     if (!reply.trim() || !author) return;
+    // A blocked account cannot be messaged (F10).
+    if (blocked.includes(author.id)) {
+      toast(`You blocked ${author.name}. Unblock them to reply.`);
+      return;
+    }
     const cid = ensureConversation(author.id);
     sendMessage(cid, { type: 'text', text: `Replied to your story: ${reply.trim()}` });
     setReply('');
