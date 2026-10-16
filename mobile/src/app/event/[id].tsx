@@ -70,8 +70,9 @@ export default function EventDetail() {
   const user = useApp((s) => s.user);
   const bookings = useApp((s) => s.bookings);
   const guestInvites = useApp((s) => s.guestInvites);
-  // Your invitation to this event, if you were invited as a guest (F20).
-  const invite = useMemo(() => (id ? guestInvites.find((g) => g.eventId === id) : undefined), [guestInvites, id]);
+  const blocked = useApp((s) => s.blocked);
+  // Your invitation to this event, if you were invited as a guest (F20). An invitation from someone you blocked stays hidden.
+  const invite = useMemo(() => (id ? guestInvites.find((g) => g.eventId === id && !blocked.includes(g.fromId)) : undefined), [guestInvites, blocked, id]);
   const linked = useMemo(() => (event ? linkedBookings(event, bookings) : []), [event, bookings]);
 
   if (!event) {
@@ -98,6 +99,17 @@ export default function EventDetail() {
     );
   }
   const state = eventState(event, bookings);
+  // A draft is visible only to its owner (blueprint section 06, event states).
+  if (state === 'draft' && !hosts) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={{ paddingHorizontal: 12, paddingTop: 4 }}>
+          <BackOverlay onPress={() => goBack('/(tabs)/events')} />
+        </View>
+        <EmptyState icon="file-document-edit-outline" title="Not published yet" body="This event is still a draft. It shows up here once the organizer publishes it." action="Browse events" onAction={() => router.replace('/(tabs)/events')} />
+      </SafeAreaView>
+    );
+  }
   const cancelled = state === 'cancelled';
   // Drafts and cancelled events take no RSVPs or ticket sales.
   const closedToGuests = cancelled || state === 'draft';
@@ -119,13 +131,12 @@ export default function EventDetail() {
   // Same rule as the calendar tab: going, holding a valid ticket, or organizing it yourself.
   const inCalendar = going || hasTicket || event.organizerId === 'me';
   const longDescription = event.description.length > 160;
-  // Line-up artists the host has not confirmed yet: never shown as confirmed while a booking is pending (F12).
-  const unconfirmed = hosts
-    ? lineup
-        .map((a) => ({ a, b: linked.find((x) => x.targetId === a.id && x.type === 'musician' && !isClosed(x.status)) }))
-        .filter(({ b }) => !b || !isConfirmed(b.status))
-        .map(({ a, b }) => `${a.name} (${b ? waitingOn(b) : 'no request sent'})`)
-    : [];
+  // Line-up artists whose booking is not confirmed: never shown as confirmed while a booking is pending (F12).
+  // Everyone sees which artists are not confirmed yet; the host also sees why (and artists with no request yet).
+  const unconfirmed = lineup
+    .map((a) => ({ a, b: linked.find((x) => x.targetId === a.id && x.type === 'musician' && !isClosed(x.status)) }))
+    .filter(({ b }) => (hosts ? !b || !isConfirmed(b.status) : !!b && !isConfirmed(b.status)))
+    .map(({ a, b }) => (hosts ? `${a.name} (${b ? waitingOn(b) : 'no request sent'})` : a.name));
   const openInvitation = () => (invite ? router.push(invite.ticketId ? `/ticket/${invite.ticketId}` : `/invitation/${invite.id}`) : undefined);
   const inviteTitle = !invite
     ? ''
@@ -201,7 +212,8 @@ export default function EventDetail() {
             <Stat icon="map-marker-outline" label="Show on map" onPress={() => router.push(`/map?focus=${event.id}`)} />
             <Stat icon="navigation-variant-outline" label="Get directions" onPress={directions} />
             <Stat icon="account-outline" value={compact(goingCount)} label={`${goingCount} going`} />
-            <Stat icon="share-variant-outline" label="Share event" onPress={share} />
+            {/* A private event has no public link: the host invites people instead (F11). */}
+            {!event.isPrivate ? <Stat icon="share-variant-outline" label="Share event" onPress={share} /> : hosts && !cancelled ? <Stat icon="account-plus-outline" label="Invite guests" onPress={() => router.push(`/invite?event=${event.id}`)} /> : null}
           </Row>
           {cancelled ? (
             <Banner icon="calendar-remove-outline" tone="danger">{`This event was cancelled${event.cancelReason ? `: ${event.cancelReason}` : ''}.${hasTicket ? ' Your ticket is no longer valid for entry; refunds follow the event’s policy.' : ''}`}</Banner>
@@ -333,7 +345,7 @@ export default function EventDetail() {
               {unconfirmed.length ? (
                 <Row gap={8} align="flex-start" style={{ marginTop: 8 }}>
                   <Icon name="timer-sand" size={16} color={colors.warning} />
-                  <T v="small" color={colors.warning} style={{ flex: 1 }}>{`Not confirmed yet: ${unconfirmed.join(', ')}. Only you see this.`}</T>
+                  <T v="small" color={colors.warning} style={{ flex: 1 }}>{`Not confirmed yet: ${unconfirmed.join(', ')}.${hosts ? ' Guests see these artists marked as not confirmed until their booking is confirmed.' : ''}`}</T>
                 </Row>
               ) : null}
             </View>

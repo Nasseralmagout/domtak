@@ -68,7 +68,7 @@ export default function ArtistsTab() {
         </Pressable>
 
         <View style={{ padding: 16, gap: 14 }}>
-          <Pressable accessibilityRole="search" accessibilityLabel="Search musicians, bands, DJs and lessons" onPress={() => router.push('/search?type=musician')} style={{ height: 48, borderRadius: 14, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, ...shadow(1) }}>
+          <Pressable accessibilityRole="search" accessibilityLabel="Search musicians, bands and DJs" onPress={() => router.push('/search?type=musician')} style={{ height: 48, borderRadius: 14, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, ...shadow(1) }}>
             <Icon name="magnify" size={22} color={colors.muted} />
             <T v="body" color={colors.subtle}>Search musicians, bands, DJs</T>
           </Pressable>

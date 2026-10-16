@@ -8,8 +8,7 @@ import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Avatar, Card, Chip, EmptyState, Field, Icon, Photo, Row, T } from '../components/ui';
 import type { Lesson } from '../data/types';
 import { plural } from '../lib/format';
-import { artistScore } from '../lib/ratings';
-import { LEARNER_FORMAT_LABEL, type LessonListing, lessonPlace, useLessonListings } from '../store/discovery';
+import { LEARNER_FORMAT_LABEL, type LessonListing, lessonPlace, useArtistScores, useLessonListings } from '../store/discovery';
 import { LESSON_FORMAT_ICON } from '../store/services';
 import { colors, fonts, radius } from '../theme';
 
@@ -99,32 +98,62 @@ function LessonResult({ item }: { item: LessonListing }) {
 export default function Lessons() {
   const params = useLocalSearchParams<{ instrument?: string; q?: string }>();
   const listings = useLessonListings();
+  const scoreOf = useArtistScores();
   const [q, setQ] = useState(params.q ?? '');
-  const [instrument, setInstrument] = useState<string | undefined>(params.instrument);
+  // ?instrument=guitar matches the offered "Guitar" (case-insensitive), so the chip shows as selected.
+  const [instrument, setInstrument] = useState<string | undefined>(() => {
+    const want = params.instrument?.trim().toLowerCase();
+    return want ? (listings.find((x) => x.lesson.instrument.toLowerCase() === want)?.lesson.instrument ?? params.instrument) : undefined;
+  });
   const [format, setFormat] = useState<FormatFilter>('any');
   const [price, setPrice] = useState<PriceFilter>('any');
   const [level, setLevel] = useState<LevelFilter>('any');
   const [sort, setSort] = useState<Sort>('price');
 
-  // Instruments that teachers actually offer, most offered first.
+  // Instruments that teachers actually offer, most offered first. An instrument picked by link that nobody
+  // offers (e.g. ?instrument=Drums) keeps its chip, so it is visible and can be turned off.
   const instruments = useMemo(() => {
     const counts = new Map<string, number>();
     listings.forEach((x) => counts.set(x.lesson.instrument, (counts.get(x.lesson.instrument) ?? 0) + 1));
-    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
-  }, [listings]);
+    const offered = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+    return instrument && !counts.has(instrument) ? [instrument, ...offered] : offered;
+  }, [listings, instrument]);
 
   const words = useMemo(() => q.trim().toLowerCase().split(/\s+/).filter(Boolean), [q]);
-  const { list, teachers, relaxed, relaxedTitle } = useMemo(() => {
-    const score = (id: string) => artistScore(id).recommendPct ?? -1;
+  const { list, teachers, relaxed, relaxedTitle, searchMiss } = useMemo(() => {
+    // Same score as the "would book again" line on each result (your own reviews and blocks included).
+    const score = (id: string) => scoreOf(id).recommendPct ?? -1;
     const byPrice = (a: LessonListing, b: LessonListing) => Number(isQuote(a.lesson)) - Number(isQuote(b.lesson)) || (a.lesson.price ?? 0) - (b.lesson.price ?? 0);
     const order = (l: LessonListing[]) => [...l].sort((a, b) => (sort === 'score' ? score(b.artist.id) - score(a.artist.id) || byPrice(a, b) : byPrice(a, b)));
-    const base = listings.filter((x) => textOk(x, words) && (!instrument || x.lesson.instrument === instrument));
-    const matched = base.filter((x) => (format === 'any' || x.lesson.format === format) && priceOk(x.lesson, price) && (level === 'any' || beginnerFriendly(x.lesson)));
-    // No match: offer the same instrument (or search) without the other filters, never an invented result.
-    const loose = matched.length ? [] : base.length ? base : instrument && words.length ? listings.filter((x) => textOk(x, words)) : [];
-    const looseTitle = base.length ? (instrument ? `${instrument} lessons without your other filters` : 'Without your other filters') : 'Other lessons for your search';
-    return { list: order(matched), teachers: new Set(matched.map((x) => x.artist.id)).size, relaxed: order(loose).slice(0, 4), relaxedTitle: looseTitle };
-  }, [listings, words, instrument, format, price, level, sort]);
+    const pick = (x: LessonListing) => (format === 'any' || x.lesson.format === format) && priceOk(x.lesson, price) && (level === 'any' || beginnerFriendly(x.lesson));
+    const searched = listings.filter((x) => textOk(x, words));
+    const base = searched.filter((x) => !instrument || x.lesson.instrument === instrument);
+    const matched = base.filter(pick);
+    // No match: drop one cause at a time and say which, never an invented result.
+    let loose: LessonListing[] = [];
+    let looseTitle = '';
+    if (!matched.length) {
+      if (base.length) {
+        loose = base;
+        looseTitle = instrument ? `${instrument} lessons without your other filters` : 'Without your other filters';
+      } else if (searched.length) {
+        loose = searched;
+        looseTitle = words.length ? 'Other instruments for your search' : 'Lessons for other instruments';
+      } else if (words.length) {
+        loose = listings.filter((x) => (!instrument || x.lesson.instrument === instrument) && pick(x));
+        const anyFilter = !!instrument || format !== 'any' || price !== 'any' || level !== 'any';
+        looseTitle = anyFilter ? 'Lessons with your filters, without the search' : 'Lessons you can browse instead';
+      }
+    }
+    return {
+      list: order(matched),
+      teachers: new Set(matched.map((x) => x.artist.id)).size,
+      relaxed: order(loose).slice(0, 4),
+      relaxedTitle: looseTitle,
+      // The search words alone find nothing, so clearing filters would not help.
+      searchMiss: words.length > 0 && !searched.length,
+    };
+  }, [listings, words, instrument, format, price, level, sort, scoreOf]);
 
   const filtered = !!instrument || format !== 'any' || price !== 'any' || level !== 'any';
   const clear = () => {
@@ -132,10 +161,6 @@ export default function Lessons() {
     setFormat('any');
     setPrice('any');
     setLevel('any');
-  };
-  const clearAll = () => {
-    clear();
-    setQ('');
   };
 
   const header = (
@@ -153,7 +178,7 @@ export default function Lessons() {
         <Field placeholder="Instrument, teacher or style" value={q} onChangeText={setQ} icon="magnify" accessibilityLabel="Search lessons" returnKeyType="search" />
       </View>
       <FilterRow title="Instrument">
-        <Chip label="All" selected={!instrument} onPress={() => setInstrument(undefined)} />
+        <Chip label="All" accessibilityLabel="All instruments" selected={!instrument} onPress={() => setInstrument(undefined)} />
         {instruments.map((i) => <Chip key={i} label={i} selected={instrument === i} onPress={() => setInstrument(instrument === i ? undefined : i)} />)}
       </FilterRow>
       <FilterRow title="Format">
@@ -168,7 +193,7 @@ export default function Lessons() {
       </FilterRow>
       <Row justify="space-between" style={{ paddingHorizontal: 16 }}>
         <Row gap={10} style={{ flexShrink: 1 }}>
-          <T v="small" accessibilityLiveRegion="polite">{list.length ? `${plural(list.length, 'lesson')} from ${plural(teachers, 'teacher')}` : 'No lessons'}</T>
+          <T v="small" accessibilityLiveRegion="polite" numberOfLines={2} style={{ flexShrink: 1 }}>{list.length ? `${plural(list.length, 'lesson')} from ${plural(teachers, 'teacher')}` : 'No lessons'}</T>
           {filtered ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Clear lesson filters" onPress={clear} hitSlop={12} style={{ minHeight: 32, justifyContent: 'center' }}>
               <T v="smallBold" color={colors.brand}>Clear filters</T>
@@ -194,9 +219,13 @@ export default function Lessons() {
       <EmptyState
         icon="school-outline"
         title="No lessons match"
-        body={filtered ? 'No lesson has everything you picked. Remove a filter to see more teachers.' : `Nothing found for “${q.trim()}”. Try an instrument such as guitar or piano.`}
-        action={filtered ? 'Clear filters' : 'Clear search'}
-        onAction={filtered ? clear : clearAll}
+        body={
+          searchMiss
+            ? `Nothing found for “${q.trim()}”. Try an instrument such as guitar or piano.`
+            : 'No lesson has everything you picked. Remove a filter to see more teachers.'
+        }
+        action={searchMiss ? 'Clear search' : 'Clear filters'}
+        onAction={searchMiss ? () => setQ('') : clear}
       />
       {relaxed.length ? (
         <View style={{ gap: 10 }}>

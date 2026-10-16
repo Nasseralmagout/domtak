@@ -7,7 +7,7 @@ import { goBack, PermissionNotice, Screen, ScreenHeader } from '../../components
 import { Button, Card, EmptyState, Icon, IconButton, Photo, Pill, Row, Segmented, T } from '../../components/ui';
 import type { EventItem, EventState } from '../../data/types';
 import { DEMO_ORGANIZERS, readinessLine } from '../../lib/eventHost';
-import { EVENT_STATE_TONE, eventState, eventStateLabel, type Readiness, readiness } from '../../lib/events';
+import { EVENT_STATE_TONE, eventState, eventStateLabel, guestSummary, type Readiness, readiness } from '../../lib/events';
 import { euro, eventWhen, isoDay, parse, shortDate, TODAY } from '../../lib/format';
 import { DAY_MS, doorsOpenAt, type PromotionState, promotionState } from '../../lib/promotions';
 import { activeWorkspace, useAllEvents, useApp, useVenue } from '../../store/useApp';
@@ -36,6 +36,10 @@ function ManageCard({ event, promo, past, state, r }: { event: EventItem; promo:
   // Boosts run until doors open, only for live public events (never drafts, cancelled or private events).
   const canPromote = !past && !event.isPrivate && state !== 'draft' && state !== 'cancelled' && doorsOpenAt(event) > TODAY;
   const until = promo.kind === 'none' ? '' : shortDate(isoDay(promo.until));
+  // Private events sell no tickets: show invitations and cost-sharing contributions instead.
+  const g = guestSummary(event);
+  const perGuest = event.costSharing?.enabled ? event.costSharing.perGuest : 0;
+  const guestPct = capacity ? Math.min(1, g.accepted / capacity) : 0;
   return (
     <Card padded={false} style={{ overflow: 'hidden' }}>
       <View style={{ height: 136 }}>
@@ -74,27 +78,39 @@ function ManageCard({ event, promo, past, state, r }: { event: EventItem; promo:
           <T v="small" color={r.ready ? colors.success : colors.inkSoft} style={{ flex: 1 }}>{readinessLine(r)}</T>
         </Row>
 
-        <View style={{ gap: 6 }} accessible accessibilityLabel={`${sold} of ${capacity} tickets sold`}>
-          <Row justify="space-between">
-            <T v="label">Tickets sold</T>
-            <T v="smallBold">
-              {sold} / {capacity}
-              {soldOut ? <T v="smallBold" color={colors.success}>{'  ·  Sold out'}</T> : null}
-            </T>
-          </Row>
-          <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.divider, overflow: 'hidden' }}>
-            <View style={{ height: 8, width: `${Math.round(pct * 100)}%`, borderRadius: 4, backgroundColor: soldOut ? colors.success : colors.brand }} />
+        {event.isPrivate ? (
+          <View style={{ gap: 6 }} accessible accessibilityLabel={`${g.accepted} of ${capacity} guests accepted`}>
+            <Row justify="space-between">
+              <T v="label">Guests accepted</T>
+              <T v="smallBold">{g.accepted} / {capacity}</T>
+            </Row>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.divider, overflow: 'hidden' }}>
+              <View style={{ height: 8, width: `${Math.round(guestPct * 100)}%`, borderRadius: 4, backgroundColor: colors.brand }} />
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={{ gap: 6 }} accessible accessibilityLabel={`${sold} of ${capacity} tickets sold`}>
+            <Row justify="space-between">
+              <T v="label">Tickets sold</T>
+              <T v="smallBold">
+                {sold} / {capacity}
+                {soldOut ? <T v="smallBold" color={colors.success}>{'  ·  Sold out'}</T> : null}
+              </T>
+            </Row>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.divider, overflow: 'hidden' }}>
+              <View style={{ height: 8, width: `${Math.round(pct * 100)}%`, borderRadius: 4, backgroundColor: soldOut ? colors.success : colors.brand }} />
+            </View>
+          </View>
+        )}
 
         <Row gap={10}>
           <View style={{ flex: 1, padding: 10, borderRadius: radius.sm, backgroundColor: colors.brandTint }}>
-            <T v="small" style={{ fontSize: 12 }}>{past ? 'Final revenue' : 'Revenue so far'}</T>
-            <T v="bodyBold">{euro(revenue)}</T>
+            <T v="small" style={{ fontSize: 12 }}>{event.isPrivate ? 'Contributions paid' : past ? 'Ticket sales (gross)' : 'Ticket sales so far'}</T>
+            <T v="bodyBold">{euro(event.isPrivate ? g.paid * perGuest : revenue)}</T>
           </View>
           <View style={{ flex: 1, padding: 10, borderRadius: radius.sm, backgroundColor: colors.brandTint }}>
-            <T v="small" style={{ fontSize: 12 }}>Going</T>
-            <T v="bodyBold">{event.going || sold}</T>
+            <T v="small" style={{ fontSize: 12 }}>{event.isPrivate ? 'Invited' : 'Going'}</T>
+            <T v="bodyBold">{event.isPrivate ? g.invited : event.going || sold}</T>
           </View>
         </Row>
 
@@ -146,7 +162,8 @@ export default function ProEvents() {
   const promoOf = (e: EventItem): PromotionState => promos.get(e.id) ?? { kind: 'none' };
 
   const list = tab === 'upcoming' ? upcoming : past;
-  const totals = upcoming.reduce(
+  // Cancelled events are left out of the totals: their tickets go through refunds.
+  const totals = upcoming.filter((e) => live.get(e.id)?.state !== 'cancelled').reduce(
     (acc, e) => {
       const s = stats(e);
       return { sold: acc.sold + s.sold, revenue: acc.revenue + s.revenue };
@@ -170,7 +187,7 @@ export default function ProEvents() {
     <Screen
       header={
         <ScreenHeader
-          title="My events"
+          title="Organizer events"
           subtitle={`${upcoming.length} upcoming · ${drafts} draft${drafts === 1 ? '' : 's'} · ${promotedCount} promoted`}
           onBack={() => goBack('/pro/workspace')}
           right={<Button title="New event" icon="plus" size="sm" hitSlop={6} style={{ marginRight: 12 }} onPress={() => router.push('/create-event')} />}
@@ -187,7 +204,7 @@ export default function ProEvents() {
           <T v="h3">{totals.sold}</T>
         </Card>
         <Card style={{ flex: 1, padding: 12 }}>
-          <T v="small">Revenue</T>
+          <T v="small" numberOfLines={1}>Ticket sales</T>
           <T v="h3" numberOfLines={1} adjustsFontSizeToFit>{euro(totals.revenue)}</T>
         </Card>
       </Row>

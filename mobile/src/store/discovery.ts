@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { profileById, profiles } from '../data/mock';
 import type { EventItem, Lesson, Profile } from '../data/types';
 import { parse, TODAY } from '../lib/format';
+import { artistScore, type ArtistScore } from '../lib/ratings';
 import { isDiscoverable, isUpcoming } from './filters';
 import { overlayArtist, useServices } from './services';
 import { useApp } from './useApp';
@@ -93,6 +94,27 @@ export const quickFilterCount = (q: MapQuickFilters) => Number(q.weekend) + Numb
 export function applyQuick(events: EventItem[], q: MapQuickFilters, now: Date = TODAY) {
   if (!q.weekend && !q.live) return events;
   return events.filter((e) => (!q.weekend || isThisWeekend(e, now)) && (!q.live || isLiveMusic(e)));
+}
+
+// ---------- Musician scores for lists ----------
+
+/**
+ * A lookup with the same "would book again" score that BookAgainLine and the profile pages show
+ * (verified sample reviews plus your own reviews of completed bookings, minus blocked authors),
+ * so lists sorted by score agree with the score printed on each card.
+ */
+export function useArtistScores(): (id: string) => ArtistScore {
+  const bookings = useApp((s) => s.bookings);
+  const reviews = useApp((s) => s.reviews);
+  const blocked = useApp((s) => s.blocked);
+  return useMemo(() => {
+    // Your reviews of completed musician bookings, grouped by artist once per change.
+    const extraBy = new Map<string, { recommend: boolean; tags: string[] }[]>();
+    bookings
+      .filter((b) => b.type !== 'venue' && b.status === 'completed' && reviews[b.id]?.recommend != null)
+      .forEach((b) => extraBy.set(b.targetId, [...(extraBy.get(b.targetId) ?? []), { recommend: !!reviews[b.id].recommend, tags: reviews[b.id].tags }]));
+    return (id: string) => artistScore(id, { extra: extraBy.get(id) ?? [], exclude: blocked });
+  }, [bookings, reviews, blocked]);
 }
 
 // ---------- Lessons (F23) ----------

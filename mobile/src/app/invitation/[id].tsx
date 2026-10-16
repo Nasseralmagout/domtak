@@ -209,11 +209,24 @@ export default function InvitationScreen() {
         <Card style={{ alignItems: 'center', gap: 10 }}>
           <Row justify="space-between" style={{ alignSelf: 'stretch' }}>
             <T v="title">Your ticket</T>
-            <Pill label={ticket.status === 'valid' ? 'Valid' : ticket.status === 'used' ? 'Checked in' : ticket.status === 'refunded' ? 'Refunded' : 'Cancelled'} tone={ticket.status === 'valid' ? 'success' : ticket.status === 'used' ? 'neutral' : 'danger'} />
+            {/* A cancelled event or a refunded ticket shows its changed status (F21), never "Valid". */}
+            <Pill
+              label={ticket.status === 'refunded' ? 'Refunded' : ticket.status === 'cancelled' ? 'Cancelled' : cancelled ? 'Event cancelled' : ticket.status === 'used' ? 'Checked in' : ended ? 'Event ended' : 'Valid'}
+              tone={ticket.status === 'valid' && !cancelled && !ended ? 'success' : (ticket.status === 'used' || ended) && !cancelled ? 'neutral' : 'danger'}
+            />
           </Row>
-          <View accessible accessibilityLabel={`QR code for ticket ${ticket.code}`} style={{ padding: 12, borderRadius: radius.md, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border }}>
-            <QRCode value={JSON.stringify({ t: ticket.id, e: event.id, c: ticket.code })} size={168} color={colors.brandDeep} backgroundColor={colors.white} />
-          </View>
+          {ticket.status === 'valid' && !cancelled && !ended ? (
+            <View accessible accessibilityLabel={`QR code for ticket ${ticket.code}`} style={{ padding: 12, borderRadius: radius.md, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border }}>
+              <QRCode value={JSON.stringify({ t: ticket.id, e: event.id, c: ticket.code })} size={168} color={colors.brandDeep} backgroundColor={colors.white} />
+            </View>
+          ) : (
+            <Row gap={8} style={{ alignSelf: 'stretch', padding: 12, borderRadius: radius.md, backgroundColor: colors.chipIdle }}>
+              <Icon name={ticket.status === 'used' && !cancelled ? 'check-circle-outline' : 'qrcode-remove'} size={20} color={colors.label} />
+              <T v="small" style={{ flex: 1 }}>
+                {ticket.status === 'used' && !cancelled ? 'Already scanned at the door.' : ended && !cancelled && ticket.status === 'valid' ? 'The event is over.' : 'This ticket is no longer valid for entry.'}
+              </T>
+            </Row>
+          )}
           <T v="h3">{ticket.code}</T>
           <T v="small" center>{`${ticket.holder}${ticket.paid ? ` · paid ${euro(ticket.paid)}` : ' · free invitation'}`}</T>
           <Row gap={10} style={{ alignSelf: 'stretch' }}>

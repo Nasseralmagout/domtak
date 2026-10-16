@@ -4,7 +4,7 @@ import { Pressable, Share, View } from 'react-native';
 
 import { Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, Checklist, EmptyState, Icon, Photo, Pill, Row, T } from '../components/ui';
-import { readinessLine } from '../lib/eventHost';
+import { hostsEvent, readinessLine } from '../lib/eventHost';
 import { draftIssues, EVENT_STATE_TONE, eventState, eventStateLabel, linkedBookings, readiness } from '../lib/events';
 import { shortDate, time } from '../lib/format';
 import { toast } from '../store/toast';
@@ -16,12 +16,21 @@ export default function EventCreated() {
   const event = useEvent(id);
   const venue = useVenue(event?.venueId);
   const bookings = useApp((s) => s.bookings);
+  const user = useApp((s) => s.user);
   const linked = useMemo(() => (event ? linkedBookings(event, bookings) : []), [event, bookings]);
 
   if (!event) {
     return (
       <Screen header={<ScreenHeader title="Event" onBack={() => router.replace('/(tabs)')} />}>
         <EmptyState icon="calendar-remove-outline" title="Event not found" body="We could not find this event. You can create a new one from the plus button." action="Create event" onAction={() => router.replace('/create-event')} />
+      </Screen>
+    );
+  }
+  // Next steps are for the person who created the event.
+  if (!hostsEvent(event, user)) {
+    return (
+      <Screen header={<ScreenHeader title="Event" onBack={() => router.replace(`/event/${event.id}`)} />}>
+        <EmptyState icon="account-lock-outline" title="Only the host can manage this event" body="Next steps, provider requests and invitations are for the person who runs the event." action="View event" onAction={() => router.replace(`/event/${event.id}`)} />
       </Screen>
     );
   }
@@ -35,23 +44,26 @@ export default function EventCreated() {
   const invited = event.invitations?.length ?? 0;
   // Promotion is for public events that are live (never drafts, private or cancelled events).
   const canPromote = !event.isPrivate && state !== 'draft' && state !== 'cancelled' && state !== 'completed';
-  const heading = isDraft ? 'Draft saved' : event.isPrivate ? 'Invitations are open' : 'Your event is published!';
-  const body = isDraft
-    ? event.isPrivate
-      ? 'Only you can see it. Next: find artists and a venue, then invite your guests.'
-      : 'Only you can see it until you publish. Arrange your providers, then publish from the event workspace.'
-    : event.isPrivate
-      ? 'Invite guests and set cost sharing. Only people you invite can see it.'
-      : 'It is visible in Discover, Search and on the map.';
+  const over = state === 'cancelled' || state === 'completed';
+  const heading = state === 'cancelled' ? 'Event cancelled' : state === 'completed' ? 'This event has ended' : isDraft ? 'Draft saved' : event.isPrivate ? 'Invitations are open' : 'Your event is published!';
+  const body = over
+    ? 'Open the event workspace to resolve its bookings and payments.'
+    : isDraft
+      ? event.isPrivate
+        ? 'Only you can see it. Next: find artists and a venue, then invite your guests.'
+        : 'Only you can see it until you publish. Arrange your providers, then publish from the event workspace.'
+      : event.isPrivate
+        ? 'Invite guests and set cost sharing. Only people you invite can see it.'
+        : 'It is visible in Discover, Search and on the map.';
 
-  const share = () =>
-    Share.share({ message: event.isPrivate ? `You’re invited to ${event.title} on Domtak: https://domtak.de/e/${event.id}` : `Join me at ${event.title} on Domtak` }).catch(() => toast('Could not open the share sheet'));
+  // Only public events are shared as a link: a private event opens only through an invitation (F11).
+  const share = () => Share.share({ message: `Join me at ${event.title} on Domtak` }).catch(() => toast('Could not open the share sheet'));
 
   return (
     <Screen edges={['top', 'bottom']} contentStyle={{ paddingHorizontal: 20, paddingTop: 24, gap: 14 }}>
       <View style={{ alignItems: 'center', gap: 10 }}>
         <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: colors.brandDeep, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name={isDraft ? 'content-save-outline' : 'check'} size={44} color={colors.white} />
+          <Icon name={state === 'cancelled' ? 'calendar-remove-outline' : isDraft ? 'content-save-outline' : 'check'} size={44} color={colors.white} />
         </View>
         <T v="h1" color={colors.brandMid} center>{heading}</T>
         <T v="body" color={colors.muted} center>{body}</T>
@@ -74,33 +86,35 @@ export default function EventCreated() {
         <Banner icon="clipboard-alert-outline" tone="warning">{`To finish before ${event.isPrivate ? 'inviting guests' : 'publishing'}: ${issues.join('; ')}.`}</Banner>
       ) : null}
 
-      <Card style={{ gap: 4 }}>
-        <Checklist
-          title="Next steps"
-          items={[
-            {
-              label: 'Find artists',
-              done: hasArtist,
-              hint: 'Send each artist a separate request and pick this event in the form, so it is linked here.',
-              onPress: () => router.push('/artists/all'),
-            },
-            venue
-              ? {
-                  label: `Request ${venue.name}`,
-                  done: hasVenueBooking,
-                  hint: 'Venue hire, plus catering and security priced by guest count.',
-                  onPress: () => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id, eventId: event.id } }),
-                }
-              : { label: 'Find a venue', done: hasVenueBooking, hint: 'Compare capacity, parking and outdoor space.', onPress: () => router.push('/venues') },
-            {
-              label: event.isPrivate ? 'Invite guests and set cost sharing' : 'Invite friends',
-              done: invited > 0,
-              hint: isDraft && issues.length ? 'Finish the draft first, then invite.' : event.isPrivate ? 'Friends or people you follow; guests pay their share when they accept.' : 'Send the event to friends on Domtak.',
-              onPress: () => router.push(`/invite?event=${event.id}`),
-            },
-          ]}
-        />
-      </Card>
+      {over ? null : (
+        <Card style={{ gap: 4 }}>
+          <Checklist
+            title="Next steps"
+            items={[
+              {
+                label: 'Find artists',
+                done: hasArtist,
+                hint: 'Send each artist a separate request and pick this event in the form, so it is linked here.',
+                onPress: () => router.push('/artists/all'),
+              },
+              venue
+                ? {
+                    label: `Request ${venue.name}`,
+                    done: hasVenueBooking,
+                    hint: 'Venue hire, plus catering and security priced by guest count.',
+                    onPress: () => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id, eventId: event.id } }),
+                  }
+                : { label: 'Find a venue', done: hasVenueBooking, hint: 'Compare capacity, parking and outdoor space.', onPress: () => router.push('/venues') },
+              {
+                label: event.isPrivate ? 'Invite guests and set cost sharing' : 'Invite friends',
+                done: invited > 0,
+                hint: isDraft && issues.length ? 'Finish the draft first, then invite.' : event.isPrivate ? 'Friends or people you follow; guests pay their share when they accept.' : 'Send the event to friends on Domtak.',
+                onPress: () => router.push(`/invite?event=${event.id}`),
+              },
+            ]}
+          />
+        </Card>
+      )}
 
       {canPromote ? (
         <Pressable
@@ -132,8 +146,8 @@ export default function EventCreated() {
 
       <Button title="Open event workspace" icon="view-dashboard-outline" full onPress={() => router.replace(`/event-workspace/${event.id}`)} />
       <Row gap={12}>
-        <Button title="Edit event" icon="pencil-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} />
-        {!isDraft ? <Button title="Share" icon="share-variant-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={share} /> : null}
+        {!over ? <Button title="Edit event" icon="pencil-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} /> : null}
+        {!isDraft && !event.isPrivate ? <Button title="Share" icon="share-variant-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={share} /> : null}
       </Row>
       <Button title="To Home page" variant="ghost" full onPress={() => router.replace('/(tabs)')} />
     </Screen>

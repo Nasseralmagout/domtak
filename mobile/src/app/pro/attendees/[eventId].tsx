@@ -122,7 +122,14 @@ export default function Attendees() {
           }
         />
       }
-      footer={<BottomBar><Button title="Scan tickets at the door" icon="qrcode-scan" onPress={() => router.push({ pathname: '/pro/scan', params: { eventId: event.id } })} /></BottomBar>}
+      footer={
+        // No entry for drafts, cancelled or finished events: there is nothing valid to scan.
+        state === 'cancelled' || state === 'draft' || state === 'completed' ? undefined : (
+          <BottomBar>
+            <Button title="Scan tickets at the door" icon="qrcode-scan" onPress={() => router.push({ pathname: '/pro/scan', params: { eventId: event.id } })} />
+          </BottomBar>
+        )
+      }
     >
       <Card onPress={() => router.push(workspace as never)} accessibilityLabel="Open the event workspace: providers, budget and invitations" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
         <Icon name="view-dashboard-outline" size={22} color={colors.brand} />
@@ -135,13 +142,14 @@ export default function Attendees() {
       </Card>
       {state === 'cancelled' ? <Banner icon="calendar-remove-outline" tone="danger">{`This event is cancelled${event.cancelReason ? `: ${event.cancelReason}` : ''}. Tickets are no longer valid for entry.`}</Banner> : null}
       <Row gap={8}>
+        {/* Private events: guest tickets come from accepted (and, with cost sharing, paid) invitations, not sales. */}
         <Card style={{ flex: 1, backgroundColor: colors.brandDeep, padding: 12 }}>
-          <T v="small" color={colors.lilacLight}>Sold</T>
-          <T v="h3" color={colors.white}>{sold}<T v="small" color={colors.lilac}>/{cap}</T></T>
+          <T v="small" color={colors.lilacLight}>{event.isPrivate ? 'Accepted' : 'Sold'}</T>
+          <T v="h3" color={colors.white}>{event.isPrivate ? g.accepted + sold : sold}<T v="small" color={colors.lilac}>/{cap}</T></T>
         </Card>
         <Card style={{ flex: 1, padding: 12 }}>
-          <T v="small">Revenue</T>
-          <T v="h3">{euro(revenue)}</T>
+          <T v="small" numberOfLines={1}>{event.isPrivate ? 'Paid' : 'Ticket sales'}</T>
+          <T v="h3" numberOfLines={1} adjustsFontSizeToFit>{euro(event.isPrivate ? (cs ? g.paid * cs.perGuest : 0) + revenue : revenue)}</T>
         </Card>
         <Card style={{ flex: 1, padding: 12 }}>
           <T v="small">Checked in</T>

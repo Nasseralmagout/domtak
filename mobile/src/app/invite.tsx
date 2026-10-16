@@ -9,15 +9,16 @@ import { profiles } from '../data/mock';
 import type { EventItem, Profile } from '../data/types';
 import { deadlineChoices, hostsEvent, invitationLabel } from '../lib/eventHost';
 import { budget, draftIssues, EVENT_STATE_TONE, eventState, eventStateLabel, guestSummary } from '../lib/events';
-import { euro, eventWhen, plural, shortDate } from '../lib/format';
+import { euro, eventWhen, parse, plural, shortDate, TODAY } from '../lib/format';
 import { toast } from '../store/toast';
 import { useApp, useEvent } from '../store/useApp';
 import { colors, radius } from '../theme';
 
 const MAX_SHARE = 500;
 
+/** Public events only: a private event opens only through an explicit invitation (F11), so it has no shareable link. */
 const shareInvite = (event: EventItem) =>
-  Share.share({ message: `You’re invited to ${event.title} (${eventWhen(event.start, event.end)}). Open it on Domtak: https://domtak.de/e/${event.id}` }).catch(() => toast('Could not open the share sheet'));
+  Share.share({ message: `Join me at ${event.title} (${eventWhen(event.start, event.end)}) on Domtak` }).catch(() => toast('Could not open the share sheet'));
 
 /** Invite friends or permitted contacts and set cost sharing for one event you host (F20). */
 function InviteForm({ event }: { event: EventItem }) {
@@ -67,10 +68,21 @@ function InviteForm({ event }: { event: EventItem }) {
   const expected = event.expectedGuests ?? 0;
   const suggested = money.total > 0 && expected > 0 ? Math.ceil(money.total / expected) : 0;
   const count = selected.length;
+  // Guest limit set in the event (capacity rules are not final, so this is a warning, not a block).
+  const limit = event.ticketTypes.reduce((n, tt) => n + tt.capacity, 0);
+  const overLimit = event.isPrivate && limit > 0 && already.length + count > limit;
 
   const send = () => {
     if (csOn && csDirty && (csN <= 0 || csN > MAX_SHARE)) {
       setError(`Set a contribution between €1 and €${MAX_SHARE} per guest`);
+      return;
+    }
+    if (csOn && csDirty && csDeadline && parse(csDeadline).getTime() >= parse(event.start).getTime()) {
+      setError('The pay-by date must be before the event. Pick it again.');
+      return;
+    }
+    if (csOn && csDirty && csDeadline && csDeadline !== cs0?.deadline && parse(csDeadline).getTime() <= TODAY.getTime()) {
+      setError('The pay-by date has passed. Pick a later one.');
       return;
     }
     if (count && issues.length) {
@@ -130,7 +142,7 @@ function InviteForm({ event }: { event: EventItem }) {
           title="Invite guests"
           subtitle={event.title}
           onBack={() => goBack(workspace)}
-          right={<IconButton name="share-variant-outline" label="Share invite link" onPress={() => shareInvite(event)} />}
+          right={event.isPrivate ? undefined : <IconButton name="share-variant-outline" label="Share event link" onPress={() => shareInvite(event)} />}
         />
       }
       footer={
@@ -170,10 +182,7 @@ function InviteForm({ event }: { event: EventItem }) {
               <T v="bodyBold">Cost sharing</T>
               <T v="small">Guests who accept pay their contribution, then get a ticket with a QR code. A failed payment issues no ticket.</T>
             </View>
-            <Toggle label="Share costs with guests" value={csOn} onValueChange={(v) => {
-                if (!csLocked) setCsOn(v);
-              }}
-            />
+            {csLocked ? <Pill label="Locked" icon="lock-outline" tone="neutral" /> : <Toggle label="Share costs with guests" value={csOn} onValueChange={setCsOn} />}
           </Row>
           {csLocked ? (
             <Banner icon="lock-outline">{`${plural(g.paid, 'guest')} already paid ${euro(cs0?.perGuest ?? 0)}, so the contribution stays as it is.`}</Banner>
@@ -192,6 +201,7 @@ function InviteForm({ event }: { event: EventItem }) {
                 <T v="label">Pay by</T>
                 <Row gap={8} style={{ flexWrap: 'wrap' }}>
                   <Chip label="No deadline" selected={!csDeadline} onPress={() => setCsDeadline(undefined)} />
+                  {csDeadline && !deadlines.some((d) => d.day === csDeadline) ? <Chip label={`Current · ${shortDate(csDeadline)}`} selected onPress={() => setCsDeadline(csDeadline)} /> : null}
                   {deadlines.map((d) => <Chip key={d.day} label={`${d.label} · ${shortDate(d.day)}`} selected={csDeadline === d.day} onPress={() => setCsDeadline(d.day)} />)}
                 </Row>
               </View>
@@ -218,6 +228,8 @@ function InviteForm({ event }: { event: EventItem }) {
         ) : null}
       </Row>
 
+      {overLimit ? <Banner icon="account-alert-outline" tone="warning">{`That makes ${already.length + count} invitations for a guest limit of ${limit}. If everyone accepts, raise the limit in Edit event.`}</Banner> : null}
+
       {friendRows.length ? (
         <View>
           <T v="caption" style={{ marginBottom: 4 }}>FRIENDS</T>
@@ -234,12 +246,16 @@ function InviteForm({ event }: { event: EventItem }) {
         <EmptyState
           icon="account-search-outline"
           title={t ? 'No one found' : 'No contacts yet'}
-          body={t ? `No friend or person you follow matches “${q}”.` : 'You can invite friends and members you follow. Add friends, or share an invite link.'}
+          body={t ? `No friend or person you follow matches “${q}”.` : 'You can invite friends and members you follow. Add friends first, then invite them here.'}
           action={t ? 'Clear search' : 'Find friends'}
           onAction={() => (t ? setQ('') : router.push('/friends'))}
         />
       ) : null}
-      <Button title="Share an invite link instead" icon="link-variant" variant="ghost" size="sm" onPress={() => shareInvite(event)} />
+      {event.isPrivate ? (
+        <T v="small" center>Private events have no public link: only the people you invite here can see it.</T>
+      ) : (
+        <Button title="Share the event link instead" icon="link-variant" variant="ghost" size="sm" onPress={() => shareInvite(event)} />
+      )}
     </Screen>
   );
 }

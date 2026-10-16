@@ -11,8 +11,8 @@ import { communities, profiles } from '../data/mock';
 import type { Community, EventItem, Profile, Venue } from '../data/types';
 import { compact, plural, priceRange, shortDate } from '../lib/format';
 import { isPromoted } from '../lib/promotions';
-import { artistScore } from '../lib/ratings';
-import { discoverableEvents, type LessonListing, lessonPlace, useLessonListings } from '../store/discovery';
+import type { ArtistScore } from '../lib/ratings';
+import { discoverableEvents, type LessonListing, lessonPlace, useArtistScores, useLessonListings } from '../store/discovery';
 import { sortEvents } from '../store/filters';
 import { overlayArtist, useServices } from '../store/services';
 import { memberCount } from '../store/social';
@@ -51,6 +51,8 @@ interface Sources {
   lessons: LessonListing[];
   joined: string[];
   promotions: Promotion[];
+  /** The "would book again" score as each artist page shows it. */
+  scoreOf: (id: string) => ArtistScore;
 }
 
 /** Every result for these words (each word has to match somewhere, so "Techno Kreuzberg" narrows down). */
@@ -73,7 +75,7 @@ function searchAll(words: string[], src: Sources): Result[] {
   src.artists.forEach((p) => {
     if (!match(`${p.name} ${p.title} ${p.kind === 'dj' ? 'dj' : ''} ${p.kind === 'band' ? 'band' : ''} ${p.genres.join(' ')} ${p.city} ${p.bio} ${(p.instruments ?? []).join(' ')} artist musician`)) return;
     // Musicians show the "would book again" score from verified bookings, never stars.
-    const score = artistScore(p.id);
+    const score = src.scoreOf(p.id);
     const sub = [p.title, score.recommendPct != null ? `${score.recommendPct}% would book again` : undefined, artistPriceLabel(p)].filter(Boolean).join(' · ');
     out.push({ key: p.id, kind: 'musician', title: p.name, sub, image: p.avatar, href: `/artist/${p.id}`, round: true });
   });
@@ -114,6 +116,7 @@ export default function Search() {
   const services = useServices((s) => s.services);
   const fee = useApp((s) => s.availability.feePerHour);
   const lessons = useLessonListings();
+  const scoreOf = useArtistScores();
 
   const remember = (term: string) => {
     const t = term.trim();
@@ -137,8 +140,9 @@ export default function Search() {
       lessons,
       joined,
       promotions,
+      scoreOf,
     }),
-    [allEvents, venues, blocked, services, fee, lessons, joined, promotions],
+    [allEvents, venues, blocked, services, fee, lessons, joined, promotions, scoreOf],
   );
 
   const words = useMemo(() => q.trim().toLowerCase().split(/\s+/).filter(Boolean), [q]);

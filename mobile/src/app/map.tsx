@@ -91,8 +91,10 @@ export default function MapScreen() {
   };
 
   const pool = useMemo(() => discoverableEvents(events), [events]);
-  // Genres that upcoming events actually have, in the usual genre order.
-  const genres = useMemo(() => GENRES.filter((g) => pool.some((e) => e.genre === g)), [pool]);
+  // Genres that upcoming events actually have, in the usual genre order, plus any genre picked in Filters
+  // (so every active genre filter has a visible chip to turn it off).
+  const styles = filters.styles;
+  const genres = useMemo(() => GENRES.filter((g) => pool.some((e) => e.genre === g) || styles.includes(g)), [pool, styles]);
   const venueName = useMemo(() => new Map(venues.map((v) => [v.id, v.name])), [venues]);
 
   const { shown, promoted } = useMemo(() => {
@@ -135,13 +137,16 @@ export default function MapScreen() {
   const selVenue: Venue | undefined = selected?.kind === 'venue' && venuePins ? venues.find((v) => v.id === selected.id) : undefined;
   const selEvent: EventItem | undefined = selVenue ? undefined : (shown.find((e) => selected?.kind === 'event' && e.id === selected.id) ?? shown[0]);
 
-  const countLine = `${plural(shown.length, 'event')}${radiusKm != null ? ` within ${radiusKm} km` : area ? ` in ${area}` : ' nearby'}`;
+  const countLine = `${plural(shown.length, 'event')}${radiusKm != null ? ` within ${radiusKm} km` : area ? ` in ${area}` : ' at any distance'}`;
   const locationLine = area ? `Searching ${area}` : `Around you · ${MY_LOCATION.label}`;
 
   const emptyCard = (
     <View style={{ backgroundColor: colors.surface, padding: 16, borderRadius: radius.lg, gap: 10, ...shadow(2) }}>
       <T v="title">No events match nearby</T>
-      <T v="small">{filters.date === 'today' ? 'Nothing is on today with these filters.' : 'Nothing upcoming matches all of these filters.'} Widen the distance or remove a filter.</T>
+      <T v="small">
+        {filters.date === 'today' ? 'Nothing is on today with these filters.' : 'Nothing upcoming matches all of these filters.'}
+        {radiusKm != null ? ' Widen the distance or remove a filter.' : ' Remove a filter to see more.'}
+      </T>
       {wider ? (
         <Button
           title={wider.km != null ? `Widen to ${wider.km} km · ${plural(wider.count, 'event')}` : `Any distance · ${plural(wider.count, 'event')}`}
@@ -247,7 +252,7 @@ export default function MapScreen() {
           <Photo src="map_berlin" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} accessibilityLabel="Map of Berlin" />
 
           {/* You are here */}
-          <View pointerEvents="none" accessible accessibilityLabel={`Your location, ${MY_LOCATION.label}`} style={{ position: 'absolute', ...pos(MY_LOCATION.mapPos, 40), marginLeft: -20, marginTop: -20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(59,130,246,0.25)', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+          <View accessible accessibilityLabel={`Your location, ${MY_LOCATION.label}`} style={{ position: 'absolute', ...pos(MY_LOCATION.mapPos, 40), marginLeft: -20, marginTop: -20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(59,130,246,0.25)', alignItems: 'center', justifyContent: 'center', zIndex: 1, pointerEvents: 'none' }}>
             <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#3B82F6', borderWidth: 3, borderColor: colors.white }} />
           </View>
 

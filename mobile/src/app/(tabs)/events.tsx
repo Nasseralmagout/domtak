@@ -10,12 +10,12 @@ import { Button, Icon, Photo, Pill, Row, T } from '../../components/ui';
 import { eventCategories } from '../../data/mock';
 import { plural, shortDate, time } from '../../lib/format';
 import { isPromoted } from '../../lib/promotions';
-import { MY_LOCATION } from '../../store/discovery';
-import { activeFilterCount, isUpcoming, useFilters } from '../../store/filters';
+import { applyQuick, discoverableEvents, MY_LOCATION, useMapQuick } from '../../store/discovery';
+import { activeFilterCount, applyFilters, isUpcoming, useFilters } from '../../store/filters';
 import { useAllEvents, useApp, useVenues } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
-/** Radius used for the "near you" count on the map card (the map itself offers 1, 3, 5 and 10 km). */
+/** Radius for the map card: its count is what the map shows at this radius, and opening the card selects it. */
 const NEAR_KM = 3;
 
 export default function EventsTab() {
@@ -23,8 +23,25 @@ export default function EventsTab() {
   const all = useAllEvents();
   const venues = useVenues();
   const promotions = useApp((s) => s.promotions);
-  const filterCount = useFilters((s) => activeFilterCount(s.filters));
-  const { featured, comingUp, promoted, nearby } = useMemo(() => {
+  const filters = useFilters((s) => s.filters);
+  const setFilters = useFilters((s) => s.set);
+  const filterCount = activeFilterCount(filters);
+  const weekend = useMapQuick((s) => s.weekend);
+  const live = useMapQuick((s) => s.live);
+  // Same pipeline as the map at NEAR_KM: discoverable events, your other filters and the map quick filters.
+  const { nearby, otherFilters } = useMemo(() => {
+    const near = { ...filters, location: 'current' as const, maxDistanceKm: NEAR_KM };
+    return {
+      nearby: applyQuick(applyFilters(discoverableEvents(all), near, venues), { weekend, live }).length,
+      // Filters besides the radius that also narrow the count (a searched area does not apply near you).
+      otherFilters: activeFilterCount(near) - 1 + Number(weekend) + Number(live),
+    };
+  }, [all, filters, venues, weekend, live]);
+  const openNearby = () => {
+    setFilters({ location: 'current', maxDistanceKm: NEAR_KM });
+    router.push('/map');
+  };
+  const { featured, comingUp, promoted } = useMemo(() => {
     // Private events are invite-only; drafts, cancelled and past events don't belong in discovery.
     const open = all.filter((e) => !e.isPrivate && e.state !== 'draft' && e.state !== 'cancelled' && isUpcoming(e));
     const byDate = [...open].sort((a, b) => a.start.localeCompare(b.start));
@@ -35,7 +52,6 @@ export default function EventsTab() {
       featured: [...sponsoredFirst, ...open.filter((e) => !boosted.has(e.id) && (e.sponsored || e.going > 200))].slice(0, 4),
       comingUp: [...sponsoredFirst, ...byDate.filter((e) => !boosted.has(e.id))].slice(0, 4),
       promoted: boosted,
-      nearby: open.filter((e) => e.distanceKm <= NEAR_KM).length,
     };
   }, [all, promotions]);
   const venueName = (id: string) => venues.find((v) => v.id === id)?.name;
@@ -97,8 +113,8 @@ export default function EventsTab() {
           {/* Nearby events on the map (user note 5): quick filters, distance, venue pins and a list view live there. */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Nearby events on the map. ${nearby ? `${plural(nearby, 'event')} within ${NEAR_KM} km of you` : `No events within ${NEAR_KM} km right now`}. Open map`}
-            onPress={() => router.push('/map')}
+            accessibilityLabel={`Nearby events on the map. ${nearby ? `${plural(nearby, 'event')} within ${NEAR_KM} km of you${otherFilters ? ' with your filters' : ''}` : `No events within ${NEAR_KM} km right now`}. Open the map at ${NEAR_KM} km`}
+            onPress={openNearby}
             style={{ height: 112, borderRadius: radius.xl, overflow: 'hidden', ...shadow(2) }}
           >
             <Photo src="map_berlin" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
@@ -108,7 +124,9 @@ export default function EventsTab() {
                 <Text style={{ color: colors.gold, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 1 }}>{`AROUND ${MY_LOCATION.area.toUpperCase()}`}</Text>
                 <Text style={{ color: colors.white, fontFamily: fonts.displaySemi, fontSize: 20 }}>Nearby events on the map</Text>
                 <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 13 }}>
-                  {nearby ? `${plural(nearby, 'event')} within ${NEAR_KM} km · filter by date, price, genre and distance` : `Nothing within ${NEAR_KM} km right now · widen the distance on the map`}
+                  {nearby
+                    ? `${plural(nearby, 'event')} within ${NEAR_KM} km${otherFilters ? ' with your filters' : ''} · filter by date, price, genre and distance`
+                    : `Nothing within ${NEAR_KM} km${otherFilters ? ' with your filters' : ''} right now · widen the distance on the map`}
                 </Text>
               </View>
               <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>

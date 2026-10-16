@@ -5,13 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EventCard } from '../components/cards';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
-import { Avatar, Banner, Button, Card, Chip, Divider, Field, Icon, IconButton, Photo, Pill, Row, Segmented, Stepper, T, Toggle } from '../components/ui';
+import { Avatar, Banner, Button, Card, Chip, Divider, EmptyState, Field, Icon, IconButton, Photo, Pill, Row, Segmented, Stepper, T, Toggle } from '../components/ui';
 import type { ImgKey } from '../data/images';
 import { profiles } from '../data/mock';
 import type { EventCategory, TicketType } from '../data/types';
 import { isClosed } from '../lib/booking';
-import { deadlineChoices } from '../lib/eventHost';
-import { draftIssues, linkedBookings } from '../lib/events';
+import { deadlineChoices, hostsEvent } from '../lib/eventHost';
+import { draftIssues, eventState, guestSummary, linkedBookings } from '../lib/events';
 import { euro, isoDay, parse, plural, shortDate, time, TODAY } from '../lib/format';
 import { artistEstimate, toCharges } from '../lib/pricing';
 import { toast } from '../store/toast';
@@ -154,6 +154,9 @@ export default function CreateEvent() {
   const costN = Number(costAmount) || 0;
   const limitN = Number(guestLimit) || 0;
   const soldBefore = editing ? editing.ticketTypes.reduce((n, t) => n + t.sold, 0) : 0;
+  // Invited guests of the event you are editing: once one has paid, the contribution stays as it is (same rule as /invite).
+  const guestsBefore = editing ? guestSummary(editing) : undefined;
+  const costLocked = !!editing?.costSharing?.enabled && (guestsBefore?.paid ?? 0) > 0;
   // Private events use cost sharing instead of ticket sales (an older private event that sold tickets keeps its ticket types).
   const keepsPrivateTickets = isPrivate && !!editing && !!editPaid;
   const finalTickets: TicketType[] = isPrivate
@@ -191,7 +194,7 @@ export default function CreateEvent() {
     return () => sub.remove();
   }, [step]);
 
-  const costSharing = isPrivate && costOn ? { enabled: true, perGuest: costN, deadline: costDeadline, note: costNote.trim() || undefined } : undefined;
+  const costSharing = costLocked ? editing?.costSharing : isPrivate && costOn ? { enabled: true, perGuest: costN, deadline: costDeadline, note: costNote.trim() || undefined } : undefined;
   const draft = {
     title: title.trim() || 'Untitled event',
     cover,
@@ -234,7 +237,10 @@ export default function CreateEvent() {
     if (s === 2) {
       if (isPrivate) {
         if (!keepsPrivateTickets && limitN <= 0) return 'Set how many guests can come';
+        if (!keepsPrivateTickets && guestsBefore && limitN < guestsBefore.accepted) return `${plural(guestsBefore.accepted, 'guest')} already accepted, so the guest limit can’t go below that`;
         if (costOn && (costN <= 0 || costN > MAX_PRICE)) return `Set a contribution between €1 and €${MAX_PRICE} per guest`;
+        if (costOn && costDeadline && !costLocked && parse(costDeadline).getTime() >= startDate.getTime()) return 'The pay-by date must be before the event. Pick it again.';
+        if (costOn && costDeadline && !costLocked && costDeadline !== editing?.costSharing?.deadline && parse(costDeadline).getTime() <= TODAY.getTime()) return 'The pay-by date has passed. Pick a later one.';
         if (venue && totalCapacity > venue.capacity) return `${venue.name} fits ${venue.capacity} people, but your guest limit is ${totalCapacity}`;
         return undefined;
       }
@@ -370,6 +376,35 @@ export default function CreateEvent() {
   const deadlines = deadlineChoices(startIso);
   const lastStep = step === steps.length - 1;
   const publishLabel = oneTime ? 'Publish' : `Publish ${weeks} dates`;
+
+  // ?edit=<id> only opens events you run, and only while they can still change (F13: owner only).
+  const editBlock = !edit
+    ? undefined
+    : !editing
+      ? { icon: 'calendar-remove-outline' as const, title: 'Event not found', body: 'This event may have been removed.' }
+      : !hostsEvent(editing, user)
+        ? { icon: 'account-lock-outline' as const, title: 'Only the host can edit this event', body: 'Changes to an event are made by the person who runs it.' }
+        : (() => {
+            const st = eventState(editing, bookings);
+            if (st === 'cancelled') return { icon: 'calendar-remove-outline' as const, title: 'This event is cancelled', body: 'A cancelled event can’t be edited. Resolve its open bookings in the event workspace.' };
+            if (st === 'completed') return { icon: 'history' as const, title: 'This event has ended', body: 'Past events can’t be edited.' };
+            if (st === 'in_progress') return { icon: 'calendar-clock' as const, title: 'This event has started', body: 'Details can’t change once doors are open. Handle issues from the event workspace.' };
+            return undefined;
+          })();
+  if (editBlock) {
+    const own = !!editing && hostsEvent(editing, user);
+    return (
+      <Screen header={<ScreenHeader title="Edit event" onBack={() => goBack(editing ? `/event/${editing.id}` : '/my-events')} />}>
+        <EmptyState
+          icon={editBlock.icon}
+          title={editBlock.title}
+          body={editBlock.body}
+          action={own ? 'Open event workspace' : editing ? 'View event' : 'My events'}
+          onAction={() => router.replace((own && editing ? `/event-workspace/${editing.id}` : editing ? `/event/${editing.id}` : '/my-events') as never)}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen
@@ -632,15 +667,18 @@ export default function CreateEvent() {
                 <T v="bodyBold">Share costs with guests</T>
                 <T v="small">Each guest who accepts pays a contribution and then gets a ticket with a QR code.</T>
               </View>
-              <Toggle label="Share costs with guests" value={costOn} onValueChange={setCostOn} />
+              {costLocked ? <Pill label="Locked" icon="lock-outline" tone="neutral" /> : <Toggle label="Share costs with guests" value={costOn} onValueChange={setCostOn} />}
             </Row>
-            {costOn ? (
+            {costLocked && editing?.costSharing ? (
+              <Banner icon="lock-outline">{`${plural(guestsBefore?.paid ?? 0, 'guest')} already paid ${euro(editing.costSharing.perGuest)}, so the contribution${editing.costSharing.deadline ? ` and pay-by date (${shortDate(editing.costSharing.deadline)})` : ''} stay as they are.`}</Banner>
+            ) : costOn ? (
               <>
                 <Field label="Contribution per guest (€)" value={costAmount} onChangeText={(v) => setCostAmount(digits(v, 9999))} keyboardType="number-pad" error={costN <= 0 ? 'Required' : costN > MAX_PRICE ? `Max €${MAX_PRICE}` : undefined} />
                 <View style={{ gap: 8 }}>
                   <T v="label">Pay by</T>
                   <Row gap={8} style={{ flexWrap: 'wrap' }}>
                     <Chip label="No deadline" selected={!costDeadline} onPress={() => setCostDeadline(undefined)} />
+                    {costDeadline && !deadlines.some((d) => d.day === costDeadline) ? <Chip label={`Current · ${shortDate(costDeadline)}`} selected onPress={() => setCostDeadline(costDeadline)} /> : null}
                     {deadlines.map((d) => <Chip key={d.day} label={`${d.label} · ${shortDate(d.day)}`} selected={costDeadline === d.day} onPress={() => setCostDeadline(d.day)} />)}
                   </Row>
                 </View>
@@ -653,7 +691,7 @@ export default function CreateEvent() {
             <View style={{ flex: 1 }}><T v="bodyBold">18+ only</T><T v="small">ID is checked at the door</T></View>
             <Toggle label="18+ only" value={adults} onValueChange={setAdults} />
           </Row>
-          <Banner icon="information-outline">A failed payment issues no ticket. You can change cost sharing later when you invite guests.</Banner>
+          <Banner icon="information-outline">A failed payment issues no ticket. You can change cost sharing from Invite guests until the first guest has paid.</Banner>
         </>
       ) : null}
 

@@ -80,7 +80,7 @@ export default function EventList() {
         title="No events found"
         body={
           count
-            ? `No upcoming ${cat === 'all' ? '' : `${title.toLowerCase()} `}events match your filters${narrow.unfiltered ? `. ${plural(narrow.unfiltered, 'event')} without them` : ''}.`
+            ? `No upcoming events${cat === 'all' ? '' : ` in ${title}`} match your filters.${narrow.unfiltered ? ` Without them you would see ${plural(narrow.unfiltered, 'event')}.` : ''}`
             : q.trim()
               ? `Nothing upcoming matches “${q.trim()}”. Try another word or category.`
               : 'Nothing upcoming in this category yet. Other categories may have something on.'
@@ -117,7 +117,7 @@ export default function EventList() {
               right={
                 <Row gap={0}>
                   <IconButton name="map-outline" label="Show nearby events on the map" onPress={() => router.push('/map')} />
-                  <IconButton name="tune-variant" label={`Filters${count ? `, ${count} active` : ''}`} badge={count || undefined} onPress={() => router.push('/filters')} />
+                  <IconButton name="tune-variant" label={`Filters${count ? `, ${count} active` : ''}`} badge={count || undefined} onPress={() => router.push({ pathname: '/filters', params: cat === 'all' ? {} : { category: cat } })} />
                 </Row>
               }
             />

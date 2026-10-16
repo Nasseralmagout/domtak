@@ -334,10 +334,9 @@ export default function PromoteEvent() {
 function ActivePromotion({ chain, end, now }: { chain: PromotionChain; end: number; now: number }) {
   const span = Math.max(1, end - chain.start);
   const pct = Math.min(1, Math.max(0, (now - chain.start) / span));
+  // Only figures that come from what was bought: no measured views or clicks are invented here.
   const totalReach = chain.run.reduce((n, p) => n + reachFor(p), 0);
   const spent = chain.run.reduce((n, p) => n + Math.round((p.budget * p.days) / 7), 0);
-  const seen = roundReach(totalReach * Math.max(0.04, pct));
-  const clicks = Math.round(seen * 0.045);
   const daysLeft = Math.max(1, Math.ceil((end - now) / DAY_MS));
   return (
     <View style={{ borderRadius: radius.xl, padding: 16, gap: 14, backgroundColor: colors.brandDeep }}>
@@ -359,16 +358,17 @@ function ActivePromotion({ chain, end, now }: { chain: PromotionChain; end: numb
       </View>
       <Row gap={8}>
         {[
-          { k: 'Seen by', v: compact(seen) },
-          { k: 'Clicks', v: compact(clicks) },
+          { k: 'Est. reach', v: compact(totalReach) },
+          { k: chain.run.length === 1 ? 'Boost' : 'Boosts', v: String(chain.run.length) },
           { k: 'Spent', v: euro(spent) },
         ].map((s) => (
           <View key={s.k} style={{ flex: 1, padding: 10, borderRadius: radius.sm, backgroundColor: 'rgba(255,255,255,0.08)' }}>
-            <T v="small" color={colors.lilacLight} style={{ fontSize: 12 }}>{s.k}</T>
+            <T v="small" color={colors.lilacLight} style={{ fontSize: 12 }} numberOfLines={1}>{s.k}</T>
             <T v="bodyBold" color={colors.white}>{s.v}</T>
           </View>
         ))}
       </Row>
+      <T v="small" color={colors.lilac}>Reach is the estimate for the plans you bought, not measured views.</T>
     </View>
   );
 }

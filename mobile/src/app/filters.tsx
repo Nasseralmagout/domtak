@@ -60,7 +60,8 @@ const SORTS: SortKey[] = ['soonest', 'nearest', 'popular'];
 
 export default function FiltersScreen() {
   // `from=map`: opened from the map, so the map quick filters (This weekend, Live music) are edited here too.
-  const { next, from } = useLocalSearchParams<{ next?: string; from?: string }>();
+  // `category`: opened from an event category list, so the count only includes that category (same as the list).
+  const { next, from, category } = useLocalSearchParams<{ next?: string; from?: string; category?: string }>();
   const fromMap = from === 'map';
   const current = useFilters((s) => s.filters);
   const apply = useFilters((s) => s.set);
@@ -83,7 +84,7 @@ export default function FiltersScreen() {
   };
 
   // applyFilters and activeFilterCount only use the area while "Search for location" is on, and the radius while on "Current location".
-  const filtered = applyFilters(events, f, allVenues);
+  const filtered = applyFilters(category ? events.filter((e) => e.category === category) : events, f, allVenues);
   const matches = (fromMap ? applyQuick(filtered, quick) : filtered).length;
   const areaSuggestions = areas.filter((a) => !areaQuery.trim() || a.toLowerCase().includes(areaQuery.trim().toLowerCase()));
   const changed = activeFilterCount(f) + (fromMap ? quickFilterCount(quick) : 0);
@@ -111,7 +112,7 @@ export default function FiltersScreen() {
       header={
         <ScreenHeader
           title="Filters"
-          subtitle={fromMap ? 'Nearby events on the map' : undefined}
+          subtitle={fromMap ? 'Nearby events on the map' : category ? `Counting ${category.toLowerCase()} events` : undefined}
           onBack={() => goBack(fallback)}
           right={
             <Pressable accessibilityRole="button" accessibilityLabel="Reset all filters" onPress={reset} hitSlop={8} style={{ paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' }}>
@@ -124,7 +125,7 @@ export default function FiltersScreen() {
       footer={
         <BottomBar>
           <Button title={matches ? `Show ${plural(matches, 'event')}${fromMap ? ' on the map' : ''}` : 'No events match'} disabled={!matches} onPress={showResults} />
-          {!matches ? <T v="small" center style={{ marginTop: 6 }}>Widen the distance or remove a filter to see events.</T> : null}
+          {!matches ? <T v="small" center style={{ marginTop: 6 }}>{radiusKm != null ? 'Widen the distance or remove a filter to see events.' : 'Remove a filter or press Reset to see events.'}</T> : null}
         </BottomBar>
       }
     >

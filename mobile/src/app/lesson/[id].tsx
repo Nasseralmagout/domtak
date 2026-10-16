@@ -8,9 +8,9 @@ import { BackOverlay, BookAgainLine, HeartToggle, LessonCard, lessonPriceLabel }
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Avatar, Banner, Button, Card, EmptyState, Icon, IconButton, InfoRow, Photo, Pill, Row, T } from '../../components/ui';
 import type { Lesson } from '../../data/types';
-import { bookingLabel, bookingTone, isClosed, PAYMENT_NOTE } from '../../lib/booking';
+import { bookingLabel, bookingTone, isClosed } from '../../lib/booking';
 import { euro, isoDay, shortDate, TODAY } from '../../lib/format';
-import { LEARNER_FORMAT_LABEL } from '../../store/discovery';
+import { LEARNER_FORMAT_LABEL, lessonPlace } from '../../store/discovery';
 import { LESSON_FORMAT_ICON, OWN_ARTIST_ID, useArtistServices, useLesson } from '../../store/services';
 import { activeWorkspace, useApp, type Weekday } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
@@ -173,7 +173,8 @@ export default function LessonDetail() {
           {otherLessons.length ? (
             <View style={{ gap: 10 }}>
               <T v="h3" accessibilityRole="header">More lessons by {artist.name}</T>
-              {otherLessons.map((l) => <LessonCard key={l.id} lesson={l} onPress={() => router.push(`/lesson/${l.id}` as never)} />)}
+              {/* Learner wording for the place ("At the teacher’s studio", not the teacher-facing "At my studio"). */}
+              {otherLessons.map((l) => <LessonCard key={l.id} lesson={{ ...l, location: lessonPlace(l) }} onPress={() => router.push(`/lesson/${l.id}` as never)} />)}
             </View>
           ) : null}
 
@@ -200,7 +201,11 @@ export default function LessonDetail() {
               )}
             </Row>
             {!quote ? <Button title="Request a quote instead" variant="ghost" size="md" accessibilityLabel="Request a quote for a custom package" onPress={() => book(true)} /> : null}
-            <T v="small" center>{quote ? 'Nothing is charged until you accept a quote.' : PAYMENT_NOTE.authorized}</T>
+            <T v="small" center>
+              {quote
+                ? 'Nothing is charged until you accept a quote.'
+                : `Once you send the request, your payment stays pending ${artist.name}’s decision. It is released or refunded if they decline or don’t answer within 24 hours.`}
+            </T>
           </View>
         )}
       </BottomBar>

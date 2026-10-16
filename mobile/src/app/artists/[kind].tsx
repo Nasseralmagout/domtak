@@ -9,7 +9,7 @@ import { Chip, EmptyState, Field, Icon, IconButton, Row, T } from '../../compone
 import { profiles } from '../../data/mock';
 import type { Profile } from '../../data/types';
 import { plural } from '../../lib/format';
-import { artistScore } from '../../lib/ratings';
+import { useArtistScores } from '../../store/discovery';
 import { overlayArtist, useServices } from '../../store/services';
 import { useApp } from '../../store/useApp';
 import { colors } from '../../theme';
@@ -49,6 +49,7 @@ export default function ArtistList() {
   const blocked = useApp((s) => s.blocked);
   const fee = useApp((s) => s.availability.feePerHour);
   const services = useServices((s) => s.services);
+  const scoreOf = useArtistScores();
 
   // The demo musician's published services (fee, quote mode) apply to their own profile. Blocked accounts are left out.
   const pool = useMemo(
@@ -61,12 +62,12 @@ export default function ArtistList() {
     if (style) l = l.filter((p) => p.genres.includes(style));
     const t = q.trim().toLowerCase();
     if (t) l = l.filter((p) => `${p.name} ${p.title} ${p.genres.join(' ')} ${p.city} ${(p.instruments ?? []).join(' ')}`.toLowerCase().includes(t));
-    // Musicians are compared by "would book again" from verified bookings, never by stars.
-    const score = (p: Profile) => artistScore(p.id).recommendPct ?? -1;
+    // Musicians are compared by "would book again" from verified bookings, never by stars (same score as on each card).
+    const score = (p: Profile) => scoreOf(p.id).recommendPct ?? -1;
     return [...l].sort((a, b) =>
       sort === 'popular' ? b.followers - a.followers : sort === 'price' ? feeKey(a) - feeKey(b) || b.followers - a.followers : score(b) - score(a) || b.followers - a.followers,
     );
-  }, [pool, kind, style, q, sort]);
+  }, [pool, kind, style, q, sort, scoreOf]);
   // Pad odd lists so the last card keeps its column width.
   const data: (Profile | null)[] = list.length % 2 ? [...list, null] : list;
   const narrowed = !!style || !!q.trim();

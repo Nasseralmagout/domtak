@@ -1,19 +1,45 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { ArtistCard, EventCard, VenueCard } from '../components/cards';
 import { goBack, Screen, ScreenHeader } from '../components/layout';
-import { EmptyState, Row, Segmented, T } from '../components/ui';
+import { EmptyState, IconButton, Photo, Pill, Row, Segmented, T } from '../components/ui';
 import { profileById } from '../data/mock';
 import type { EventItem } from '../data/types';
+import { shortDate } from '../lib/format';
 import { isUpcoming } from '../store/filters';
 import { useAllEvents, useApp, useInvitedEvents, useVenues } from '../store/useApp';
+import { colors, radius, shadow } from '../theme';
 
 type Tab = 'events' | 'artists' | 'venues';
 
+/** A saved event that already happened: no ticket button, just the record and a way to unsave it. */
+function PastEventRow({ event, venueName, onRemove }: { event: EventItem; venueName?: string; onRemove: () => void }) {
+  const when = shortDate(event.start);
+  return (
+    <Row gap={8} style={{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: 10, ...shadow(1) }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${event.title}, ended, ${when}${venueName ? `, ${venueName}` : ''}. Open event`}
+        onPress={() => router.push(`/event/${event.id}`)}
+        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64 }}
+      >
+        <Photo src={event.cover} style={{ width: 64, height: 64, opacity: 0.8 }} radius={12} />
+        <View style={{ flex: 1, gap: 3 }}>
+          <T v="title" numberOfLines={1}>{event.title}</T>
+          <T v="small" numberOfLines={1}>{[when, venueName].filter(Boolean).join(' · ')}</T>
+          <Pill label="Ended" tone="neutral" icon="calendar-check-outline" />
+        </View>
+      </Pressable>
+      <IconButton name="heart" color={colors.danger} label={`Remove ${event.title} from wishlist`} onPress={onRemove} />
+    </Row>
+  );
+}
+
 export default function Wishlist() {
   const wish = useApp((s) => s.wishlist);
+  const toggleWish = useApp((s) => s.toggleWish);
   const blocked = useApp((s) => s.blocked);
   const events = useAllEvents();
   const invited = useInvitedEvents();
@@ -56,7 +82,7 @@ export default function Wishlist() {
           {past.length ? (
             <View style={{ gap: 12 }}>
               <T v="label" accessibilityRole="header">Already happened</T>
-              {past.map((e) => <EventCard key={e.id} event={e} />)}
+              {past.map((e) => <PastEventRow key={e.id} event={e} venueName={venues.find((v) => v.id === e.venueId)?.name} onRemove={() => toggleWish('events', e.id)} />)}
             </View>
           ) : null}
         </>
