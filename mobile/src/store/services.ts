@@ -102,9 +102,15 @@ export const useServices = create<ServicesState>()(
       name: 'domtak-services',
       version: 1,
       storage: createJSONStorage(() => AsyncStorage),
+      // Saved data from an older shape gets today's defaults for any missing field.
       merge: (persisted, current) => {
         const p = (persisted && typeof persisted === 'object' ? persisted : {}) as Partial<ServicesState>;
-        return { ...current, ...p, services: { ...current.services, ...p.services } };
+        return {
+          ...current,
+          ...p,
+          services: { ...current.services, ...p.services },
+          servicesDraft: p.servicesDraft ? { ...initialServices, ...p.servicesDraft, feePerHour: p.servicesDraft.feePerHour ?? 0 } : undefined,
+        };
       },
     },
   ),
@@ -190,8 +196,8 @@ export function servicesChecklist(d: ServicesDraft): ReadinessItem[] {
       hint: 'Enter a price of at least €20 per hour, or switch to quote on request.',
     },
     { key: 'scope', label: 'Describe what a performance includes', done: d.performanceNote.trim().length >= 10, hint: 'A short sentence on set length, gear and style.' },
-    { key: 'travel', label: 'State your travel charge', done: d.travel != null, hint: 'Enter an amount or switch the travel charge off.' },
-    { key: 'equipment', label: 'State your equipment charge', done: d.equipment != null, hint: 'Enter an amount or switch the equipment charge off.' },
+    { key: 'travel', label: 'State your travel charge', done: d.travel != null, hint: 'Choose No charge, or Charge separately and enter the amount.' },
+    { key: 'equipment', label: 'State your equipment charge', done: d.equipment != null, hint: 'Choose No charge, or Charge separately and enter the amount.' },
     { key: 'terms', label: 'Write your performance terms', done: d.performanceTerms.trim().length >= 10, hint: 'What bookers agree to, separate from lesson terms.' },
   ];
   if (d.lessons.length) {

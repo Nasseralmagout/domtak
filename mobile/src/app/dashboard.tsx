@@ -6,6 +6,7 @@ import { DateBadge } from '../components/cards';
 import { ConversationList, Panel, PanelEmpty, QueueRow } from '../components/dashboard';
 import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Avatar, Banner, Button, Icon, type IconName, IconButton, PaymentPill, Pill, Row, StatusPill, T, TimeLeft } from '../components/ui';
+import { eventDiscussion, profileById } from '../data/mock';
 import type { Booking, EventItem, EventState, GuestInvite, Ticket } from '../data/types';
 import { WORKSPACE_LABEL } from '../lib/access';
 import { isClosed, isConfirmed, isOutstanding, providerOf, quoteState, type Tone } from '../lib/booking';
@@ -87,6 +88,8 @@ export default function Dashboard() {
   const going = useApp((s) => s.going);
   const myEvents = useApp((s) => s.myEvents);
   const blocked = useApp((s) => s.blocked);
+  const extraComments = useApp((s) => s.extraComments);
+  const removed = useApp((s) => s.removedContent);
   const allEvents = useAllEvents();
   const invited = useInvitedEvents();
   const queue = useActionQueue();
@@ -177,6 +180,20 @@ export default function Dashboard() {
       .map((list) => ({ list, event: eventById.get(list[0].eventId) as EventItem }))
       .sort((a, b) => Number(a.list[0].status !== 'valid') - Number(b.list[0].status !== 'valid') || a.event.start.localeCompare(b.event.start));
   }, [tickets, eventById]);
+
+  // Discussions of your next events (event context next to direct conversations).
+  const discussions = useMemo(
+    () =>
+      rows
+        .filter((x) => x.state !== 'cancelled')
+        .map((x) => {
+          const list = [...(eventDiscussion[x.event.id] ?? []), ...(extraComments[`event:${x.event.id}`] ?? [])].filter((c) => !removed.includes(c.id) && !blocked.includes(c.authorId));
+          return { event: x.event, count: list.length, last: list[list.length - 1] };
+        })
+        .filter((x) => x.count > 0)
+        .slice(0, 2),
+    [rows, extraComments, removed, blocked],
+  );
 
   const next = rows.find((x) => x.state !== 'cancelled');
   const nothingYet = !rows.length && !bookingList.length && !ticketRows.length && !items.length;
@@ -396,6 +413,16 @@ export default function Dashboard() {
       </Panel>
 
       <Panel title="Messages" icon="message-text-outline" action="Inbox" onAction={() => router.push('/inbox')}>
+        {discussions.map(({ event, count, last }) => (
+          <QueueRow
+            key={`talk-${event.id}`}
+            icon="forum-outline"
+            tone="neutral"
+            title={`${event.title} · ${plural(count, 'message')}`}
+            sub={last ? `Event discussion · ${profileById(last.authorId)?.name ?? 'Guest'}: ${last.text}` : 'Event discussion'}
+            onPress={() => router.push(`/event-comments/${event.id}`)}
+          />
+        ))}
         <ConversationList bookings={bookings} />
       </Panel>
 

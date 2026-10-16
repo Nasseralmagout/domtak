@@ -287,6 +287,9 @@ function VenueListingEditor() {
     if (unsaved && differsFromLive) {
       saveVenueDraft(draft);
       toast('Draft saved. It is not live until you publish.');
+    } else if (!differsFromLive && savedDraft) {
+      // Edited back to the published version: a leftover draft would only show stale changes.
+      discardVenueDraft();
     }
     goBack('/pro/workspace');
   };
@@ -322,7 +325,7 @@ function VenueListingEditor() {
               <Button title="Discard changes" variant="ghost" size="sm" onPress={discard} />
             </View>
           ) : (
-            <Button title="Done" icon="check" full onPress={() => goBack('/pro/workspace')} />
+            <Button title="Done" icon="check" full onPress={leave} />
           )}
         </BottomBar>
       }

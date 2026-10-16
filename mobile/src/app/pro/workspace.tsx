@@ -304,6 +304,13 @@ function ArtistDashboard() {
 
       <Panel title="Profile readiness" icon="account-check-outline">
         <Checklist items={checklist} title={missing.length ? 'Complete your profile' : 'Profile complete'} />
+        <QueueRow
+          icon="school-outline"
+          tone="neutral"
+          title={services.lessons.length ? `${plural(services.lessons.length, 'lesson')} offered` : 'No lessons offered'}
+          sub="Lessons have their own prices and terms, separate from performances"
+          onPress={() => router.push('/pro/services')}
+        />
       </Panel>
 
       <Panel title="Reputation" icon="thumb-up-outline" action="Reviews" onAction={() => router.push(`/ratings/${OWN_ARTIST_ID}`)}>
@@ -544,7 +551,8 @@ function OrganizerDashboard() {
     return (sold > 0 ? attendees.filter((a) => a.checkedIn && !scanned.includes(a.code)).length : 0) + scanned.length;
   };
 
-  const urgent = queue.find((q) => q.kind === 'payment' || q.kind === 'quote' || q.kind === 'change' || q.kind === 'booking');
+  // A failed payment comes first, then change requests, quotes to review and payments to finalize.
+  const urgent = (['payment', 'change', 'quote', 'booking'] as const).map((k) => queue.find((q) => q.kind === k)).find((q) => !!q);
   const draft = upcoming.find((m) => m.state === 'draft');
   const live = upcoming.find((m) => m.state === 'in_progress');
   const nextEvent = upcoming.find((m) => m.state !== 'cancelled' && m.state !== 'draft');

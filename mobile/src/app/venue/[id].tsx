@@ -8,12 +8,21 @@ import { BackOverlay, EventRow, HeartToggle, VenueAmenities } from '../../compon
 import { BottomBar, goBack } from '../../components/layout';
 import { Avatar, Banner, Button, Card, Chip, Icon, type IconName, InfoRow, LineItems, Photo, RatingBadge, Row, SectionTitle, Stars, Stepper, T } from '../../components/ui';
 import { followersOf, PARKING_KIND_LABEL, profileById, reviewsFor, venueGarden, venueParking } from '../../data/mock';
-import { compact, euro, parse, plural, shortDate, TODAY } from '../../lib/format';
+import { compact, euro, plural, shortDate } from '../../lib/format';
 import { cateringCost, guardsFor, securityCost, securityRequired, toLineItems, venueEstimate } from '../../lib/pricing';
+import { isUpcoming } from '../../store/filters';
 import { useServices } from '../../store/services';
 import { toast } from '../../store/toast';
 import { activeWorkspace, OWN_VENUE_ID, useAllEvents, useApp, useRating, useVenue } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
+
+/** What the listed equipment level means for the host (anything not listed reads as included). */
+const EQUIPMENT_NOTE: Record<string, string> = {
+  'Full equipment': 'Full sound and light equipment included with the venue hire',
+  'Sound & light': 'Sound system and lights included with the venue hire',
+  'Sound system': 'Sound system included. Bring your own lights or ask the venue.',
+  'Stage only': 'A stage, but no sound or light. Bring your own or ask the venue.',
+};
 
 /** One clearly separated block on the venue page. */
 function Section({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
@@ -82,9 +91,9 @@ export default function VenueDetail() {
     );
   }
   const gallery = [venue.cover, ...venue.gallery];
-  // Public events that have not ended yet (private events only for their organizer, i.e. you).
+  // Public events that have not ended yet (private events only for their organizer, i.e. you). Drafts and cancelled events are not listed.
   const upcoming = events
-    .filter((e) => e.venueId === venue.id && (!e.isPrivate || e.organizerId === 'me') && parse(e.end) >= TODAY)
+    .filter((e) => e.venueId === venue.id && (!e.isPrivate || e.organizerId === 'me') && e.state !== 'draft' && e.state !== 'cancelled' && isUpcoming(e))
     .sort((a, b) => a.start.localeCompare(b.start));
   const fans = followersOf(venue.id).filter((p) => !blocked.includes(p.id)).slice(0, 5);
   const half = Math.ceil(venue.occasions.length / 2);
@@ -253,7 +262,7 @@ export default function VenueDetail() {
               {venue.equipment === 'No equipment' ? (
                 <InfoRow icon="speaker" label="No equipment included" value="Bring your own sound and light, or ask the venue." available={false} />
               ) : (
-                <InfoRow icon="speaker" label={venue.equipment} value="Equipment included with the venue" />
+                <InfoRow icon="speaker" label={venue.equipment} value={EQUIPMENT_NOTE[venue.equipment] ?? 'Included with the venue hire'} />
               )}
               {facilities.length ? (
                 <Row gap={8} style={{ flexWrap: 'wrap' }}>
@@ -382,7 +391,9 @@ export default function VenueDetail() {
           </Section>
 
           <Banner icon="shield-check-outline">
-            Requests reach the venue with payment pending their decision. If the venue declines or doesn’t answer within 24 hours, the payment is released or refunded. A date that looks free still needs the venue’s acceptance.
+            {quote
+              ? 'A quote request carries no payment. The venue replies with an itemised quote, and you pay only if you accept it. A date that looks free still needs the venue’s acceptance.'
+              : 'Requests reach the venue with payment pending their decision. If the venue declines or doesn’t answer within 24 hours, the payment is released or refunded. A date that looks free still needs the venue’s acceptance.'}
           </Banner>
 
           {upcoming.length ? (
@@ -394,7 +405,7 @@ export default function VenueDetail() {
 
           <View style={{ gap: 12 }}>
             <Row justify="space-between">
-              <T v="h3" color={colors.brandDeep}>Reviews</T>
+              <T v="h3" color={colors.brandDeep} accessibilityRole="header">Reviews</T>
               {reviewCount ? (
                 <Pressable accessibilityRole="button" accessibilityLabel={`Rated ${ratingText} out of 5 from ${reviewsLabel}. See reviews`} onPress={openRatings} hitSlop={8}>
                   <RatingBadge value={rating} />

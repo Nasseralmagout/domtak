@@ -8,6 +8,7 @@ import { Avatar, Banner, Button, Card, Chip, EmptyState, Photo, Pill, ProgressBa
 import { profileById, reviewsFor, venueById } from '../../data/mock';
 import { plural, shortDate } from '../../lib/format';
 import { isMusician, PRAISE_TAGS, verifiedMusicianReviews } from '../../lib/ratings';
+import { useArtist } from '../../store/services';
 import { useApp, useArtistScore, useRating, useVenue } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
 
@@ -21,6 +22,8 @@ interface Item {
   bookingId?: string;
   recommend?: boolean;
   tags: string[];
+  /** Written after a completed Domtak booking (yours always are: reviews open only after completion). */
+  verified: boolean;
 }
 
 type RecommendFilter = 'all' | 'yes' | 'no';
@@ -37,7 +40,8 @@ export default function Ratings() {
   const [rec, setRec] = useState<RecommendFilter>('all');
   // Venues first (every venue also has a stand-in profile); useVenue includes the owner's listing edits.
   const venue = useVenue(id);
-  const artist = venue ? undefined : profileById(id);
+  // Includes the musician's published services (e.g. quote pricing) for their own profile.
+  const artist = useArtist(venue ? undefined : id);
   // Venues keep stars; musicians, DJs and bands are scored by "would book again".
   const musician = !!artist && isMusician(id);
   const { rating: avg } = useRating(id);
@@ -57,6 +61,8 @@ export default function Ratings() {
   const profileHref = !artist ? `/venue/${venue!.id}` : artist.kind === 'fan' || artist.kind === 'organizer' ? `/profile/${artist.id}` : `/artist/${artist.id}`;
   const isBlocked = blocked.includes(id);
   const bookable = !isBlocked && (!!venue || musician);
+  // Quote-based providers get a quote request, never an invented price (F08).
+  const quote = venue ? venue.pricing === 'quote' : !!artist && (artist.pricing === 'quote' || !artist.feePerHour);
 
   // Your own reviews of completed bookings with this target come first (the same ones the score counts).
   const mine: Item[] = bookings
@@ -74,10 +80,11 @@ export default function Ratings() {
         date: b.date,
         context: b.eventTitle,
         bookingId: b.id,
+        verified: true,
       };
     });
   const seeded: Item[] = (musician ? verifiedMusicianReviews(id, blocked) : reviewsFor(id).filter((r) => !blocked.includes(r.authorId)))
-    .map((r) => ({ id: r.id, authorId: r.authorId, rating: r.rating, text: r.text, date: r.date, context: r.context, recommend: r.recommend, tags: r.tags ?? [] }))
+    .map((r) => ({ id: r.id, authorId: r.authorId, rating: r.rating, text: r.text, date: r.date, context: r.context, recommend: r.recommend, tags: r.tags ?? [], verified: !!r.verified }))
     .sort((a, b) => b.date.localeCompare(a.date));
   const all = [...mine, ...seeded];
   const total = all.length;
@@ -228,7 +235,7 @@ export default function Ratings() {
                 </Row>
                 <Row gap={8} style={{ flexWrap: 'wrap' }}>
                   {musician ? <RecommendBadge recommend={!!r.recommend} /> : <Stars value={r.rating} size={15} />}
-                  <Pill label="Verified booking" tone="success" icon="check" />
+                  {r.verified ? <Pill label="Verified booking" tone="success" icon="check" /> : null}
                 </Row>
                 {musician ? <ReviewTags tags={r.tags} /> : null}
                 {r.text ? <T v="body" color={colors.inkSoft}>{r.text}</T> : null}
@@ -249,7 +256,7 @@ export default function Ratings() {
           icon={musician ? 'account-music-outline' : 'star-outline'}
           title={musician ? 'No verified bookings yet' : 'No reviews yet'}
           body={musician ? `${name} has no reviews from completed Domtak bookings yet, so there is no score to show.` : `${name} hasn’t been reviewed yet. Reviews appear after a completed booking on Domtak.`}
-          action={!completed && bookable ? `Book ${name}` : undefined}
+          action={!completed && bookable ? (quote ? `Request a quote from ${name}` : `Book ${name}`) : undefined}
           onAction={!completed && bookable ? () => router.push({ pathname: '/booking/new', params: { type: musician ? 'musician' : 'venue', id } }) : undefined}
         />
       )}
@@ -257,7 +264,7 @@ export default function Ratings() {
       <Banner icon="shield-check-outline">
         {musician
           ? 'Musicians are not rated with stars. Their score is the share of customers from completed Domtak bookings who would book them again, plus the praise those customers picked.'
-          : 'Only people who booked through Domtak can leave a review, so every rating comes from a real event.'}
+          : 'You can review a venue after a completed booking through Domtak. Reviews marked “Verified booking” come from one.'}
       </Banner>
     </Screen>
   );

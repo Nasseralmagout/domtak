@@ -146,9 +146,16 @@ export default function AvailabilityScreen() {
   const draftFee = typedFee(feeDraft);
   const feePerHour = draftFee === undefined ? availability.feePerHour : clampFee(draftFee);
   const blockedSet = useMemo(() => new Set(blockedDates), [blockedDates]);
+  // Only this workspace's accepted work: venue requests for the venue, performances and lessons for the musician.
   const bookedSet = useMemo(
-    () => new Set(requests.filter((r) => r.status === 'accepted').map((r) => r.isoDate ?? labelToIso(r.date)).filter((d): d is string => Boolean(d))),
-    [requests],
+    () =>
+      new Set(
+        requests
+          .filter((r) => r.status === 'accepted' && (role === 'venue' ? r.kind === 'venue' : r.kind !== 'venue'))
+          .map((r) => r.isoDate ?? labelToIso(r.date))
+          .filter((d): d is string => Boolean(d)),
+      ),
+    [requests, role],
   );
   const upcomingBlocked = blockedDates.filter((d) => d >= TODAY_ISO).sort();
   const openDays = WEEK.filter((w) => days[w.key]);
@@ -205,7 +212,7 @@ export default function AvailabilityScreen() {
         </Row>
         <T v="h2" color={colors.white}>{daysSummary}</T>
         <T v="body" color={colors.lilacLight}>
-          {isVenue ? '' : `${quotePricing ? 'Quote on request' : `${euro(feePerHour)}/h`} · `}min. {minHours} h · {isVenue ? 'organisers within' : 'travels up to'} {radiusKm} km
+          {isVenue ? '' : `${quotePricing ? 'Quote on request' : `${euro(feePerHour)}/h`} · `}min. {minHours} h · {isVenue ? 'hosts within' : 'travels up to'} {radiusKm} km
         </T>
         {upcomingBlocked.length ? <T v="small" color={colors.lilacLight}>{upcomingBlocked.length} upcoming {upcomingBlocked.length === 1 ? 'date' : 'dates'} blocked</T> : null}
       </View>
@@ -274,7 +281,7 @@ export default function AvailabilityScreen() {
               const booked = bookedSet.has(iso);
               const open = days[weekdayOf(d)];
               const today = sameDay(d, TODAY);
-              const state = past ? 'past' : booked ? 'booked gig' : blocked ? 'blocked' : open ? 'available' : 'off in weekly schedule';
+              const state = past ? 'past' : booked ? (isVenue ? 'accepted event' : 'booked gig') : blocked ? 'blocked' : open ? 'available' : 'off in weekly schedule';
               const bg = past ? 'transparent' : booked ? colors.brand : blocked ? colors.dangerBg : open ? colors.brandTint : 'transparent';
               const fg = past ? colors.disabled : booked ? colors.white : blocked ? colors.danger : open ? colors.ink : colors.subtle;
               const dayOff = !past && !booked && !blocked && !open;
@@ -286,7 +293,7 @@ export default function AvailabilityScreen() {
                   accessibilityHint={past || booked ? undefined : blocked ? 'Unblocks this date' : 'Blocks this date'}
                   accessibilityState={{ disabled: past, selected: blocked }}
                   disabled={past}
-                  onPress={() => (booked ? toast(`You have a confirmed gig on ${shortDate(iso)}`) : toggleBlocked(iso))}
+                  onPress={() => (booked ? toast(`You accepted ${isVenue ? 'an event' : 'a gig'} on ${shortDate(iso)}. It keeps its agreed terms.`) : toggleBlocked(iso))}
                   style={{ width: `${100 / 7}%`, height: 48, padding: 2 }}
                 >
                   {({ pressed }) => (
@@ -302,7 +309,7 @@ export default function AvailabilityScreen() {
         <Row gap={14} style={{ flexWrap: 'wrap' }}>
           <LegendDot label="Available" bg={colors.brandTint} />
           <LegendDot label="Blocked" bg={colors.dangerBg} strike />
-          <LegendDot label="Booked gig" bg={colors.brand} />
+          <LegendDot label={isVenue ? 'Accepted event' : 'Booked gig'} bg={colors.brand} />
           <LegendDot label="Day off" bg={colors.surface} border={colors.borderStrong} />
         </Row>
         {upcomingBlocked.length ? (
@@ -382,7 +389,7 @@ export default function AvailabilityScreen() {
       <SectionCard
         icon="map-marker-radius-outline"
         title={isVenue ? 'Booking radius' : 'Travel radius'}
-        sub={isVenue ? 'Accept requests from organisers within this distance' : `How far you’ll travel from ${city.split(',')[0] || 'home'} for a gig`}
+        sub={isVenue ? 'Accept requests from hosts within this distance' : `How far you’ll travel from ${city.split(',')[0] || 'home'} for a gig`}
       >
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
           {RADII.map((km) => (

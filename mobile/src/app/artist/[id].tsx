@@ -11,6 +11,7 @@ import { Avatar, Banner, BookAgainBadge, Button, Icon, IconButton, Photo, Row, S
 import { followersOf, profileById, reviewsFor } from '../../data/mock';
 import { compact, isoDay, plural, shortDate, TODAY } from '../../lib/format';
 import { isMusician, verifiedMusicianReviews } from '../../lib/ratings';
+import { isUpcoming } from '../../store/filters';
 import { OWN_ARTIST_ID, overlayArtist, useArtist, useArtistServices, useServices } from '../../store/services';
 import { toast } from '../../store/toast';
 import { activeWorkspace, useAllEvents, useApp, useArtistScore, useFeedPosts, useRating } from '../../store/useApp';
@@ -37,9 +38,12 @@ export default function ArtistProfile() {
   // Includes the musician's published services (price, quote mode, charges, lessons) for their own profile.
   const published = useArtist(id);
   const publishedServices = useArtistServices(id);
+  const user = useApp((s) => s.user);
+  // The approved musician working in their workspace manages this profile (see store/services).
+  const ownsProfile = activeWorkspace(user) === 'musician' && id === OWN_ARTIST_ID;
   // Pro → Services and pricing → Preview profile: show the saved, unpublished draft instead (owner only).
   const servicesDraft = useServices((s) => s.servicesDraft);
-  const draft = preview === 'draft' && id === OWN_ARTIST_ID ? servicesDraft : undefined;
+  const draft = preview === 'draft' && ownsProfile ? servicesDraft : undefined;
   const artist = useMemo(() => (draft && published ? overlayArtist(published, draft, draft.feePerHour) : published), [draft, published]);
   const services = draft ?? publishedServices;
   const score = useArtistScore(id ?? '');
@@ -49,7 +53,6 @@ export default function ArtistProfile() {
   const blocked = useApp((s) => s.blocked);
   const bookings = useApp((s) => s.bookings);
   const myReviews = useApp((s) => s.reviews);
-  const user = useApp((s) => s.user);
   const availability = useApp((s) => s.availability);
   const toggleFollow = useApp((s) => s.toggleFollow);
   const toggleWish = useApp((s) => s.toggleWish);
@@ -71,7 +74,10 @@ export default function ArtistProfile() {
   }
   // Musicians, DJs and bands are rated by "would book again", never stars.
   const musician = isMusician(artist.id);
-  const gigs = events.filter((e) => e.lineup.includes(artist.id)).sort((a, b) => a.start.localeCompare(b.start));
+  // Upcoming public gigs (your own private events only for you); drafts, cancelled and past events are not gigs.
+  const gigs = events
+    .filter((e) => e.lineup.includes(artist.id) && (!e.isPrivate || e.organizerId === 'me') && e.state !== 'draft' && e.state !== 'cancelled' && isUpcoming(e))
+    .sort((a, b) => a.start.localeCompare(b.start));
   const media = [...posts.filter((p) => p.authorId === artist.id).flatMap((p) => p.media), ...(artist.gallery ?? [])].slice(0, 6);
   const fans = followersOf(artist.id).filter((p) => !blocked.includes(p.id)).slice(0, 5);
   const cell = (width - 32 - 8) / 3;
@@ -82,7 +88,9 @@ export default function ArtistProfile() {
   ].filter((x): x is NonNullable<typeof x> => !!x);
   const lessons = artist.lessons ?? [];
   const quote = artist.pricing === 'quote' || !artist.feePerHour;
-  const isOwner = activeWorkspace(user) === 'musician' && artist.id === OWN_ARTIST_ID;
+  const isOwner = ownsProfile;
+  // Lessons that are only in the unpublished draft have no public page yet.
+  const publishedLessonIds = (published?.lessons ?? []).map((l) => l.id);
 
   // Reviews: your own (from completed bookings, the same ones the score counts) first, then verified reviews from other customers, newest first.
   const mine: ReviewRow[] = bookings
@@ -265,7 +273,9 @@ export default function ArtistProfile() {
               <T v="h3" accessibilityRole="header">Services and pricing</T>
               <ArtistPricingCard artist={artist} services={services} />
               <Banner icon="shield-check-outline">
-                {`Requests reach ${artist.name} with payment pending their decision. If they decline or don’t answer within 24 hours, the payment is released or refunded.`}
+                {quote
+                  ? `A quote request carries no payment. ${artist.name} replies with an itemised quote, and you pay only if you accept it.`
+                  : `Requests reach ${artist.name} with payment pending their decision. If they decline or don’t answer within 24 hours, the payment is released or refunded.`}
               </Banner>
             </View>
           ) : null}
@@ -290,7 +300,10 @@ export default function ArtistProfile() {
                 <T v="h3" accessibilityRole="header">Lessons</T>
                 <T v="small">Booked separately from performances, with their own price and terms.</T>
               </View>
-              {lessons.map((l) => <LessonCard key={l.id} lesson={l} onPress={() => router.push(`/lesson/${l.id}` as never)} />)}
+              {lessons.map((l) => (
+                <LessonCard key={l.id} lesson={l} onPress={!draft || publishedLessonIds.includes(l.id) ? () => router.push(`/lesson/${l.id}`) : undefined} />
+              ))}
+              {draft && lessons.some((l) => !publishedLessonIds.includes(l.id)) ? <T v="small">New lessons get their own page once you publish.</T> : null}
               {services?.lessonTerms?.trim() ? (
                 <View style={{ gap: 2 }}>
                   <T v="label">Lesson terms</T>
@@ -331,7 +344,7 @@ export default function ArtistProfile() {
 
           <View style={{ gap: 12 }}>
             <Row justify="space-between">
-              <T v="h3">Reviews</T>
+              <T v="h3" accessibilityRole="header">Reviews</T>
               {musician ? (
                 <Pressable accessibilityRole="button" accessibilityLabel="See all reviews" onPress={openRatings} hitSlop={8}>
                   <BookAgainBadge pct={score.recommendPct} total={score.total} />
@@ -392,10 +405,15 @@ export default function ArtistProfile() {
         actions={[
           { label: 'Share profile', icon: 'share-variant-outline', onPress: () => Share.share({ message: `${artist.name} (${artist.handle}) on Domtak: ${artist.title} from ${artist.city}` }).catch(() => {}) },
           { label: 'See all reviews', icon: musician ? 'thumb-up-outline' : 'star-outline', onPress: openRatings },
-          isBlocked
-            ? { label: `Unblock ${artist.name}`, icon: 'account-check-outline', onPress: block }
-            : { label: `Block ${artist.name}`, icon: 'account-cancel-outline', destructive: true, onPress: block },
-          { label: 'Report profile', icon: 'flag-outline', destructive: true, onPress: () => setReportOpen(true) },
+          // You don't block or report your own profile.
+          ...(isOwner
+            ? []
+            : [
+                isBlocked
+                  ? { label: `Unblock ${artist.name}`, icon: 'account-check-outline' as const, onPress: block }
+                  : { label: `Block ${artist.name}`, icon: 'account-cancel-outline' as const, destructive: true, onPress: block },
+                { label: 'Report profile', icon: 'flag-outline' as const, destructive: true, onPress: () => setReportOpen(true) },
+              ]),
         ]}
       />
       <ReasonSheet

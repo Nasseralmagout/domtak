@@ -8,6 +8,7 @@ import { BackOverlay } from '../../components/cards';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Banner, Button, EmptyState, Photo, Radio, Row, Stepper, T } from '../../components/ui';
 import { venueById } from '../../data/mock';
+import { eventState } from '../../lib/events';
 import { euro, eventWhen, parse, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp, useEvent } from '../../store/useApp';
@@ -23,6 +24,9 @@ export default function ChooseTicket() {
   const start = useApp((s) => s.startTicketCheckout);
   const wished = useApp((s) => (eventId ? s.wishlist.events.includes(eventId) : false));
   const toggleWish = useApp((s) => s.toggleWish);
+  const bookings = useApp((s) => s.bookings);
+  const invites = useApp((s) => s.guestInvites);
+  const myTickets = useApp((s) => s.tickets);
   const firstAvailable = event?.ticketTypes.find((t) => t.sold < t.capacity)?.id;
   const [typeId, setTypeId] = useState(firstAvailable);
   const [qty, setQty] = useState(1);
@@ -31,6 +35,36 @@ export default function ChooseTicket() {
     return (
       <Screen header={<ScreenHeader title="Tickets" onBack={() => goBack('/(tabs)/events')} />}>
         <EmptyState icon="ticket-outline" title="Event not found" body="This event may have been cancelled or removed." action="Browse events" onAction={() => router.replace('/events/all')} />
+      </Screen>
+    );
+  }
+  // Private events have no public ticket sales: entry is by invitation (F20).
+  if (event.isPrivate && event.organizerId !== 'me' && event.hostId !== 'me') {
+    const invite = invites.find((g) => g.eventId === event.id);
+    const own = myTickets.find((t) => t.eventId === event.id && t.status === 'valid');
+    return (
+      <Screen header={<ScreenHeader title="Tickets" onBack={() => goBack(`/event/${event.id}`)} />}>
+        <EmptyState
+          icon="lock-outline"
+          title="Entry by invitation"
+          body={own ? 'You already have a ticket for this private event.' : invite ? 'This is a private event. Answer your invitation to get your ticket.' : 'This is a private event. Only invited guests get tickets.'}
+          action={own ? 'Open ticket' : invite ? 'Open invitation' : 'Back to event'}
+          onAction={() => (own ? router.replace(`/ticket/${own.id}`) : invite ? router.replace(`/invitation/${invite.id}`) : goBack(`/event/${event.id}`))}
+        />
+      </Screen>
+    );
+  }
+  const state = eventState(event, bookings);
+  if (state === 'cancelled' || state === 'draft') {
+    return (
+      <Screen header={<ScreenHeader title="Tickets" onBack={() => goBack(`/event/${event.id}`)} />}>
+        <EmptyState
+          icon={state === 'cancelled' ? 'calendar-remove-outline' : 'file-document-edit-outline'}
+          title={state === 'cancelled' ? 'Event cancelled' : 'Not on sale yet'}
+          body={state === 'cancelled' ? `${event.title} was cancelled${event.cancelReason ? `: ${event.cancelReason}` : ''}. Tickets are no longer sold.` : 'This event is still a draft. Tickets go on sale once the organizer publishes it.'}
+          action="Back to event"
+          onAction={() => goBack(`/event/${event.id}`)}
+        />
       </Screen>
     );
   }

@@ -36,9 +36,12 @@ const stable = (v: unknown) =>
       : val,
   );
 
-/** Next free lesson id for the demo musician ("adam-l3"), never reusing a published id. */
-function nextLessonId(...lists: Lesson[][]) {
-  const n = lists.flat().reduce((max, l) => Math.max(max, Number(/-l(\d+)$/.exec(l.id)?.[1] ?? 0)), 0);
+/**
+ * Next free lesson id for the demo musician ("adam-l3"). Never reuses an id that was ever offered or booked,
+ * so a removed lesson's bookings never point at a different lesson.
+ */
+function nextLessonId(ids: string[]) {
+  const n = ids.reduce((max, id) => Math.max(max, Number(/-l(\d+)$/.exec(id)?.[1] ?? 0)), 0);
   return `${OWN_ARTIST_ID}-l${n + 1}`;
 }
 
@@ -217,6 +220,7 @@ function ServicesEditor() {
   const fee = useApp((s) => s.availability.feePerHour);
   const minHours = useApp((s) => s.availability.minHours);
   const requests = useApp((s) => s.requests);
+  const bookings = useApp((s) => s.bookings);
   const setAvailability = useApp((s) => s.setAvailability);
   const services = useServices((s) => s.services);
   const savedDraft = useServices((s) => s.servicesDraft);
@@ -281,7 +285,13 @@ function ServicesEditor() {
     setEditing(null);
     toast(`${l.title} removed from your draft. Accepted lesson bookings keep their terms.`);
   };
-  const newLesson: Lesson = { id: nextLessonId(draft.lessons, services.lessons), title: '', instrument: '', format: 'at-studio', durationMin: 60, level: LESSON_LEVELS[0] };
+  const usedLessonIds = [
+    ...draft.lessons.map((l) => l.id),
+    ...services.lessons.map((l) => l.id),
+    ...(BASE_PROFILE?.lessons ?? []).map((l) => l.id),
+    ...bookings.flatMap((b) => (b.lessonId ? [b.lessonId] : [])),
+  ];
+  const newLesson: Lesson = { id: nextLessonId(usedLessonIds), title: '', instrument: '', format: 'at-studio', durationMin: 60, level: LESSON_LEVELS[0] };
 
   const clean = (): ServicesDraft => ({
     ...draft,
@@ -316,6 +326,9 @@ function ServicesEditor() {
     if (unsaved && differsFromLive) {
       saveServicesDraft(draft);
       toast('Draft saved. It is not live until you publish.');
+    } else if (!differsFromLive && savedDraft) {
+      // Edited back to the published version: a leftover draft would only show stale changes.
+      discardServicesDraft();
     }
     goBack('/pro/workspace');
   };
@@ -349,7 +362,7 @@ function ServicesEditor() {
           ) : (
             <Row gap={10}>
               <Button title="Preview profile" variant="secondary" icon="eye-outline" style={{ flex: 1 }} onPress={previewProfile} />
-              <Button title="Done" icon="check" style={{ flex: 1 }} onPress={() => goBack('/pro/workspace')} />
+              <Button title="Done" icon="check" style={{ flex: 1 }} onPress={leave} />
             </Row>
           )}
         </BottomBar>
