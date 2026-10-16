@@ -43,9 +43,25 @@ export const APPLICATION_GROUP: Record<'review' | 'info' | 'decided', Applicatio
   decided: ['approved', 'rejected'],
 };
 
+/** The answer for a form field, also when an older form stored it under a shorter label (e.g. "Links" for "Music links"). */
+export function answerFor(label: string, details: Record<string, string>): string | undefined {
+  if (details[label]?.trim()) return details[label];
+  const l = label.toLowerCase();
+  const key = Object.keys(details).find((k) => {
+    const kk = k.toLowerCase();
+    return details[k]?.trim() && (l.includes(kk) || kk.includes(l));
+  });
+  return key ? details[key] : undefined;
+}
+
 /** Required answers of the role's application form that are missing or empty. */
 export function missingRequired(role: ProfessionalRole, details: Record<string, string>): string[] {
-  return APPLY_FIELDS[role].filter((f) => f.required && !(details[f.label] ?? '').trim()).map((f) => f.label);
+  return APPLY_FIELDS[role].filter((f) => f.required && !answerFor(f.label, details)).map((f) => f.label);
+}
+
+/** Required fields of the role's form with whether the applicant answered them. */
+export function requirementChecks(role: ProfessionalRole, details: Record<string, string>) {
+  return APPLY_FIELDS[role].filter((f) => f.required).map((f) => ({ label: f.label, done: !!answerFor(f.label, details) }));
 }
 
 /** Every field of the role's form (what a reviewer can ask for). */

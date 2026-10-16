@@ -19,22 +19,25 @@ const TERMS: Section[] = [
     title: '1. Your account',
     body: [
       'Keep your login details private; you are responsible for activity on your account. Some events are 18+ and the door team may ask for ID.',
-      'Fans, musicians and DJs, venue owners and organizers each get the tools for their role. Pro features need verification and a Pro plan.',
+      'Everyone starts with a member account: discover music, join communities, create private events, buy tickets and book artists or venues. Members share photos inside comments.',
+      'Artists, bands, DJs, venues and organizers apply for a professional account, and our team reviews each application before access is granted. Only approved organizers publish public events, and feed posts and stories are for approved professional accounts.',
     ],
   },
   {
-    title: '2. Bookings and escrow',
+    title: '2. Bookings and payments',
     body: [
-      'A booking request is free until the musician or venue accepts it. After acceptance you pay in the app and the money is held in escrow.',
-      'Escrow releases the payment 24 hours after the event. You can report a problem for up to 48 hours after the event; while we review, money that has not been released stays frozen.',
-      'Cancellations follow the policy shown on the booking. Declined and expired requests are never charged.',
+      'Each booking is with one provider and has its own response deadline and payment record. When you send a request, your payment is pending the provider’s decision.',
+      'The provider has 24 hours to accept or decline, and we remind them after 12 hours. If they decline or don’t answer in time, the payment is released or refunded.',
+      'Acceptance alone doesn’t confirm a booking: it is confirmed only once the payment is verified. Agreed terms stay the same if the provider changes their prices later.',
+      'Cancellations, refunds, no-shows and disputes follow the policy shown on the booking. A refund request is not a completed refund; it completes when the payment provider confirms it.',
     ],
   },
   {
-    title: '3. Tickets',
+    title: '3. Tickets and invitations',
     body: [
-      'Every ticket has its own QR code and is checked once at the door. Refunds follow the policy on the event page.',
-      'Organizers are responsible for their events, line ups and refund policies.',
+      'Every ticket has its own QR code and is checked once at the door. Cancelled, refunded and already used tickets are refused. Refunds follow the policy on the event page.',
+      'Private events can use cost sharing: a guest’s ticket is issued once their contribution payment succeeds. A failed payment never issues a ticket.',
+      'Organizers and hosts are responsible for their events, line-ups and refund policies.',
     ],
   },
   {
@@ -47,8 +50,13 @@ const TERMS: Section[] = [
   {
     title: '5. Community rules',
     body: [
-      'Post only content you have the rights to. No harassment, hate, scams or spam. You can block and report anyone; reports are reviewed by our team.',
+      'Post only content you have the rights to. No harassment, hate, scams or spam. You can block and report anyone.',
+      'Moderators review reports against these rules and can dismiss a report, restrict content or remove it. The reported account isn’t told who reported it and can appeal a decision through Help.',
     ],
+  },
+  {
+    title: '6. Support',
+    body: ['Open a support case from Help or from a booking. Each case has a reference and a timeline of every reply, and you can appeal its outcome. Support can’t promise a refund before an authorized decision.'],
   },
 ];
 
@@ -56,7 +64,8 @@ const PRIVACY: Section[] = [
   {
     title: 'What we collect',
     body: [
-      'Account details (name, email, phone, role), your profile and posts, bookings, tickets and messages.',
+      'Account details (name, email, phone, workspace), your profile, posts, comments and photos, bookings, tickets and messages.',
+      'Professional applications and the details you submit for review, support cases and reports you file.',
       'Your location only while you use Nearby or the map, and only if you allow it.',
     ],
   },
@@ -66,7 +75,7 @@ const PRIVACY: Section[] = [
   },
   {
     title: 'Why we use it',
-    body: ['To run your account, process bookings and tickets, keep payments safe in escrow, prevent fraud, and show events near you.'],
+    body: ['To run your account, review professional applications, process bookings, tickets, refunds and payouts through our payment provider, prevent fraud and abuse, and show events near you.'],
   },
   {
     title: 'Your rights (GDPR)',
@@ -77,7 +86,11 @@ const PRIVACY: Section[] = [
   },
   {
     title: 'How long we keep it',
-    body: ['Account data until you delete your account. Payment and booking records for the period German tax law requires.'],
+    body: [
+      'Your profile, posts, comments, photos, friends and messages until you delete your account.',
+      'Booking, payment, refund, payout and ticket records for the period German tax and commercial law requires, also after you delete your account.',
+      'Support cases and moderation decisions under our retention policy, so decisions stay traceable.',
+    ],
   },
 ];
 

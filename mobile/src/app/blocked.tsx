@@ -55,7 +55,7 @@ export default function Blocked() {
               );
             })}
           </Card>
-          <Banner icon="information-outline">Unblocking won’t restore follows you removed. They won’t be told that you unblocked them.</Banner>
+          <Banner icon="information-outline">Unblocking won’t restore follows or friendships that ended when you blocked them. They won’t be told that you unblocked them.</Banner>
         </>
       ) : (
         <EmptyState
@@ -73,6 +73,7 @@ export default function Blocked() {
           {[
             { icon: 'message-off-outline' as const, text: 'They can’t message you, and your chat with them leaves your inbox.' },
             { icon: 'eye-off-outline' as const, text: 'Their notifications, reviews and follows are hidden from you, and you stop following them.' },
+            { icon: 'account-minus-outline' as const, text: 'You’re no longer friends, and pending friend requests between you are declined.' },
             { icon: 'bell-off-outline' as const, text: 'They aren’t notified. Block or unblock anytime from their profile.' },
           ].map((r) => (
             <Row key={r.icon} gap={12} align="flex-start">
@@ -84,6 +85,7 @@ export default function Blocked() {
           ))}
         </Card>
         <Button title="Help with blocking & reporting" variant="ghost" size="md" icon="shield-account-outline" onPress={() => router.push('/help?section=safety')} />
+        <Button title="Report a safety problem to support" variant="ghost" size="md" icon="lifebuoy" onPress={() => router.push('/support/new?topic=safety')} />
       </View>
     </Screen>
   );

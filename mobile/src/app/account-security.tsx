@@ -1,9 +1,13 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
+import { ActionSheet } from '../components/ActionSheet';
 import { Screen, ScreenHeader } from '../components/layout';
-import { Banner, Button, Card, Divider, Field, Icon, type IconName, Row, T, Toggle } from '../components/ui';
+import { Banner, Button, Card, Divider, Field, Icon, type IconName, Pill, Row, T, Toggle } from '../components/ui';
+import { isOutstanding } from '../lib/booking';
+import { parse, plural, TODAY } from '../lib/format';
+import { CASE_STATUS_LABEL, CASE_STATUS_TONE } from '../lib/support';
 import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors } from '../theme';
@@ -14,6 +18,19 @@ const CODE_RE = /^\d{6}$/;
 type Contact = 'email' | 'phone';
 type Change = { kind: Contact; value: string; step: 'enter' | 'code'; code: string; error?: string };
 type Device = { id: string; icon: IconName; name: string; where: string; current?: boolean };
+
+/** What a deletion request removes and what has to stay (blueprint section 13, data deletion request). */
+const REMOVED = [
+  'Your profile, photo, bio and music interests',
+  'Your posts, comments and the photos in them',
+  'Friends, follows, saved events and community memberships',
+  'Your side of your conversations',
+];
+const KEPT = [
+  'Booking, payment, refund and payout records, for the period German tax and commercial law requires',
+  'Tickets and door check-ins for events that already happened, as part of those records',
+  'Support cases and moderation decisions, so decisions stay traceable',
+];
 
 const DEVICES: Device[] = [
   { id: 'd1', icon: 'cellphone', name: 'This phone · Domtak for Android', where: 'Berlin · active now', current: true },
@@ -80,6 +97,27 @@ export default function AccountSecurity() {
   const [pwError, setPwError] = useState<{ current?: string; next?: string; repeat?: string }>({});
   const [devices, setDevices] = useState(DEVICES);
   const [exportAsked, setExportAsked] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const bookings = useApp((s) => s.bookings);
+  const cases = useApp((s) => s.supportCases);
+  const openCase = useApp((s) => s.openCase);
+
+  // Open work that has to be finished before records can be closed.
+  const openBookings = useMemo(() => bookings.filter((b) => isOutstanding(b.status) || ((b.status === 'confirmed' || b.status === 'paid') && parse(b.date).getTime() >= TODAY.getTime())).length, [bookings]);
+  const moneyPending = useMemo(() => bookings.filter((b) => b.payment === 'refund_pending' || b.payment === 'release_pending' || b.payment === 'capture_pending').length, [bookings]);
+  const deletionCase = useMemo(() => cases.find((c) => c.linked?.kind === 'account' && c.linked.id === 'deletion' && c.status !== 'resolved'), [cases]);
+
+  const requestDeletion = () => {
+    const blockers = [openBookings ? plural(openBookings, 'open booking') : '', moneyPending ? plural(moneyPending, 'pending payment or refund', 'pending payments or refunds') : ''].filter(Boolean).join(' and ');
+    const id = openCase(
+      'Data deletion request',
+      `Please delete my account and the data that can be removed.${blockers ? ` I still have ${blockers}.` : ''}`,
+      { kind: 'account', id: 'deletion' },
+    );
+    const ref = useApp.getState().supportCases.find((c) => c.id === id)?.ref;
+    toast(ref ? `Deletion request ${ref} sent` : 'Deletion request sent');
+    router.push(`/support/${id}`);
+  };
 
   const start = (kind: Contact) => setChange({ kind, value: '', step: 'enter', code: '' });
   const finish = (value: string) => {
@@ -193,7 +231,57 @@ export default function AccountSecurity() {
         />
       </Card>
 
+      <Card style={{ gap: 10 }}>
+        <T v="title" accessibilityRole="header">Delete your account</T>
+        <T v="small">A deletion request goes to support with a case reference, so you can follow it. This is what it covers:</T>
+        <T v="bodyBold">Removed</T>
+        {REMOVED.map((r) => (
+          <Row key={r} gap={10} align="flex-start">
+            <Icon name="delete-outline" size={18} color={colors.danger} />
+            <T v="body" style={{ flex: 1 }}>{r}</T>
+          </Row>
+        ))}
+        <T v="bodyBold" style={{ marginTop: 4 }}>Kept under the retention policy</T>
+        {KEPT.map((r) => (
+          <Row key={r} gap={10} align="flex-start">
+            <Icon name="lock-outline" size={18} color={colors.label} />
+            <T v="body" style={{ flex: 1 }}>{r}</T>
+          </Row>
+        ))}
+        {openBookings || moneyPending ? (
+          <Banner icon="alert-circle-outline" tone="warning">
+            {`Finish these first: ${[openBookings ? plural(openBookings, 'open booking') : '', moneyPending ? plural(moneyPending, 'pending payment or refund', 'pending payments or refunds') : ''].filter(Boolean).join(' and ')}. You can still send the request; support completes them with you before closing the account.`}
+          </Banner>
+        ) : null}
+        {deletionCase ? (
+          <View style={{ gap: 8 }}>
+            <Row gap={8}>
+              <T v="bodyBold" style={{ flex: 1 }}>{`Request ${deletionCase.ref}`}</T>
+              <Pill label={CASE_STATUS_LABEL[deletionCase.status]} tone={CASE_STATUS_TONE[deletionCase.status]} />
+            </Row>
+            <Button title="View deletion request" variant="secondary" size="md" icon="file-document-outline" onPress={() => router.push(`/support/${deletionCase.id}`)} />
+          </View>
+        ) : (
+          <Button title="Request account deletion" variant="danger" size="md" icon="delete-outline" onPress={() => setConfirmDelete(true)} />
+        )}
+      </Card>
+
       <Banner icon="shield-check-outline">Domtak will never ask for your password or a code by chat, phone or email.</Banner>
+
+      <ActionSheet
+        visible={confirmDelete}
+        title="Request account deletion?"
+        actions={[
+          {
+            label: 'Send deletion request',
+            icon: 'delete-outline',
+            destructive: true,
+            sub: 'Support confirms with you before anything is removed. The records listed above are kept.',
+            onPress: requestDeletion,
+          },
+        ]}
+        onClose={() => setConfirmDelete(false)}
+      />
     </Screen>
   );
 }
