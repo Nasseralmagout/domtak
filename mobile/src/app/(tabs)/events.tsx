@@ -8,11 +8,15 @@ import { EventRow } from '../../components/cards';
 import { DomtakHeader } from '../../components/layout';
 import { Button, Icon, Photo, Pill, Row, T } from '../../components/ui';
 import { eventCategories } from '../../data/mock';
-import { parse, shortDate, time, TODAY } from '../../lib/format';
+import { plural, shortDate, time } from '../../lib/format';
 import { isPromoted } from '../../lib/promotions';
-import { activeFilterCount, useFilters } from '../../store/filters';
+import { MY_LOCATION } from '../../store/discovery';
+import { activeFilterCount, isUpcoming, useFilters } from '../../store/filters';
 import { useAllEvents, useApp, useVenues } from '../../store/useApp';
-import { colors, fonts, shadow } from '../../theme';
+import { colors, fonts, radius, shadow } from '../../theme';
+
+/** Radius used for the "near you" count on the map card (the map itself offers 1, 3, 5 and 10 km). */
+const NEAR_KM = 3;
 
 export default function EventsTab() {
   const { width } = useWindowDimensions();
@@ -20,9 +24,9 @@ export default function EventsTab() {
   const venues = useVenues();
   const promotions = useApp((s) => s.promotions);
   const filterCount = useFilters((s) => activeFilterCount(s.filters));
-  const { featured, comingUp, promoted } = useMemo(() => {
-    // Private events are invite-only, and past events don't belong in discovery.
-    const open = all.filter((e) => !e.isPrivate && parse(e.end) >= TODAY);
+  const { featured, comingUp, promoted, nearby } = useMemo(() => {
+    // Private events are invite-only; drafts, cancelled and past events don't belong in discovery.
+    const open = all.filter((e) => !e.isPrivate && e.state !== 'draft' && e.state !== 'cancelled' && isUpcoming(e));
     const byDate = [...open].sort((a, b) => a.start.localeCompare(b.start));
     // Boosted events (Pro → Promote) lead both lists in date order, marked as Sponsored.
     const boosted = new Set(open.filter((e) => isPromoted(promotions, e)).map((e) => e.id));
@@ -31,6 +35,7 @@ export default function EventsTab() {
       featured: [...sponsoredFirst, ...open.filter((e) => !boosted.has(e.id) && (e.sponsored || e.going > 200))].slice(0, 4),
       comingUp: [...sponsoredFirst, ...byDate.filter((e) => !boosted.has(e.id))].slice(0, 4),
       promoted: boosted,
+      nearby: open.filter((e) => e.distanceKm <= NEAR_KM).length,
     };
   }, [all, promotions]);
   const venueName = (id: string) => venues.find((v) => v.id === id)?.name;
@@ -89,7 +94,30 @@ export default function EventsTab() {
             </Pressable>
           </Row>
 
-          <T v="h3" color={colors.brandDeep}>Events category</T>
+          {/* Nearby events on the map (user note 5): quick filters, distance, venue pins and a list view live there. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Nearby events on the map. ${nearby ? `${plural(nearby, 'event')} within ${NEAR_KM} km of you` : `No events within ${NEAR_KM} km right now`}. Open map`}
+            onPress={() => router.push('/map')}
+            style={{ height: 112, borderRadius: radius.xl, overflow: 'hidden', ...shadow(2) }}
+          >
+            <Photo src="map_berlin" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+            <LinearGradient colors={['rgba(20,10,40,0.85)', 'rgba(20,10,40,0.25)']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+            <Row gap={12} style={{ position: 'absolute', left: 16, right: 16, top: 0, bottom: 0 }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ color: colors.gold, fontFamily: fonts.bodyBold, fontSize: 12, letterSpacing: 1 }}>{`AROUND ${MY_LOCATION.area.toUpperCase()}`}</Text>
+                <Text style={{ color: colors.white, fontFamily: fonts.displaySemi, fontSize: 20 }}>Nearby events on the map</Text>
+                <Text style={{ color: colors.lilacLight, fontFamily: fonts.bodyMedium, fontSize: 13 }}>
+                  {nearby ? `${plural(nearby, 'event')} within ${NEAR_KM} km · filter by date, price, genre and distance` : `Nothing within ${NEAR_KM} km right now · widen the distance on the map`}
+                </Text>
+              </View>
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="map-marker-radius-outline" size={24} color={colors.brand} />
+              </View>
+            </Row>
+          </Pressable>
+
+          <T v="h3" color={colors.brandDeep} accessibilityRole="header">Events category</T>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
             {eventCategories.map((c) => (
               <Pressable key={c.key} accessibilityRole="button" accessibilityLabel={c.label} onPress={() => router.push(`/events/${c.key}`)} style={{ width: tile, height: tile * 0.72, borderRadius: 20, overflow: 'hidden', ...shadow(2) }}>
@@ -101,7 +129,7 @@ export default function EventsTab() {
           </View>
 
           <Row justify="space-between" style={{ marginTop: 8 }}>
-            <T v="h3" color={colors.brandDeep}>Coming up</T>
+            <T v="h3" color={colors.brandDeep} accessibilityRole="header">Coming up</T>
             <Pressable accessibilityRole="button" accessibilityLabel="See all events" onPress={() => router.push('/events/all')} hitSlop={12}><T v="smallBold" color={colors.brand}>All events</T></Pressable>
           </Row>
           {comingUp.map((e) => (

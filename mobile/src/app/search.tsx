@@ -241,6 +241,9 @@ export default function Search() {
             action={kind !== 'all' ? 'Search everything' : 'Clear search'}
             onAction={() => (kind !== 'all' ? setKind('all') : setQ(''))}
           />
+          {kind === 'lesson' && lessons.length ? (
+            <Button title={`Browse all ${plural(lessons.length, 'lesson')}`} variant="light" size="md" icon="school-outline" onPress={() => router.push('/lessons' as never)} />
+          ) : null}
           {relax.singles.length ? (
             <View style={{ gap: 8 }}>
               <T v="smallBold" color={colors.muted}>Try one word</T>

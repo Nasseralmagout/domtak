@@ -10,7 +10,7 @@ import { GENRES } from '../data/mock';
 import type { EventItem, Venue } from '../data/types';
 import { plural, priceRange, shortDate, time } from '../lib/format';
 import { isPromoted } from '../lib/promotions';
-import { applyQuick, discoverableEvents, MY_LOCATION, quickFilterCount, RADIUS_STEPS, useMapQuick } from '../store/discovery';
+import { applyQuick, discoverableEvents, MY_LOCATION, quickFilterCount, RADIUS_STEPS, radiusChoices, useMapQuick } from '../store/discovery';
 import { activeArea, activeFilterCount, activeRadius, applyFilters, MAX_DISTANCE_KM, SORT_LABEL, type SortKey, sortEvents, useFilters } from '../store/filters';
 import { useAllEvents, useApp, useVenues } from '../store/useApp';
 import { colors, radius, shadow } from '../theme';
@@ -207,7 +207,7 @@ export default function MapScreen() {
             <Icon name="map-marker-radius-outline" size={16} color={colors.muted} />
             <T v="label">Distance</T>
           </Row>
-          {RADIUS_STEPS.map((km) => (
+          {radiusChoices(radiusKm).map((km) => (
             <Chip key={km} label={`${km} km`} accessibilityLabel={`Within ${km} kilometres of you`} selected={radiusKm === km} onPress={() => changeFilters({ location: 'current', maxDistanceKm: km })} />
           ))}
           <Chip label="Any" accessibilityLabel="Any distance" selected={radiusKm == null && !area} onPress={() => changeFilters({ location: 'current', maxDistanceKm: MAX_DISTANCE_KM })} />

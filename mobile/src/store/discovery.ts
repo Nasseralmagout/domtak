@@ -18,6 +18,15 @@ import { useApp } from './useApp';
 /** Radius chips on the map and in the filter sheet (km from you). "Any distance" is MAX_DISTANCE_KM. */
 export const RADIUS_STEPS = [1, 3, 5, 10] as const;
 
+/**
+ * Radius chips to show: the usual steps plus the radius in effect when it was set elsewhere
+ * (for example 2 km), so the selected chip always matches the active filter.
+ */
+export function radiusChoices(active?: number): number[] {
+  const steps: number[] = [...RADIUS_STEPS];
+  return active != null && !steps.includes(active) ? [...steps, active].sort((a, b) => a - b) : steps;
+}
+
 /** Where the demo user is. Event distances (EventItem.distanceKm) are measured from here. */
 export const MY_LOCATION = { area: 'Kreuzberg', label: 'Kreuzberg, Berlin', mapPos: { x: 55, y: 69 } };
 

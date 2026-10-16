@@ -1,31 +1,52 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 
-import { goBack, Screen, ScreenHeader } from '../components/layout';
-import { Banner, Button, Card, Field, Icon, Row, T } from '../components/ui';
+import { RecordRow } from '../components/admin';
+import { DemoBar, goBack, Screen, ScreenHeader } from '../components/layout';
+import { Banner, Button, Card, Divider, Field, Icon, Row, T } from '../components/ui';
+import { ago } from '../lib/format';
 import { applyPromo } from '../lib/promos';
+import { byLastUpdate, CASE_STATUS_LABEL, CASE_STATUS_TONE, lastUpdate } from '../lib/support';
 import { toast } from '../store/toast';
+import { useApp } from '../store/useApp';
 import { colors } from '../theme';
 
 const FAQ = [
-  { id: 'escrow', q: 'How does escrow protect my booking?', a: 'When a musician or venue accepts, you pay into Domtak escrow. The money is only released to them 24 hours after the event, and you can report a problem for up to 48 hours after it. If they cancel, you get a full refund.' },
-  { id: 'refunds', q: 'When do I get my refund?', a: 'Refunds go back to your original payment method within 3–5 business days. Ticket refunds follow the organizer’s policy shown on the event page.' },
-  { id: 'receipts', q: 'Where are my receipts?', a: 'Receipts are emailed after each payment. You can also open any paid booking under Your bookings and tap “View receipt”.' },
-  { id: 'disputes', q: 'Something went wrong at my event', a: 'Open the booking and tap “Report a problem”. Report within 48 hours; if the payment hasn’t been released yet it stays frozen while we review evidence from both sides. Escrow releases payments 24 hours after the event, so the sooner you report, the better.' },
-  { id: 'tickets', q: 'My QR code won’t scan', a: 'Turn your screen brightness up and make sure the ticket says “Valid”. Door staff can also type the 8-character code under the QR.' },
-  { id: 'safety', q: 'How do I block or report someone?', a: 'Open their profile or chat, tap ••• and choose Block or Report. Blocked users can’t message you or see your posts.' },
+  {
+    id: 'payments',
+    q: 'How does paying for a booking work?',
+    a: 'When you send a request, your payment is pending the provider’s decision. They have 24 hours to accept or decline, and we remind them after 12 hours. If they decline or don’t answer in time, the payment is released or refunded. When they accept, we finalize the payment, and the booking is confirmed only once that payment is verified.',
+  },
+  {
+    id: 'refunds',
+    q: 'When do I get my refund?',
+    a: 'A refund or release starts when a request closes without a booking, or when a cancellation qualifies under the booking’s policy. It is complete only once the payment provider confirms it; until then the booking shows “Refund pending” or “Release pending”. Ticket refunds follow the policy on the event page.',
+  },
+  { id: 'receipts', q: 'Where are my receipts?', a: 'Open any paid booking under Your bookings to see the itemised price, the payment state and its reference. Ticket purchases are listed under Your tickets.' },
+  {
+    id: 'disputes',
+    q: 'Something went wrong at my event',
+    a: 'Open the booking and tap “Report a problem” within 48 hours after the event. Support reviews evidence from both sides. The payment state stays visible while they look into it, and support can’t promise a refund before a decision.',
+  },
+  { id: 'tickets', q: 'My QR code won’t scan', a: 'Turn your screen brightness up and make sure the ticket says “Valid”. Door staff can also type the 8-character code under the QR. Cancelled, refunded and already used tickets are refused at the door.' },
+  { id: 'safety', q: 'How do I block or report someone?', a: 'Open their profile or chat, tap ••• and choose Block or Report. Blocked users can’t message you or see your posts. Moderators review every report, and the account you report isn’t told who reported it.' },
+  { id: 'cases', q: 'How do support cases work?', a: 'Open a case here or from a booking. You get a case reference such as DT-4821 and every reply appears in the case timeline. If you disagree with the outcome, you can appeal from the resolved case.' },
   { id: 'promo', q: 'How do promo codes work?', a: 'Check a code below, then enter it in the Promo code box at ticket checkout. Codes work on any paid ticket and come off the ticket price; the service fee stays the same.' },
 ];
 
+/** Older links used ?section=escrow for the payments answer. */
+const SECTION_ALIAS: Record<string, string> = { escrow: 'payments' };
+
 /** Where each answer can take you next. */
 const FAQ_LINKS: Record<string, { label: string; href: string }> = {
-  escrow: { label: 'Your bookings', href: '/my-bookings?tab=musician' },
-  refunds: { label: 'Your tickets', href: '/my-bookings?tab=tickets' },
+  payments: { label: 'Your bookings', href: '/my-bookings?tab=musician' },
+  refunds: { label: 'Your bookings', href: '/my-bookings?tab=musician' },
   receipts: { label: 'Your bookings', href: '/my-bookings?tab=musician' },
-  disputes: { label: 'Your bookings', href: '/my-bookings?tab=musician' },
+  disputes: { label: 'Open a support case', href: '/support/new?topic=booking' },
   tickets: { label: 'Your tickets', href: '/my-bookings?tab=tickets' },
   safety: { label: 'Blocked accounts', href: '/blocked' },
+  cases: { label: 'Your support cases', href: '/support' },
 };
 
 const SUPPORT_EMAIL = 'support@domtak.de';
@@ -35,12 +56,20 @@ function openMail(address: string) {
 }
 
 export default function Help() {
-  const { section } = useLocalSearchParams<{ section?: string }>();
+  const params = useLocalSearchParams<{ section?: string }>();
+  const section = params.section ? (SECTION_ALIAS[params.section] ?? params.section) : undefined;
   const [open, setOpen] = useState<string | undefined>(section);
   const [promo, setPromo] = useState('');
   const [promoMsg, setPromoMsg] = useState<{ ok: boolean; text: string }>();
+  const cases = useApp((s) => s.supportCases);
+  const adminMode = useApp((s) => s.adminMode);
+  const setAdminMode = useApp((s) => s.setAdminMode);
 
-  // Deep links (e.g. "View refund details") open the matching answer, also when this screen is reused.
+  const recent = useMemo(() => [...cases].sort(byLastUpdate).slice(0, 3), [cases]);
+  const active = useMemo(() => cases.filter((c) => c.status !== 'resolved').length, [cases]);
+  const replies = useMemo(() => cases.filter((c) => c.status === 'waiting').length, [cases]);
+
+  // Deep links (e.g. "Refund details") open the matching answer, also when this screen is reused.
   const [lastSection, setLastSection] = useState(section);
   if (section !== lastSection) {
     setLastSection(section);
@@ -51,7 +80,7 @@ export default function Help() {
     return (
       <Screen header={<ScreenHeader title="About Domtak" onBack={() => goBack('/menu')} />}>
         <T v="h2">Music-first social platform</T>
-        <T v="body">Domtak connects musicians, event organizers, venues and fans in Berlin and beyond: social networking, ticketing and talent booking in one app.</T>
+        <T v="body">Domtak connects musicians, event organizers, venues and fans in Berlin and beyond: music communities, private and public events, tickets and artist and venue bookings in one app.</T>
         <Card style={{ gap: 6 }}>
           <T v="bodyBold">Domtak · Artifexea GmbH</T>
           <T v="small">Berlin, Germany</T>
@@ -60,7 +89,8 @@ export default function Help() {
           </Pressable>
         </Card>
         <T v="small">Terms of service and privacy policy apply. Version 1.0.0.</T>
-        <Button title="Help & support" variant="secondary" icon="lifebuoy" onPress={() => router.replace('/help')} />
+        <Button title="Terms, privacy & imprint" variant="secondary" icon="text-box-outline" onPress={() => router.push('/legal')} />
+        <Button title="Help & support" variant="ghost" icon="lifebuoy" onPress={() => router.replace('/help')} />
       </Screen>
     );
   }
@@ -73,10 +103,63 @@ export default function Help() {
     else setPromoMsg({ ok: false, text: 'That code isn’t valid. Check the spelling or expiry date.' });
   };
 
-  const showPromo = section === 'promo' || !section || !FAQ.some((f) => f.id === section);
+  const promoOnly = section === 'promo';
+  const showPromo = promoOnly || !section || !FAQ.some((f) => f.id === section);
+
+  const openAdmin = () => {
+    if (!adminMode) {
+      setAdminMode(true);
+      toast('Admin console (demo) is on');
+    }
+    router.push('/admin');
+  };
+
+  const supportCard = (
+    <Card style={{ gap: 12 }}>
+      <Row gap={12}>
+        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="lifebuoy" size={22} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <T v="title" accessibilityRole="header">Contact support</T>
+          <T v="small">Link a booking, ticket or event so we can find it, and follow every reply in one place.</T>
+        </View>
+      </Row>
+      <Row gap={10}>
+        <Button title="New case" icon="plus" size="md" style={{ flex: 1 }} onPress={() => router.push('/support/new')} />
+        <Button title={active ? `My cases · ${active}` : 'My cases'} icon="inbox-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push('/support')} />
+      </Row>
+      {replies ? (
+        <Banner icon="message-text-outline" tone="warning">{`Support replied on ${replies === 1 ? 'one case' : `${replies} cases`}. Open it to answer or confirm it’s solved.`}</Banner>
+      ) : null}
+      {recent.length ? (
+        <View>
+          {recent.map((c, i) => (
+            <View key={c.id}>
+              {i ? <Divider /> : null}
+              <RecordRow
+                icon="file-document-outline"
+                title={c.topic}
+                sub={`${c.ref} · updated ${ago(lastUpdate(c))}`}
+                pill={CASE_STATUS_LABEL[c.status]}
+                tone={CASE_STATUS_TONE[c.status]}
+                onPress={() => router.push(`/support/${c.id}`)}
+              />
+            </View>
+          ))}
+        </View>
+      ) : (
+        <T v="small">You haven’t opened any support cases.</T>
+      )}
+    </Card>
+  );
 
   return (
-    <Screen keyboard header={<ScreenHeader title={section === 'promo' ? 'Promo code' : 'Help & support'} onBack={() => goBack('/menu')} />}>
+    <Screen keyboard header={<ScreenHeader title={promoOnly ? 'Promo code' : 'Help & support'} onBack={() => goBack('/menu')} />}>
+      {promoOnly ? null : supportCard}
+      {promoOnly ? null : (
+        <Banner icon="alert-octagon-outline" tone="danger">Urgent safety problem at an event? Call 112 first, then tell the venue or organizer on site. Open a support case afterwards so we can follow up.</Banner>
+      )}
       {showPromo ? (
         <Card style={{ gap: 10 }}>
           <T v="title">Have a promo code?</T>
@@ -115,9 +198,27 @@ export default function Help() {
         );
       })}
       <View style={{ gap: 10 }}>
-        <Banner icon="email-outline">{`Still stuck? Our support team replies within 24 hours at ${SUPPORT_EMAIL}.`}</Banner>
-        <Button title="Contact support" icon="email-outline" variant="secondary" onPress={() => openMail(SUPPORT_EMAIL)} />
+        <Banner icon="email-outline">{`Prefer email? Write to ${SUPPORT_EMAIL} and include your booking or case reference so we can find it quickly.`}</Banner>
+        <Button title="Email support" icon="email-outline" variant="secondary" onPress={() => openMail(SUPPORT_EMAIL)} />
       </View>
+      {promoOnly ? null : (
+        <DemoBar title="Demo: admin console" note="The proposed console where reviewers, support, finance and moderators work. It runs on the records in this app and every decision is written to the audit log.">
+          <Row gap={8} style={{ flexWrap: 'wrap' }}>
+            <Button title={adminMode ? 'Open admin console' : 'Open admin console (demo)'} size="sm" icon="shield-account-outline" onPress={openAdmin} />
+            {adminMode ? (
+              <Button
+                title="Turn off admin console"
+                size="sm"
+                variant="secondary"
+                onPress={() => {
+                  setAdminMode(false);
+                  toast('Admin console (demo) is off');
+                }}
+              />
+            ) : null}
+          </Row>
+        </DemoBar>
+      )}
     </Screen>
   );
 }

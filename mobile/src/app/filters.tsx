@@ -6,12 +6,11 @@ import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Chip, Field, Row, T, Toggle } from '../components/ui';
 import { GENRES } from '../data/mock';
 import { euro, plural } from '../lib/format';
-import { applyQuick, discoverableEvents, type MapQuickFilters, MY_LOCATION, quickFilterCount, RADIUS_STEPS, useMapQuick } from '../store/discovery';
+import { applyQuick, discoverableEvents, type MapQuickFilters, MY_LOCATION, quickFilterCount, radiusChoices, useMapQuick } from '../store/discovery';
 import { activeArea, activeFilterCount, activeRadius, applyFilters, DEFAULT_FILTERS, type Filters, MAX_DISTANCE_KM, SORT_LABEL, type SortKey, useFilters } from '../store/filters';
 import { toast } from '../store/toast';
 import { useAllEvents, useVenues } from '../store/useApp';
 import { colors } from '../theme';
-
 
 function PriceSlider({ value, onChange, max = 250 }: { value: number; onChange: (n: number) => void; max?: number }) {
   const [w, setW] = useState(1);
@@ -139,7 +138,7 @@ export default function FiltersScreen() {
             <T v="small">Distances are measured from your location in {MY_LOCATION.label}.</T>
             <T v="label" accessibilityRole="header">Distance from you</T>
             <Row gap={8} style={{ flexWrap: 'wrap' }}>
-              {RADIUS_STEPS.map((km) => (
+              {radiusChoices(radiusKm).map((km) => (
                 <Chip key={km} label={`${km} km`} accessibilityLabel={`Within ${km} kilometres`} selected={radiusKm === km} onPress={() => up({ maxDistanceKm: km })} />
               ))}
               <Chip label="Any distance" selected={radiusKm == null} onPress={() => up({ maxDistanceKm: MAX_DISTANCE_KM })} />
