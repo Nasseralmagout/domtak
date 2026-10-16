@@ -12,7 +12,7 @@ import type { ExtraCharge, PricingMode, VenueCatering, VenueGarden, VenueParking
 import { isConfirmed } from '../../lib/booking';
 import { euro, plural } from '../../lib/format';
 import { cateringCost, guardsFor, PLATFORM_COMMISSION_RATE, providerNet, securityCost, toLineItems, venueEstimate } from '../../lib/pricing';
-import { useServices } from '../../store/services';
+import { useServices, useServicesHydrated } from '../../store/services';
 import { toast } from '../../store/toast';
 import { activeWorkspace, OWN_VENUE_ID, overlayVenue, useApp, type VenueListing } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
@@ -155,9 +155,23 @@ function ChargesEditor({ items, onChange }: { items: ExtraCharge[]; onChange: (v
   );
 }
 
-export default function VenueListingEditor() {
-  const { width } = useWindowDimensions();
+export default function VenueListingScreen() {
   const user = useApp((s) => s.user);
+  const hydrated = useServicesHydrated();
+  if (activeWorkspace(user) !== 'venue') {
+    return (
+      <Screen header={<ScreenHeader title="My venue listing" onBack={() => goBack('/pro/workspace')} />}>
+        <PermissionNotice role="venue" action="edit a venue listing" />
+      </Screen>
+    );
+  }
+  // The editor starts from your saved draft, so wait until it is loaded.
+  if (!hydrated) return <Screen header={<ScreenHeader title="My venue listing" onBack={() => goBack('/pro/workspace')} />}>{null}</Screen>;
+  return <VenueListingEditor />;
+}
+
+function VenueListingEditor() {
+  const { width } = useWindowDimensions();
   const listing = useApp((s) => s.venueListing);
   const bookings = useApp((s) => s.bookings);
   const requests = useApp((s) => s.requests);
@@ -181,14 +195,6 @@ export default function VenueListingEditor() {
     const base = venueById(PUBLIC_VENUE_ID);
     return base ? overlayVenue(base, draft) : undefined;
   }, [draft]);
-
-  if (activeWorkspace(user) !== 'venue') {
-    return (
-      <Screen header={<ScreenHeader title="My venue listing" onBack={() => goBack('/pro/workspace')} />}>
-        <PermissionNotice role="venue" action="edit a venue listing" />
-      </Screen>
-    );
-  }
 
   const tile = Math.floor((width - 32 - 16) / 3);
   const live = JSON.stringify(listing);
@@ -245,6 +251,9 @@ export default function VenueListingEditor() {
     JSON.stringify(draft.catering) !== JSON.stringify(listing.catering) ||
     JSON.stringify(draft.security) !== JSON.stringify(listing.security) ||
     JSON.stringify(draft.extraCharges) !== JSON.stringify(listing.extraCharges);
+
+  // F07: warn when a change conflicts with work you already accepted (it keeps its agreed terms).
+  const capacityConflicts = requests.filter((r) => r.kind === 'venue' && r.status === 'accepted' && r.guests > draft.capacity);
 
   const guests = Math.min(draft.capacity, exampleGuests ?? Math.min(120, draft.capacity));
   const estimate = preview ? venueEstimate(preview, { guests, catering: catering.available, security: security.available }) : undefined;
@@ -356,6 +365,12 @@ export default function VenueListingEditor() {
       <Banner icon="shield-alert-outline" tone={pricesChanged ? 'warning' : 'brand'}>
         {`Changes apply to new requests only. Accepted and confirmed bookings keep the price and terms agreed at the time${agreed ? ` (${plural(agreed, 'booking')} right now)` : ''}. A date that looks free in your calendar still needs your acceptance.`}
       </Banner>
+
+      {capacityConflicts.length ? (
+        <Banner icon="alert-outline" tone="warning">
+          {`The new capacity (${draft.capacity}) is below ${plural(capacityConflicts.length, 'accepted booking')}: ${capacityConflicts.map((r) => `${r.title}, ${r.guests} guests`).join('; ')}. Those bookings keep their agreed terms, so talk to the host before the date.`}
+        </Banner>
+      ) : null}
 
       <Section title="Cover photo" hint="The first photo hosts see in search.">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>

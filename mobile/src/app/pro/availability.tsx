@@ -1,11 +1,15 @@
+import { router } from 'expo-router';
 import { type ReactNode, useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
-import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
+import { artistPriceLabel } from '../../components/cards';
+import { BottomBar, goBack, PermissionNotice, Screen, ScreenHeader } from '../../components/layout';
 import { Banner, Button, Card, Chip, Icon, type IconName, IconButton, Pill, Row, Stepper, T, Toggle } from '../../components/ui';
 import { euro, isoDay, MONTHS_LONG, sameDay, shortDate, TODAY } from '../../lib/format';
+import { PLATFORM_COMMISSION_RATE, providerNet } from '../../lib/pricing';
+import { OWN_ARTIST_ID, useArtist, useServices } from '../../store/services';
 import { toast } from '../../store/toast';
-import { useApp, type Weekday } from '../../store/useApp';
+import { activeWorkspace, useApp, type Weekday } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 const WEEK: { key: Weekday; long: string }[] = [
@@ -121,21 +125,29 @@ function LegendDot({ label, bg, border, strike }: { label: string; bg: string; b
 }
 
 export default function AvailabilityScreen() {
-  const role = useApp((s) => s.user.role);
-  const city = useApp((s) => s.user.city);
+  const user = useApp((s) => s.user);
+  const city = user.city;
+  // An unapproved role never opens professional tools (falls back to the member workspace).
+  const role = activeWorkspace(user);
   const availability = useApp((s) => s.availability);
   const setAvailability = useApp((s) => s.setAvailability);
   const requests = useApp((s) => s.requests);
+  // Published calendar on the public profile (optional, F05) and the musician's pricing (Services and pricing).
+  const showCalendar = useServices((s) => s.services.showCalendar);
+  const setShowCalendar = useServices((s) => s.setShowCalendar);
+  const servicesDraft = useServices((s) => s.servicesDraft);
+  const saveServicesDraft = useServices((s) => s.saveServicesDraft);
+  const ownProfile = useArtist(OWN_ARTIST_ID);
   const [cursor, setCursor] = useState(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1, 12));
   const [feeDraft, setFeeDraft] = useState<string | null>(null);
 
-  const { days, blockedDates, minHours, radiusKm, instantBook } = availability;
+  const { days, blockedDates, minHours, radiusKm } = availability;
   // While the fee is being typed, preview what will be saved.
   const draftFee = typedFee(feeDraft);
   const feePerHour = draftFee === undefined ? availability.feePerHour : clampFee(draftFee);
   const blockedSet = useMemo(() => new Set(blockedDates), [blockedDates]);
   const bookedSet = useMemo(
-    () => new Set(requests.filter((r) => r.status === 'accepted').map((r) => labelToIso(r.date)).filter((d): d is string => Boolean(d))),
+    () => new Set(requests.filter((r) => r.status === 'accepted').map((r) => r.isoDate ?? labelToIso(r.date)).filter((d): d is string => Boolean(d))),
     [requests],
   );
   const upcomingBlocked = blockedDates.filter((d) => d >= TODAY_ISO).sort();
@@ -152,12 +164,29 @@ export default function AvailabilityScreen() {
   const toggleBlocked = (iso: string) =>
     setAvailability({ blockedDates: blockedSet.has(iso) ? blockedDates.filter((d) => d !== iso) : [...blockedDates, iso].sort() });
 
+  const quotePricing = ownProfile?.pricing === 'quote';
+
   const save = () => {
-    if (draftFee !== undefined) setAvailability({ feePerHour: clampFee(draftFee) });
+    if (draftFee !== undefined) {
+      const fee = clampFee(draftFee);
+      setAvailability({ feePerHour: fee });
+      // Keep an unpublished Services and pricing draft in step, so publishing it later doesn't undo this fee.
+      if (servicesDraft) saveServicesDraft({ ...servicesDraft, feePerHour: fee });
+    }
+    // Availability never confirms a booking, so requests always wait for your answer.
+    if (availability.instantBook) setAvailability({ instantBook: false });
     setFeeDraft(null);
     toast('Availability saved');
     goBack('/pro/workspace');
   };
+
+  if (role !== 'musician' && role !== 'venue') {
+    return (
+      <Screen header={<ScreenHeader title="Availability" onBack={() => goBack('/pro/workspace')} />}>
+        <PermissionNotice role={user.role === 'venue' ? 'venue' : 'musician'} action="publish your availability" />
+      </Screen>
+    );
+  }
 
   return (
     <Screen
@@ -171,15 +200,17 @@ export default function AvailabilityScreen() {
     >
       <View style={{ padding: 16, borderRadius: radius.xl, backgroundColor: colors.brandDeep, gap: 10, ...shadow(2) }}>
         <Row justify="space-between">
-          <T v="caption" color={colors.lilac}>BOOKABLE</T>
-          {instantBook ? <Pill label="Instant book" icon="flash" tone="brand" /> : <Pill label="Approval needed" icon="clock-outline" tone="neutral" />}
+          <T v="caption" color={colors.lilac}>USUALLY AVAILABLE</T>
+          <Pill label="You approve each request" icon="clock-outline" tone="neutral" />
         </Row>
         <T v="h2" color={colors.white}>{daysSummary}</T>
         <T v="body" color={colors.lilacLight}>
-          {euro(feePerHour)}/h · min. {minHours} h · {isVenue ? 'organisers within' : 'travels up to'} {radiusKm} km
+          {isVenue ? '' : `${quotePricing ? 'Quote on request' : `${euro(feePerHour)}/h`} · `}min. {minHours} h · {isVenue ? 'organisers within' : 'travels up to'} {radiusKm} km
         </T>
         {upcomingBlocked.length ? <T v="small" color={colors.lilacLight}>{upcomingBlocked.length} upcoming {upcomingBlocked.length === 1 ? 'date' : 'dates'} blocked</T> : null}
       </View>
+
+      <Banner icon="information-outline">Calendar availability supports search but never confirms a booking. Every request still waits for you to accept or decline it within 24 hours.</Banner>
 
       <SectionCard icon="calendar-week" title="Weekly schedule" sub="Days you usually take bookings">
         <Row gap={0}>
@@ -209,7 +240,7 @@ export default function AvailabilityScreen() {
           <Chip label="Weekdays" selected={WEEK.every((w) => days[w.key] === !['Sat', 'Sun'].includes(w.key))} onPress={() => preset(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])} />
           <Chip label="Every day" selected={openDays.length === 7} onPress={() => preset(WEEK.map((w) => w.key))} />
         </Row>
-        {openDays.length === 0 ? <Banner icon="alert-circle-outline" tone="warning">No days selected — bookers can’t send you requests until you open at least one day.</Banner> : null}
+        {openDays.length === 0 ? <Banner icon="alert-circle-outline" tone="warning">No days selected. Your profile shows no regular days, so bookers have to ask you about every date.</Banner> : null}
       </SectionCard>
 
       <SectionCard icon="calendar-remove" title="Blocked dates" sub="Tap a day to block or unblock it">
@@ -309,19 +340,44 @@ export default function AvailabilityScreen() {
         ) : null}
       </SectionCard>
 
-      <SectionCard icon="cash-multiple" title="Booking fee" sub={`Per hour, in ${euro(FEE_STEP)} steps. Tap the amount to type it.`}>
-        <FeeStepper value={availability.feePerHour} draft={feeDraft} onDraft={setFeeDraft} onChange={(n) => setAvailability({ feePerHour: n })} />
-        <Row gap={12} style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 14 }}>
-          <View style={{ flex: 1 }}>
-            <T v="bodyBold">Minimum booking</T>
-            <T v="small">{minHours} {minHours === 1 ? 'hour' : 'hours'} · bookers can’t request less</T>
-          </View>
-          <Stepper value={minHours} min={1} max={12} label="minimum hours" onChange={(n) => setAvailability({ minHours: n })} />
-        </Row>
-        <Banner icon="information-outline">
-          {`A ${minHours} h booking pays ${euro(feePerHour * minHours)}. You receive ${euro(feePerHour * minHours * 0.9)} after the 10% Domtak fee.`}
-        </Banner>
-      </SectionCard>
+      {isVenue ? (
+        <SectionCard icon="cash-multiple" title="Price and minimum booking" sub="Your venue price, catering and security live in your listing">
+          <Row gap={12}>
+            <View style={{ flex: 1 }}>
+              <T v="bodyBold">Minimum booking</T>
+              <T v="small">{minHours} {minHours === 1 ? 'hour' : 'hours'} · hosts can’t request less</T>
+            </View>
+            <Stepper value={minHours} min={1} max={12} label="minimum hours" onChange={(n) => setAvailability({ minHours: n })} />
+          </Row>
+          <Button title="Edit venue listing and prices" variant="secondary" size="md" icon="storefront-edit-outline" onPress={() => router.push('/pro/venue-listing')} />
+        </SectionCard>
+      ) : (
+        <SectionCard icon="cash-multiple" title="Booking fee" sub={`Per hour, in ${euro(FEE_STEP)} steps. Tap the amount to type it.`}>
+          {quotePricing ? (
+            <Banner icon="file-document-outline">You price performances on request, so bookers don’t see this hourly rate. It stays on file in case you switch back to a listed price.</Banner>
+          ) : null}
+          <FeeStepper value={availability.feePerHour} draft={feeDraft} onDraft={setFeeDraft} onChange={(n) => setAvailability({ feePerHour: n })} />
+          <Row gap={12} style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 14 }}>
+            <View style={{ flex: 1 }}>
+              <T v="bodyBold">Minimum booking</T>
+              <T v="small">{minHours} {minHours === 1 ? 'hour' : 'hours'} · bookers can’t request less</T>
+            </View>
+            <Stepper value={minHours} min={1} max={12} label="minimum hours" onChange={(n) => setAvailability({ minHours: n })} />
+          </Row>
+          {quotePricing ? null : (
+            <Banner icon="information-outline">
+              {`A ${minHours} h booking pays ${euro(feePerHour * minHours)} for the performance. You receive ${euro(providerNet(feePerHour * minHours))} after the ${Math.round(PLATFORM_COMMISSION_RATE * 100)}% Domtak commission. Travel and equipment are charged separately.`}
+            </Banner>
+          )}
+          <Row gap={12} style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 14 }}>
+            <View style={{ flex: 1 }}>
+              <T v="bodyBold">{ownProfile ? artistPriceLabel(ownProfile) : 'Services and pricing'}</T>
+              <T v="small">Quote requests, travel and equipment charges and lessons</T>
+            </View>
+            <Button title="Edit" size="sm" variant="secondary" icon="pencil-outline" accessibilityLabel="Edit services and pricing" onPress={() => router.push('/pro/services')} />
+          </Row>
+        </SectionCard>
+      )}
 
       <SectionCard
         icon="map-marker-radius-outline"
@@ -335,22 +391,23 @@ export default function AvailabilityScreen() {
         </Row>
       </SectionCard>
 
-      <Card style={{ gap: 10 }}>
-        <Row gap={12}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: instantBook ? colors.gold : colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="flash" size={20} color={instantBook ? colors.brandDark : colors.brand} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <T v="title">Instant book</T>
-            <T v="small">{instantBook ? 'On · requests confirm automatically' : 'Off · you approve each request'}</T>
-          </View>
-          <Toggle label="Instant book" value={instantBook} onValueChange={(v) => setAvailability({ instantBook: v })} />
-        </Row>
-        <T v="small" color={colors.inkSoft}>
-          Requests that match your open days, fee and minimum hours are confirmed right away — no 48 h approval wait. Payment is still held in escrow and released to you 24 h after the gig.
-        </T>
-        {instantBook ? <Banner icon="shield-check-outline" tone="success">Instant book is on. Keep blocked dates up to date so you’re never double-booked.</Banner> : null}
-      </Card>
+      {isVenue ? null : (
+        <Card style={{ gap: 10 }}>
+          <Row gap={12}>
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="calendar-account-outline" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <T v="title">Show on my profile</T>
+              <T v="small">{showCalendar ? 'On · bookers see your usual days and blocked dates' : 'Off · bookers just send a request'}</T>
+            </View>
+            <Toggle label="Show availability on my profile" value={showCalendar} onValueChange={(v) => setShowCalendar(v)} />
+          </Row>
+          <T v="small" color={colors.inkSoft}>
+            Publishing your calendar is optional. It helps bookers pick a date, but a free day is not a booking: you accept or decline every request, and a booking is confirmed only after the payment goes through.
+          </T>
+        </Card>
+      )}
     </Screen>
   );
 }

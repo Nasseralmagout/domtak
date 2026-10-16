@@ -4,9 +4,9 @@ import { type ReactNode, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BackOverlay, EventRow, HeartToggle, gardenShort } from '../../components/cards';
+import { BackOverlay, EventRow, HeartToggle, VenueAmenities } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
-import { Avatar, Banner, Button, Card, Chip, Divider, Icon, type IconName, InfoRow, LineItems, Photo, RatingBadge, Row, SectionTitle, Stars, Stepper, T } from '../../components/ui';
+import { Avatar, Banner, Button, Card, Chip, Icon, type IconName, InfoRow, LineItems, Photo, RatingBadge, Row, SectionTitle, Stars, Stepper, T } from '../../components/ui';
 import { followersOf, PARKING_KIND_LABEL, profileById, reviewsFor, venueGarden, venueParking } from '../../data/mock';
 import { compact, euro, parse, plural, shortDate, TODAY } from '../../lib/format';
 import { cateringCost, guardsFor, securityCost, securityRequired, toLineItems, venueEstimate } from '../../lib/pricing';
@@ -71,6 +71,7 @@ export default function VenueDetail() {
   const [guestsPicked, setGuests] = useState<number>();
   const [withCatering, setWithCatering] = useState(true);
   const [withSecurity, setWithSecurity] = useState(false);
+  const [extras, setExtras] = useState<string[]>([]);
 
   if (!venue) {
     return (
@@ -106,7 +107,7 @@ export default function VenueDetail() {
   const includeSecurity = !!security && (withSecurity || mustHaveSecurity);
   const includeCatering = !!catering && withCatering;
   const guards = security ? guardsFor(guests, security.guestsPerGuard) : 0;
-  const estimate = venueEstimate(venue, { guests, catering: includeCatering, security: includeSecurity });
+  const estimate = venueEstimate(venue, { guests, catering: includeCatering, security: includeSecurity, extras });
   const quickLine = [
     catering ? `catering ${euro(cateringCost(venue, guests))}` : '',
     security ? `security ${euro(securityCost(venue, guests))} (${plural(guards, 'guard')})` : '',
@@ -131,7 +132,12 @@ export default function VenueDetail() {
   const reviewsLabel = `${reviewCount} review${reviewCount === 1 ? '' : 's'}`;
   const ratingText = rating.toFixed(1).replace('.', ',');
   const openRatings = () => router.push(`/ratings/${venue.id}`);
-  const book = () => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id, guests: String(guests) } });
+  // The estimate choices travel with the request (booking/new can prefill them).
+  const book = () =>
+    router.push({
+      pathname: '/booking/new',
+      params: { type: 'venue', id: venue.id, guests: String(guests), catering: includeCatering ? '1' : '0', security: includeSecurity ? '1' : '0', extras: extras.join(',') },
+    });
 
   const parkingValue = parking.available
     ? [parking.spaces ? plural(parking.spaces, 'space') : '', parking.notes ?? ''].filter(Boolean).join(' · ') || 'Ask the venue for details'
@@ -207,6 +213,7 @@ export default function VenueDetail() {
               onPress={openRatings}
             />
           </Card>
+          <VenueAmenities venue={venue} />
 
           <Pressable
             accessibilityRole="button"
@@ -237,7 +244,7 @@ export default function VenueDetail() {
 
           <Section icon="tree-outline" title="Garden and outdoor space">
             <Card>
-              <InfoRow icon="tree-outline" label={garden.available ? gardenShort(venue) : 'No garden or outdoor space'} value={gardenValue} available={garden.available} />
+              <InfoRow icon="tree-outline" label={garden.available ? 'Garden / outdoor space available' : 'No garden or outdoor space'} value={gardenValue} available={garden.available} />
             </Card>
           </Section>
 
@@ -274,17 +281,27 @@ export default function VenueDetail() {
             </Card>
           </Section>
 
-          <Section icon="silverware-fork-knife" title="Catering and security">
-            <Card style={{ gap: 12 }}>
+          {/* Catering and security are priced by attendance; each is its own item. */}
+          <Section icon="silverware-fork-knife" title="Catering">
+            <Card>
               <InfoRow
                 icon="silverware-fork-knife"
-                label={catering ? `Catering · ${euro(catering.pricePerGuest)} per guest` : 'No catering through the venue'}
-                value={catering ? [catering.minGuests ? `Minimum ${catering.minGuests} guests` : '', catering.notes ?? ''].filter(Boolean).join(' · ') || 'Priced per guest' : 'Bring your own caterer or ask the venue.'}
+                label={catering ? `${euro(catering.pricePerGuest)} per guest` : 'No catering through the venue'}
+                value={
+                  catering
+                    ? [catering.minGuests ? `Minimum ${catering.minGuests} guests` : 'No minimum', catering.notes ?? ''].filter(Boolean).join(' · ')
+                    : 'Bring your own caterer or ask the venue.'
+                }
                 available={!!catering}
               />
+            </Card>
+          </Section>
+
+          <Section icon="shield-account-outline" title="Security">
+            <Card>
               <InfoRow
                 icon="shield-account-outline"
-                label={security ? `Security · ${euro(security.pricePerGuard)} per guard` : 'No security through the venue'}
+                label={security ? `${euro(security.pricePerGuard)} per guard` : 'No security through the venue'}
                 value={
                   security
                     ? [`1 guard per ${security.guestsPerGuard} guests`, security.requiredFrom != null ? `required from ${security.requiredFrom} guests` : 'optional', security.notes ?? ''].filter(Boolean).join(' · ')
@@ -292,41 +309,6 @@ export default function VenueDetail() {
                 }
                 available={!!security}
               />
-              {catering || security ? (
-                <>
-                  <Divider />
-                  <Row justify="space-between" gap={12}>
-                    <View style={{ flex: 1 }}>
-                      <T v="bodyBold">Guests</T>
-                      <T v="small">Up to {venue.capacity}</T>
-                    </View>
-                    <Stepper value={guests} onChange={setGuests} min={10} max={venue.capacity} step={10} label="guests" />
-                  </Row>
-                  <T v="bodyBold" accessibilityLiveRegion="polite">For {guests} guests: {quickLine}</T>
-                  <Row gap={8} style={{ flexWrap: 'wrap' }}>
-                    {catering ? <Chip label="Include catering" icon={includeCatering ? 'check' : 'plus'} selected={includeCatering} onPress={() => setWithCatering(!withCatering)} /> : null}
-                    {security ? (
-                      <Chip
-                        label={mustHaveSecurity ? 'Security required' : 'Include security'}
-                        icon={includeSecurity ? 'check' : 'plus'}
-                        selected={includeSecurity}
-                        accessibilityLabel={mustHaveSecurity ? `Security is required from ${security.requiredFrom} guests` : undefined}
-                        onPress={() => (mustHaveSecurity ? toast(`${venue.name} requires security from ${security.requiredFrom} guests`) : setWithSecurity(!withSecurity))}
-                      />
-                    ) : null}
-                  </Row>
-                  {estimate.items.length ? (
-                    <LineItems items={toLineItems(estimate.items)} total={estimate.total} totalLabel={quote ? 'Estimate without venue hire' : 'Estimated total'} />
-                  ) : (
-                    <T v="small">Pick catering or security to see an estimate.</T>
-                  )}
-                  <T v="small">
-                    {quote
-                      ? 'Venue hire is priced on request. The venue sends an itemised quote and you decide whether to accept it.'
-                      : 'Estimate before the service fee. The venue confirms the final price when it accepts your request.'}
-                  </T>
-                </>
-              ) : null}
             </Card>
           </Section>
 
@@ -334,12 +316,53 @@ export default function VenueDetail() {
             <Section icon="receipt-text-outline" title="Other charges">
               <Card style={{ gap: 6 }}>
                 {extraCharges.map((x) => (
-                  <Row key={x.label} justify="space-between" accessibilityLabel={`${x.label}: ${euro(x.amount)}`}>
+                  <Row key={x.label} justify="space-between" accessibilityLabel={`${x.label}: ${euro(x.amount)}`} style={{ minHeight: 28 }}>
                     <T v="body">{x.label}</T>
                     <T v="bodyBold">{euro(x.amount)}</T>
                   </Row>
                 ))}
-                <T v="small">Listed separately from the venue hire. Your request shows which ones apply.</T>
+                <T v="small">Listed separately from the venue hire. Add the ones you need to the estimate below or to your request.</T>
+              </Card>
+            </Section>
+          ) : null}
+
+          {catering || security || extraCharges.length ? (
+            <Section icon="calculator-variant-outline" title="Estimate for your guest count">
+              <Card style={{ gap: 12 }}>
+                <Row justify="space-between" gap={12}>
+                  <View style={{ flex: 1 }}>
+                    <T v="bodyBold">Guests</T>
+                    <T v="small">Up to {venue.capacity}</T>
+                  </View>
+                  <Stepper value={guests} onChange={setGuests} min={10} max={venue.capacity} step={10} label="guests" />
+                </Row>
+                {quickLine ? <T v="bodyBold" accessibilityLiveRegion="polite">For {guests} guests: {quickLine}</T> : null}
+                <Row gap={8} style={{ flexWrap: 'wrap' }}>
+                  {catering ? <Chip label="Catering" icon={includeCatering ? 'check' : 'plus'} selected={includeCatering} accessibilityLabel={includeCatering ? 'Remove catering from the estimate' : 'Add catering to the estimate'} onPress={() => setWithCatering(!withCatering)} /> : null}
+                  {security ? (
+                    <Chip
+                      label={mustHaveSecurity ? 'Security required' : 'Security'}
+                      icon={includeSecurity ? 'check' : 'plus'}
+                      selected={includeSecurity}
+                      accessibilityLabel={mustHaveSecurity ? `Security is required from ${security.requiredFrom} guests` : includeSecurity ? 'Remove security from the estimate' : 'Add security to the estimate'}
+                      onPress={() => (mustHaveSecurity ? toast(`${venue.name} requires security from ${security.requiredFrom} guests`) : setWithSecurity(!withSecurity))}
+                    />
+                  ) : null}
+                  {extraCharges.map((x) => {
+                    const on = extras.includes(x.label);
+                    return <Chip key={x.label} label={x.label} icon={on ? 'check' : 'plus'} selected={on} accessibilityLabel={`${on ? 'Remove' : 'Add'} ${x.label}, ${euro(x.amount)}`} onPress={() => setExtras(on ? extras.filter((e) => e !== x.label) : [...extras, x.label])} />;
+                  })}
+                </Row>
+                {estimate.items.length ? (
+                  <LineItems items={toLineItems(estimate.items)} total={estimate.total} totalLabel={quote ? 'Estimate without venue hire' : 'Estimated total'} />
+                ) : (
+                  <T v="small">Pick catering, security or another charge to see an estimate.</T>
+                )}
+                <T v="small">
+                  {quote
+                    ? 'Venue hire is priced on request. The venue sends an itemised quote and you decide whether to accept it.'
+                    : 'Estimate before the service fee. The venue confirms the final price when it accepts your request.'}
+                </T>
               </Card>
             </Section>
           ) : null}

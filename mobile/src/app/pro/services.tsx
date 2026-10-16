@@ -9,7 +9,7 @@ import { profileById } from '../../data/mock';
 import type { Lesson, PricingMode } from '../../data/types';
 import { euro, plural } from '../../lib/format';
 import { PLATFORM_COMMISSION_RATE, providerNet } from '../../lib/pricing';
-import { LESSON_FORMAT_ICON, LESSON_FORMAT_LABEL, LESSON_LEVELS, OWN_ARTIST_ID, overlayArtist, PERFORMANCE_TYPES, servicesChecklist, type ServicesDraft, useServices } from '../../store/services';
+import { LESSON_FORMAT_ICON, LESSON_FORMAT_LABEL, LESSON_LEVELS, OWN_ARTIST_ID, overlayArtist, PERFORMANCE_TYPES, servicesChecklist, type ServicesDraft, useServices, useServicesHydrated } from '../../store/services';
 import { toast } from '../../store/toast';
 import { activeWorkspace, useApp } from '../../store/useApp';
 import { colors } from '../../theme';
@@ -200,6 +200,20 @@ function LessonEditor({ lesson, isNew, onSave, onCancel, onRemove }: { lesson: L
 
 export default function ServicesScreen() {
   const user = useApp((s) => s.user);
+  const hydrated = useServicesHydrated();
+  if (activeWorkspace(user) !== 'musician' || !BASE_PROFILE) {
+    return (
+      <Screen header={<ScreenHeader title="Services and pricing" onBack={() => goBack('/pro/workspace')} />}>
+        <PermissionNotice role="musician" action="set up services and pricing" />
+      </Screen>
+    );
+  }
+  // The editor starts from your saved draft, so wait until it is loaded.
+  if (!hydrated) return <Screen header={<ScreenHeader title="Services and pricing" onBack={() => goBack('/pro/workspace')} />}>{null}</Screen>;
+  return <ServicesEditor />;
+}
+
+function ServicesEditor() {
   const fee = useApp((s) => s.availability.feePerHour);
   const minHours = useApp((s) => s.availability.minHours);
   const requests = useApp((s) => s.requests);
@@ -218,14 +232,7 @@ export default function ServicesScreen() {
   const [customType, setCustomType] = useState('');
 
   const preview = useMemo(() => (BASE_PROFILE ? overlayArtist(BASE_PROFILE, draft, draft.feePerHour) : undefined), [draft]);
-
-  if (activeWorkspace(user) !== 'musician' || !BASE_PROFILE || !preview) {
-    return (
-      <Screen header={<ScreenHeader title="Services and pricing" onBack={() => goBack('/pro/workspace')} />}>
-        <PermissionNotice role="musician" action="set up services and pricing" />
-      </Screen>
-    );
-  }
+  if (!preview) return null;
 
   const patch = (p: Partial<ServicesDraft>) => setDraft((d) => ({ ...d, ...p }));
   const differsFromLive = stable(draft) !== stable(live);

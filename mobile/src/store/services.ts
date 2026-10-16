@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -109,6 +109,14 @@ export const useServices = create<ServicesState>()(
     },
   ),
 );
+
+const subscribeHydration = (cb: () => void) => useServices.persist.onFinishHydration(cb);
+const getHydrated = () => useServices.persist.hasHydrated();
+
+/** True once saved services and drafts are loaded. Editors that start from a saved draft wait for this. */
+export function useServicesHydrated() {
+  return useSyncExternalStore(subscribeHydration, getHydrated, getHydrated);
+}
 
 // ---------- Reading services ----------
 

@@ -327,6 +327,22 @@ export function gardenShort(venue: Pick<Venue, 'garden'>) {
   return ['Garden', g.capacity ? `${g.capacity} guests` : '', g.covered ? 'covered' : ''].filter(Boolean).join(' · ');
 }
 
+/** At a glance: parking, garden, catering and security as four separate pills (venue page header). */
+export function VenueAmenities({ venue }: { venue: Venue }) {
+  const parking = venueParking(venue);
+  const garden = venueGarden(venue);
+  const catering = !!venue.catering?.available;
+  const security = !!venue.security?.available;
+  return (
+    <Row gap={8} style={{ flexWrap: 'wrap' }}>
+      <AmenityPill icon="parking" label={parking.available ? 'Parking' : 'No parking'} available={parking.available} />
+      <AmenityPill icon="tree-outline" label={garden.available ? 'Garden / outdoor' : 'No outdoor space'} available={garden.available} />
+      <AmenityPill icon="silverware-fork-knife" label={catering ? 'Catering' : 'No catering'} available={catering} />
+      <AmenityPill icon="shield-account-outline" label={security ? 'Security' : 'No security'} available={security} />
+    </Row>
+  );
+}
+
 /**
  * Space facts (capacity, rooms, stages), then parking and garden as two separate pills.
  * Pass amenities={false} to show the space facts only.
