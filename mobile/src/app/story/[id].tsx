@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar, Icon, IconButton, Photo, Row } from '../../components/ui';
 import { profileById, stories } from '../../data/mock';
+import type { Story } from '../../data/types';
 import { toast } from '../../store/toast';
 import { useApp } from '../../store/useApp';
 import { colors, fonts } from '../../theme';
@@ -13,12 +14,16 @@ const FRAME_MS = 5000;
 const LIVE_RED = '#E5484D';
 
 type Pos = { story: number; frame: number; done: boolean };
+type Move = { dir: 1 | -1; list: Story[] };
 
-function step(pos: Pos, dir: 1 | -1): Pos {
-  const frames = stories[pos.story].frames.length;
+/** Moves through the frames of `list` (the stories you can watch: blocked authors are left out). */
+function step(pos: Pos, { dir, list }: Move): Pos {
+  const current = list[pos.story];
+  if (!current) return { ...pos, done: true };
+  const frames = current.frames.length;
   if (dir === 1) {
     if (pos.frame < frames - 1) return { ...pos, frame: pos.frame + 1 };
-    if (pos.story < stories.length - 1) return { story: pos.story + 1, frame: 0, done: false };
+    if (pos.story < list.length - 1) return { story: pos.story + 1, frame: 0, done: false };
     return { ...pos, done: true };
   }
   if (pos.frame > 0) return { ...pos, frame: pos.frame - 1 };
@@ -28,8 +33,16 @@ function step(pos: Pos, dir: 1 | -1): Pos {
 
 export default function StoryViewer() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const startIndex = Math.max(0, stories.findIndex((s) => s.id === id));
-  const [pos, move] = useReducer(step, { story: startIndex, frame: 0, done: false });
+  // Stories from accounts you blocked are skipped (fixed when the viewer opens, so the order does not jump).
+  const [playlist] = useState(() => {
+    const blockedNow = useApp.getState().blocked;
+    return stories.filter((s) => !blockedNow.includes(s.authorId));
+  });
+  const requested = playlist.findIndex((s) => s.id === id);
+  // A link to the story of an account you blocked shows a notice instead of someone else's story.
+  const hiddenRequest = requested < 0 && stories.some((s) => s.id === id);
+  const playable = playlist.length > 0 && !hiddenRequest;
+  const [pos, move] = useReducer(step, { story: Math.max(0, requested), frame: 0, done: false });
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
   // The pause button sets a lock, so releasing a hold or leaving the reply box does not silently resume.
@@ -44,33 +57,33 @@ export default function StoryViewer() {
 
   const storyIndex = pos.story;
   const frame = pos.frame;
-  const story = stories[storyIndex];
-  const author = profileById(story.authorId);
-  const likeKey = `story:${story.id}`;
+  const story = playlist[storyIndex] as Story | undefined;
+  const author = story ? profileById(story.authorId) : undefined;
+  const likeKey = `story:${story?.id ?? ''}`;
   const liked = !!likes[likeKey];
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)'));
   const go = (dir: 1 | -1) => {
     elapsed.current = 0;
     setProgress(0);
-    move(dir);
+    move({ dir, list: playlist });
   };
   const next = () => go(1);
   const prev = () => go(-1);
 
   // Auto-advance: the timer callback (not the render) moves to the next frame.
   useEffect(() => {
-    if (paused || pos.done) return;
+    if (paused || pos.done || !playable) return;
     const t = setInterval(() => {
       elapsed.current += 100 / FRAME_MS;
       if (elapsed.current >= 1) {
         elapsed.current = 0;
-        move(1);
+        move({ dir: 1, list: playlist });
       }
       setProgress(elapsed.current);
     }, 100);
     return () => clearInterval(t);
-  }, [paused, pos.done]);
+  }, [paused, pos.done, playlist, playable]);
 
   useEffect(() => {
     if (pos.done) close();
@@ -88,6 +101,17 @@ export default function StoryViewer() {
     setReply('');
     toast(`Reply sent to ${author.name}`);
   };
+
+  if (!story || !playable) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.black, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
+        <Icon name="eye-off-outline" size={40} color={colors.white} />
+        <Text style={{ color: colors.white, fontFamily: fonts.bodyBold, fontSize: 16, textAlign: 'center' }}>{hiddenRequest ? 'This story is hidden' : 'No stories to show'}</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: fonts.body, fontSize: 14, textAlign: 'center' }}>Stories from accounts you blocked are hidden.</Text>
+        <IconButton name="close" label="Close stories" color={colors.white} bg="rgba(255,255,255,0.15)" size={48} onPress={close} />
+      </SafeAreaView>
+    );
+  }
 
   const watchLive = () => router.replace(`/live/${story.id}`);
   const togglePause = () => {

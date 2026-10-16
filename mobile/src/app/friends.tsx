@@ -95,6 +95,12 @@ function RequestRow({ r, incoming }: { r: FriendRequest; incoming: boolean }) {
 export default function Friends() {
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'requests' ? 'requests' : 'friends');
+  // A new ?tab= (e.g. from a notification while this screen is open) switches the tab.
+  const [lastParam, setLastParam] = useState(params.tab);
+  if (params.tab !== lastParam) {
+    setLastParam(params.tab);
+    if (params.tab) setTab(params.tab === 'requests' ? 'requests' : 'friends');
+  }
   const [q, setQ] = useState('');
   const [menuFor, setMenuFor] = useState<Profile>();
   const user = useApp((s) => s.user);

@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, Share, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -11,7 +11,7 @@ import { Avatar, Banner, BookAgainBadge, Button, Icon, IconButton, Photo, Row, S
 import { followersOf, profileById, reviewsFor } from '../../data/mock';
 import { compact, isoDay, plural, shortDate, TODAY } from '../../lib/format';
 import { isMusician, verifiedMusicianReviews } from '../../lib/ratings';
-import { OWN_ARTIST_ID, useArtist, useArtistServices } from '../../store/services';
+import { OWN_ARTIST_ID, overlayArtist, useArtist, useArtistServices, useServices } from '../../store/services';
 import { toast } from '../../store/toast';
 import { activeWorkspace, useAllEvents, useApp, useArtistScore, useFeedPosts, useRating } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
@@ -32,11 +32,16 @@ interface ReviewRow {
 }
 
 export default function ArtistProfile() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, preview } = useLocalSearchParams<{ id: string; preview?: string }>();
   const { width } = useWindowDimensions();
   // Includes the musician's published services (price, quote mode, charges, lessons) for their own profile.
-  const artist = useArtist(id);
-  const services = useArtistServices(id);
+  const published = useArtist(id);
+  const publishedServices = useArtistServices(id);
+  // Pro → Services and pricing → Preview profile: show the saved, unpublished draft instead (owner only).
+  const servicesDraft = useServices((s) => s.servicesDraft);
+  const draft = preview === 'draft' && id === OWN_ARTIST_ID ? servicesDraft : undefined;
+  const artist = useMemo(() => (draft && published ? overlayArtist(published, draft, draft.feePerHour) : published), [draft, published]);
+  const services = draft ?? publishedServices;
   const score = useArtistScore(id ?? '');
   const stars = useRating(id ?? '');
   const following = useApp((s) => (id ? !!s.following[id] : false));
@@ -173,6 +178,16 @@ export default function ArtistProfile() {
               <T v="bodyBold" color={colors.brandDeep}>{compact(artist.following)} <T v="body" color={colors.brandDeep}>Following</T></T>
             </Pressable>
           </Row>
+
+          {draft ? (
+            <Banner icon="eye-outline" tone="warning">
+              <View style={{ gap: 8 }}>
+                <T v="smallBold" color={colors.warning}>Preview of your unpublished changes</T>
+                <T v="small" color={colors.warning}>Bookers still see your published services until you publish this draft.</T>
+                <Button title="Back to editor" size="sm" variant="secondary" icon="pencil-outline" hitSlop={4} style={{ alignSelf: 'flex-start' }} onPress={() => goBack('/pro/services')} />
+              </View>
+            </Banner>
+          ) : null}
 
           {isBlocked ? (
             <Banner icon="block-helper" tone="danger">
@@ -355,10 +370,10 @@ export default function ArtistProfile() {
       </ScrollView>
       {isBlocked ? null : (
         <BottomBar>
-          {isOwner ? (
+          {isOwner || draft ? (
             <View style={{ gap: 8 }}>
-              <T v="small" center>This is how bookers see your profile.</T>
-              <Button title="Edit services and pricing" icon="pencil-outline" onPress={() => router.navigate('/pro/services' as never)} />
+              <T v="small" center>{draft ? 'Preview only. Nothing here is live yet.' : 'This is how bookers see your profile.'}</T>
+              <Button title={draft ? 'Back to editor' : 'Edit services and pricing'} icon="pencil-outline" onPress={() => (draft ? goBack('/pro/services') : router.navigate('/pro/services'))} />
             </View>
           ) : musician ? (
             <Row gap={12}>

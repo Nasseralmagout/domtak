@@ -6,10 +6,10 @@ import { ActionSheet, ReasonSheet } from '../../components/ActionSheet';
 import { EventRow, FollowButton } from '../../components/cards';
 import { Screen, ScreenHeader, goBack } from '../../components/layout';
 import { FriendButton, REPORT_REASONS } from '../../components/PostCard';
-import { Avatar, Banner, Button, EmptyState, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
+import { Avatar, Banner, Button, Chip, EmptyState, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
 import { followersOf, profileById, venueById } from '../../data/mock';
 import { compact, plural } from '../../lib/format';
-import { canBefriend, useFriendProfiles, useFriendRequests, useFriendStatus } from '../../store/social';
+import { canBefriend, communitiesFor, useFriendProfiles, useFriendRequests, useFriendStatus } from '../../store/social';
 import { toast } from '../../store/toast';
 import { activeWorkspace, canPostToFeed, ROLE_LABEL, isPro, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
@@ -111,6 +111,8 @@ export default function ProfileScreen() {
   const savedPosts = posts.filter((x) => saves[x.id]);
   const hostEvents = events.filter((e) => e.organizerId === authorId);
   const cell = (width - 32 - 8) / 3;
+  // Platform communities that match this person's music: a place to meet them (F09).
+  const sharedCommunities = p ? communitiesFor(p.genres) : [];
   const grid = tab === 'saved' ? savedPosts : myPosts;
   const fallbackGrid = !isMe && p?.gallery ? p.gallery : [];
   const isBlocked = !isMe && blockedList.includes(p!.id);
@@ -281,9 +283,25 @@ export default function ProfileScreen() {
 
       {tab === 'about' && p ? (
         <View style={{ gap: 12 }}>
-          <T v="body">{p.bio}</T>
+          {p.bio ? <T v="body">{p.bio}</T> : null}
           {p.genres.length ? <T v="small">Music: {p.genres.join(', ')}</T> : null}
           <T v="small">Based in {p.city}</T>
+          {sharedCommunities.length ? (
+            <View style={{ gap: 8 }}>
+              <T v="label">Communities for this music</T>
+              <Row gap={8} style={{ flexWrap: 'wrap' }}>
+                {sharedCommunities.map((c) => (
+                  <Chip
+                    key={c.id}
+                    label={joinedCommunities.includes(c.id) ? `${c.name} · joined` : c.name}
+                    icon="account-group-outline"
+                    accessibilityLabel={`Open the ${c.name} community`}
+                    onPress={() => router.push(`/community/${c.id}`)}
+                  />
+                ))}
+              </Row>
+            </View>
+          ) : null}
         </View>
       ) : null}
 

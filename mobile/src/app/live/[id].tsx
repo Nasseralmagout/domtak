@@ -284,17 +284,29 @@ function LiveViewer({ story, author }: { story: Story; author: Profile }) {
   );
 }
 
-function LiveUnavailable({ story }: { story?: Story }) {
-  const others = stories.filter((s) => s.live && s.id !== story?.id);
+/** Ended or unknown stream, or one from an account you blocked (`blockedName`). */
+function LiveUnavailable({ story, blockedName }: { story?: Story; blockedName?: string }) {
+  const blocked = useApp((s) => s.blocked);
+  const others = stories.filter((s) => s.live && s.id !== story?.id && !blocked.includes(s.authorId));
   return (
     <Screen header={<ScreenHeader title="Live" close onBack={() => goBack('/(tabs)')} />}>
-      <EmptyState
-        icon="broadcast-off"
-        title="This live has ended"
-        body={story ? 'The stream is over, but you can still catch the latest story.' : 'We couldn’t find this live stream. It may have ended, or the link is no longer valid.'}
-        action={story ? 'Watch story' : 'Back to home'}
-        onAction={() => (story ? router.replace(`/story/${story.id}`) : router.replace('/(tabs)'))}
-      />
+      {blockedName ? (
+        <EmptyState
+          icon="block-helper"
+          title={`You blocked ${blockedName}`}
+          body="Live streams and stories from accounts you blocked are hidden. Unblock them from their profile to watch again."
+          action="Back to home"
+          onAction={() => router.replace('/(tabs)')}
+        />
+      ) : (
+        <EmptyState
+          icon="broadcast-off"
+          title="This live has ended"
+          body={story ? 'The stream is over, but you can still catch the latest story.' : 'We couldn’t find this live stream. It may have ended, or the link is no longer valid.'}
+          action={story ? 'Watch story' : 'Back to home'}
+          onAction={() => (story ? router.replace(`/story/${story.id}`) : router.replace('/(tabs)'))}
+        />
+      )}
       {others.length ? (
         <View style={{ gap: 10 }}>
           <T v="h3">Live now</T>
@@ -326,6 +338,8 @@ export default function LiveScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const story = stories.find((s) => s.id === id);
   const author = story ? profileById(story.authorId) : undefined;
+  const authorBlocked = useApp((s) => !!author && s.blocked.includes(author.id));
   if (!story || !story.live || !author) return <LiveUnavailable story={story} />;
+  if (authorBlocked) return <LiveUnavailable blockedName={author.name} />;
   return <LiveViewer key={story.id} story={story} author={author} />;
 }

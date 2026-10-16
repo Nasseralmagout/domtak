@@ -13,10 +13,8 @@ import { useFriendProfiles, useFriendRequests } from '../store/social';
 import { canAcceptBookings, overlayVenue, useApp, type VenueListing } from '../store/useApp';
 import { colors, shadow } from '../theme';
 
-const ONLINE = ['adam', 'sameul', 'sara', 'dana', 'mo', 'soso'];
-
-/** Booking statuses that unlock a chat with the provider. */
-const CHAT_STATUSES: BookingStatus[] = ['accepted', 'paid', 'confirmed', 'completed'];
+/** Booking statuses that unlock a chat with the provider: once they accepted (also while a change or a failed payment is being sorted out). */
+const CHAT_STATUSES: BookingStatus[] = ['accepted', 'paid', 'confirmed', 'change_requested', 'payment_failed', 'completed'];
 
 const rowStyle: ViewStyle = { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, backgroundColor: colors.surface, ...shadow(1) };
 
@@ -73,7 +71,6 @@ export default function Inbox() {
   const isBlocked = (id: string) => blocked.includes(id);
   const openChat = (withId: string) => router.push(`/chat/${ensureConversation(withId)}`);
 
-  const online = profiles.filter((p) => ONLINE.includes(p.id) && !isBlocked(p.id));
   const who = (id: string) => party(id, venueListing);
   const list = conversations.filter((c) => {
     const p = who(c.withId);
@@ -125,14 +122,12 @@ export default function Inbox() {
         ) : null}
         <Icon name="chevron-right" size={22} color={colors.subtle} />
       </Pressable>
-      {online.length ? (
+      {friends.length ? (
+        // Your friends, one tap from a conversation (F10). Blocked accounts are never friends.
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
-          {online.map((p) => (
-            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Message ${p.name}, online now`} onPress={() => openChat(p.id)} style={{ alignItems: 'center', gap: 6, width: 72 }}>
-              <View>
-                <Avatar src={p.avatar} size={68} />
-                <View style={{ position: 'absolute', right: 4, bottom: 4, width: 14, height: 14, borderRadius: 7, backgroundColor: '#22C55E', borderWidth: 2, borderColor: colors.white }} />
-              </View>
+          {friends.map((p) => (
+            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Message your friend ${p.name}`} onPress={() => openChat(p.id)} style={{ alignItems: 'center', gap: 6, width: 72 }}>
+              <Avatar src={p.avatar} size={68} label={p.name} />
               <T v="small" color={colors.ink} numberOfLines={1}>{p.name}</T>
             </Pressable>
           ))}

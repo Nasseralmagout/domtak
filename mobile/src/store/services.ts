@@ -147,19 +147,19 @@ export function useArtistServices(id?: string): ArtistServices | undefined {
   return id === OWN_ARTIST_ID ? services : undefined;
 }
 
+/** A lesson by id with its teacher (plain function; useLesson is the hook). */
+export function findLesson(lessonId: string | undefined, services: ArtistServices, feePerHour: number): { artist: Profile; lesson: Lesson } | undefined {
+  if (!lessonId) return undefined;
+  const artist = profiles.map((p) => overlayArtist(p, services, feePerHour)).find((p) => p.lessons?.some((l) => l.id === lessonId));
+  const lesson = artist?.lessons?.find((l) => l.id === lessonId);
+  return artist && lesson ? { artist, lesson } : undefined;
+}
+
 /** A lesson by id with its teacher, including lessons the musician added in Services and pricing. */
 export function useLesson(lessonId?: string): { artist: Profile; lesson: Lesson } | undefined {
   const services = useServices((s) => s.services);
   const fee = useApp((s) => s.availability.feePerHour);
-  return useMemo(() => {
-    if (!lessonId) return undefined;
-    for (const base of profiles) {
-      const artist = overlayArtist(base, services, fee);
-      const lesson = artist.lessons?.find((l) => l.id === lessonId);
-      if (lesson) return { artist, lesson };
-    }
-    return undefined;
-  }, [lessonId, services, fee]);
+  return useMemo(() => findLesson(lessonId, services, fee), [lessonId, services, fee]);
 }
 
 // ---------- Completion checklist (F05) ----------

@@ -271,9 +271,11 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
             <T v="small">{commentCount === 1 ? 'View 1 comment' : `View all ${commentCount} comments`}</T>
           </Pressable>
         ) : null}
-        <Pressable accessibilityRole="button" accessibilityLabel="Add a comment" onPress={() => openComments(true)} hitSlop={{ top: 4, bottom: 4 }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, minHeight: 36 }}>
+        {/* Comments are where everyone, members included, can share photos (up to 3 per comment). */}
+        <Pressable accessibilityRole="button" accessibilityLabel="Add a comment or photo" onPress={() => openComments(true)} hitSlop={{ top: 4, bottom: 4 }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, minHeight: 36 }}>
           <Avatar src={user.avatar} size={26} label={user.name} />
-          <T v="small" color={colors.subtle}>Add a comment…</T>
+          <T v="small" color={colors.subtle} style={{ flex: 1 }}>Add a comment or photo…</T>
+          <Icon name="image-plus" size={18} color={colors.subtle} />
         </Pressable>
         <T v="small" style={{ fontSize: 11 }} color={colors.subtle}>{post.time === 'now' ? 'Just now' : `${post.time} ago`}</T>
       </View>
