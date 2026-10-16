@@ -49,7 +49,9 @@ export default function Register() {
     if (taken) return;
     setSubmitted(mail);
     const handle = '@' + (name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '') || 'domtaker');
-    registerUser({ name: name.trim(), email: email.trim(), phone: phone.trim(), handle });
+    // A new account starts clean: no bio, photo or music interests carried over from the account saved on this device
+    // (interests are chosen in the next step, the photo and bio in profile setup).
+    registerUser({ name: name.trim(), email: email.trim(), phone: phone.trim(), handle, bio: '', avatar: undefined, genres: [] });
     router.push({ pathname: '/verify', params: { email: email.trim(), phone: phone.trim(), ...(dest ? { next: dest } : {}) } });
   };
 
@@ -63,7 +65,7 @@ export default function Register() {
       <Field placeholder="Valid email" accessibilityLabel="Email" value={email} onChangeText={(t) => { setEmail(t); setDuplicate(false); }} icon="email-outline" keyboardType="email-address" autoCapitalize="none" autoComplete="email" error={errors.email} />
       <Field placeholder="Phone number" accessibilityLabel="Phone number" value={phone} onChangeText={setPhone} icon="cellphone" keyboardType="phone-pad" autoComplete="tel" error={errors.phone} />
       <Field placeholder="Strong password" accessibilityLabel="Password, at least 8 characters" value={password} onChangeText={setPassword} icon="lock-outline" secureTextEntry autoComplete="new-password" error={errors.password} onSubmitEditing={submit} />
-      <Pressable accessibilityRole="checkbox" accessibilityLabel="I agree to the Terms and Conditions" accessibilityState={{ checked: agree }} onPress={() => setAgree(!agree)} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingVertical: 8 }}>
+      <Pressable accessibilityRole="checkbox" accessibilityLabel="I agree to the Terms and Conditions" accessibilityState={{ checked: agree }} onPress={() => setAgree(!agree)} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingVertical: 8, minHeight: 44 }}>
         <View style={{ width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: colors.brand, backgroundColor: agree ? colors.brand : colors.surface, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
           {agree ? <Icon name="check" size={16} color={colors.white} /> : null}
         </View>

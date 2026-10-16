@@ -5,7 +5,7 @@ import { Pressable, View } from 'react-native';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, Divider, Field, Icon, KeyValue, PaymentPill, Photo, Radio, Row, StatusPill, T } from '../components/ui';
 import { venueById } from '../data/mock';
-import { bookingRef, chargeItems, providerOf } from '../lib/booking';
+import { bookingRef, chargeItems, isClosed, providerOf } from '../lib/booking';
 import { euro, eventWhen, shortDate } from '../lib/format';
 import { applyPromo, findPromo } from '../lib/promos';
 import { toast } from '../store/toast';
@@ -58,7 +58,7 @@ export default function Checkout() {
     );
   }
 
-  if (booking && (booking.payment === 'paid' || booking.status === 'confirmed' || booking.status === 'completed' || booking.status === 'paid')) {
+  if (booking && (booking.payment === 'paid' || booking.payment === 'payout_pending' || booking.payment === 'paid_out' || booking.status === 'confirmed' || booking.status === 'completed' || booking.status === 'paid')) {
     // Opening checkout again (back button, lost connection, a repeated tap) never charges a second time.
     return (
       <Screen header={<ScreenHeader title="Payment" onBack={() => goBack(`/booking/${booking.id}`)} />} contentStyle={{ alignItems: 'center', paddingHorizontal: 24, gap: 12, paddingTop: 48 }}>
@@ -78,7 +78,9 @@ export default function Checkout() {
         <T v="body" color={colors.muted} center>
           {booking.status === 'pending' || booking.status === 'requested'
             ? 'The payment step opens once the provider accepts (or once you accept their quote). Your payment details stay pending their decision.'
-            : 'This booking is closed, so there is nothing to pay.'}
+            : isClosed(booking.status)
+              ? 'This booking is closed, so there is nothing to pay.'
+              : 'There is no payment step open for this booking right now. Its current state is shown on the booking page.'}
         </T>
         <Button title="View booking" full onPress={() => router.replace(`/booking/${booking.id}`)} style={{ marginTop: 12 }} />
       </Screen>
@@ -110,7 +112,8 @@ export default function Checkout() {
   const applied = promo && draft.kind === 'ticket' ? applyPromo(promo, lines[0]?.v ?? 0) : null;
   const discount = applied?.discount ?? 0;
   const total = Math.max(0, subtotal - discount);
-  const vat = total - total / 1.19;
+  // Ticket prices include German VAT. Provider bookings don't state a tax rate, so no VAT line is invented for them.
+  const vat = draft.kind === 'ticket' ? total - total / 1.19 : 0;
   const free = subtotal === 0;
   const method = methods.find((m) => m.id === selected);
 
@@ -136,9 +139,9 @@ export default function Checkout() {
   };
 
   /** Starts another attempt on the SAME booking (never a new booking or a second charge). */
-  const retry = (next: 'verify' | 'review') => {
+  const retry = () => {
     if (booking?.payment === 'failed') retryPayment(booking.id);
-    setStep(next);
+    setStep('verify');
   };
 
   const finish = () => {
@@ -182,11 +185,12 @@ export default function Checkout() {
         <T v="body" color={colors.muted} center>
           {booking
             ? `Your bank declined the payment and nothing was charged. Your booking with ${title} is kept as “Payment failed”, so you can retry safely on the same booking.`
-            : `Your card was declined by the bank. You haven’t been charged and your tickets are held for 10 minutes.`}
+            : 'Your card was declined by the bank and you haven’t been charged. No ticket is issued until a payment goes through.'}
         </T>
         {booking ? <PaymentPill state={booking.payment} /> : null}
-        <Button title={method ? `Retry with ${method.label}` : 'Try again'} full onPress={() => retry('verify')} style={{ marginTop: 16 }} />
-        <Button title="Use another method" variant="secondary" full onPress={() => retry('review')} />
+        <Button title={method ? `Retry with ${method.label}` : 'Try again'} full onPress={retry} style={{ marginTop: 16 }} />
+        {/* Choosing another method only goes back to the summary; the retry starts when you pay. */}
+        <Button title="Use another method" variant="secondary" full onPress={() => setStep('review')} />
         {booking ? <Button title="View booking" variant="ghost" full onPress={() => router.replace(`/booking/${booking.id}`)} /> : null}
         <Button title="Contact support" variant="ghost" full onPress={() => router.push('/help')} />
       </Screen>
@@ -203,7 +207,7 @@ export default function Checkout() {
             title={free ? 'Confirm registration' : total === 0 ? 'Confirm order' : `Pay ${euro(total, true)}`}
             loading={loading}
             disabled={!free && total > 0 && !method}
-            onPress={() => (free || total === 0 ? finish() : retry('verify'))}
+            onPress={() => (free || total === 0 ? finish() : retry())}
           />
         </BottomBar>
       }
@@ -224,16 +228,16 @@ export default function Checkout() {
 
       {booking ? (
         <Card style={{ gap: 6 }}>
-          <KeyValue k={booking.type === 'musician' ? 'Equipment' : 'Setup'} v={booking.equipment} />
-          <KeyValue k="Guests" v={String(booking.guests)} />
-          <KeyValue k="Extra services" v={booking.extras || 'None'} />
+          <KeyValue k={booking.type === 'musician' ? 'Equipment' : booking.type === 'lesson' ? 'Format' : 'Setup'} v={booking.equipment} />
+          {booking.type !== 'lesson' ? <KeyValue k="Guests" v={String(booking.guests)} /> : null}
+          <KeyValue k={booking.type === 'lesson' ? 'Options' : 'Extra services'} v={booking.extras || 'None'} />
         </Card>
       ) : null}
 
       <Card style={{ gap: 6 }}>
         {lines.map((l, i) => <KeyValue key={`${l.k}-${i}`} k={l.k} v={euro(l.v, true)} />)}
         {discount > 0 && promo ? <KeyValue k={`Promo ${promo}`} v={`−${euro(discount, true)}`} color={colors.success} /> : null}
-        <KeyValue k="incl. VAT (19%)" v={euro(vat, true)} />
+        {draft.kind === 'ticket' ? <KeyValue k="incl. VAT (19%)" v={euro(vat, true)} /> : null}
         <Divider style={{ marginVertical: 6 }} />
         <KeyValue k="Total" v={free ? 'Free' : euro(total, true)} strong />
       </Card>

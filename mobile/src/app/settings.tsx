@@ -86,11 +86,11 @@ export default function Settings() {
         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingHorizontal: 16, borderRadius: radius.lg, backgroundColor: colors.surface }}
       >
         <Icon name={app ? 'file-document-outline' : 'check-decagram'} size={22} color={colors.brand} />
-        <View style={{ flex: 1, paddingVertical: 10 }}>
+        <View style={{ flex: 1, paddingVertical: 10, gap: 4 }}>
           <T v="bodyBold">{app ? 'Professional application' : 'Apply as a professional'}</T>
-          <T v="small">{app ? `${WORKSPACE_LABEL[app.role]} · ${APPLICATION_STATUS_LABEL[app.status]}` : 'Artist, band, DJ, venue or organizer: reviewed within 24 hours (target)'}</T>
+          <T v="small">{app ? `${WORKSPACE_LABEL[app.role]} workspace` : 'Artist, band, DJ, venue or organizer: reviewed within 24 hours (target)'}</T>
+          {app ? <Pill label={APPLICATION_STATUS_LABEL[app.status]} tone={APPLICATION_STATUS_TONE[app.status]} /> : null}
         </View>
-        {app ? <Pill label={APPLICATION_STATUS_LABEL[app.status]} tone={APPLICATION_STATUS_TONE[app.status]} /> : null}
         <Icon name="chevron-right" size={20} color={colors.subtle} />
       </Pressable>
 

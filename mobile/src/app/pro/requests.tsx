@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { goBack, PermissionNotice, Screen, ScreenHeader } from '../../components/layout';
 import { Avatar, Banner, Button, Card, EmptyState, PaymentPill, Pill, Row, Segmented, T, TimeLeft } from '../../components/ui';
-import { profiles } from '../../data/mock';
+import { profiles, transactions } from '../../data/mock';
 import type { IncomingRequest, QuoteStatus } from '../../data/types';
 import { quoteState, REMINDER_HOURS, reminderDue, REQUEST_STATUS_LABEL, requestConflict, RESPONSE_HOURS, timeLeft } from '../../lib/booking';
 import { euro, parse, plural } from '../../lib/format';
@@ -18,6 +18,16 @@ const deadlineMs = (r: IncomingRequest) => (r.deadline ? parse(r.deadline).getTi
 const PROVIDER_QUOTE_LABEL: Record<QuoteStatus, string> = { requested: 'Quote requested', sent: 'Quote sent', revised: 'Revised quote sent', accepted: 'Quote accepted', rejected: 'Quote declined', expired: 'Quote expired' };
 const KIND_LABEL: Record<NonNullable<IncomingRequest['kind']>, string> = { performance: 'Performance', venue: 'Venue hire', lesson: 'Lesson' };
 
+/** Completed work already in the earnings ledger shows its settlement state as /pro/earnings does. */
+function settledPill(r: IncomingRequest, balance: number): { label: string; tone: 'warning' | 'success' | 'neutral' } | undefined {
+  if (r.status !== 'past') return undefined;
+  const t = transactions.find((x) => x.title === r.title && x.amount > 0 && x.status !== 'fee');
+  if (!t) return undefined;
+  if (t.status === 'escrow') return { label: 'Payout pending', tone: 'warning' };
+  if (t.status === 'available' && balance > 0) return { label: 'Available', tone: 'success' };
+  return { label: 'Paid out', tone: 'neutral' };
+}
+
 /** The price line a provider sees on a request card. */
 function priceOf(r: IncomingRequest): { label: string; value: string } {
   if (r.pricing === 'quote') {
@@ -30,6 +40,7 @@ function priceOf(r: IncomingRequest): { label: string; value: string } {
 export default function Requests() {
   const user = useApp((s) => s.user);
   const requests = useApp((s) => s.requests);
+  const balance = useApp((s) => s.balance);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const [tab, setTab] = useState<Tab>('due');
 
@@ -92,6 +103,7 @@ export default function Requests() {
         const q: QuoteStatus | undefined = r.quote ? (r.status === 'accepted' || r.status === 'past' ? 'accepted' : quoteState(r.quote)) : undefined;
         const price = priceOf(r);
         const reminded = reminderDue(r);
+        const settled = settledPill(r, balance);
         return (
           <Card key={r.id} style={{ gap: 12 }} accessibilityLabel={`${r.title} from ${r.requester}, ${price.value}${r.status === 'new' ? `, ${timeLeft(r.deadline)}` : ''}`} onPress={() => router.push(`/pro/request/${r.id}`)}>
             <Row gap={12}>
@@ -111,7 +123,7 @@ export default function Requests() {
               {r.pricing === 'quote' ? <Pill label={q ? PROVIDER_QUOTE_LABEL[q] : 'Quote requested'} tone="brand" icon="file-document-outline" /> : null}
               {reminded ? <Pill label="Reminder sent" tone="warning" icon="bell-ring-outline" /> : null}
               {conflict ? <Pill label={`Clashes with ${conflict.title}`} tone="danger" icon="calendar-alert" /> : null}
-              {r.status === 'past' || r.status === 'declined' || r.status === 'expired' ? <PaymentPill state={r.payment} provider /> : null}
+              {settled ? <Pill label={settled.label} tone={settled.tone} icon="credit-card-outline" /> : r.status === 'past' || r.status === 'declined' || r.status === 'expired' ? <PaymentPill state={r.payment} provider /> : null}
             </View>
             <Row justify="space-between" style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 10 }}>
               <View>

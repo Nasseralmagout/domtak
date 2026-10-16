@@ -14,7 +14,9 @@ export default function PaymentMethods() {
   const selected = useApp((s) => s.selectedPayment);
   const setSelected = useApp((s) => s.setSelectedPayment);
   const addMethod = useApp((s) => s.addPaymentMethod);
-  const role = useApp((s) => s.user.role);
+  const approvedRoles = useApp((s) => s.user.approvedRoles);
+  // Only approved professionals receive payouts; a role that is still under review doesn't.
+  const provider = approvedRoles.some((r) => r !== 'fan');
   const [adding, setAdding] = useState(params.add === '1');
   const [addingIban, setAddingIban] = useState(params.iban === '1');
   const [iban, setIban] = useState('');
@@ -105,7 +107,7 @@ export default function PaymentMethods() {
       )}
       <Banner icon="credit-card-clock-outline">For booking requests your payment stays pending the provider’s decision. It is released or refunded if they decline or don’t answer within 24 hours.</Banner>
 
-      {role !== 'fan' || addingIban || payoutAccount ? (
+      {provider || addingIban || payoutAccount ? (
         <View style={{ gap: 10 }}>
           <SectionTitle title="Payout account" />
           {payoutAccount ? (

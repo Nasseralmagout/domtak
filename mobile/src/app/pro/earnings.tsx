@@ -83,10 +83,11 @@ const payoutTitle = (account: string) => {
  * Settlement ledger: recorded transactions plus every request that isn't in them yet.
  * Accepted requests without a verified payment are listed as "Awaiting payment" and never counted.
  * "Available" rows add up to the balance; once it has been paid out they show as paid out.
+ * `withHistory` = false leaves out the recorded history, balance payouts and fees (they belong to the artist workspace).
  */
-function ledger(requests: IncomingRequest[], balance: number, payouts: Payout[], account: string): LedgerRow[] {
+function ledger(requests: IncomingRequest[], balance: number, payouts: Payout[], account: string, withHistory: boolean): LedgerRow[] {
   const byTitle = (title: string) => requests.find((r) => r.title === title)?.id;
-  const recorded: LedgerRow[] = transactions.map((t) => {
+  const recorded: LedgerRow[] = (withHistory ? transactions : []).map((t) => {
     if (t.status === 'fee') return { id: t.id, title: t.title, sub: t.sub, date: t.date, kind: 'fee', net: t.amount, status: 'fee' };
     if (t.amount < 0) return { id: t.id, title: t.title, sub: t.sub, date: t.date, kind: 'payout', net: t.amount, status: 'paid out' };
     const gross = grossOf(t.amount);
@@ -94,7 +95,7 @@ function ledger(requests: IncomingRequest[], balance: number, payouts: Payout[],
     return { id: t.id, title: t.title, sub: t.sub, date: t.date, kind: 'booking', net: t.amount, gross, commission: round2(gross - t.amount), status, requestId: byTitle(t.title) };
   });
   const fromRequests: LedgerRow[] = requests
-    .filter((r) => !KNOWN_TITLES.has(r.title) && (r.status === 'accepted' || r.status === 'past' || r.payment === 'refund_pending' || r.payment === 'refunded'))
+    .filter((r) => !(withHistory && KNOWN_TITLES.has(r.title)) && (r.status === 'accepted' || r.status === 'past' || r.payment === 'refund_pending' || r.payment === 'refunded'))
     .map((r): LedgerRow => {
       const gross = r.pricing === 'quote' && r.quote ? r.quote.total : r.offer;
       const commission = round2(gross * PLATFORM_COMMISSION_RATE);
@@ -104,7 +105,7 @@ function ledger(requests: IncomingRequest[], balance: number, payouts: Payout[],
       if (!verified) return { ...base, sub: `${r.requester} · ${r.payment === 'failed' ? 'customer payment failed' : 'not yet verified'}`, kind: 'booking', net: round2(gross - commission), status: 'awaiting' };
       return { ...base, sub: `${r.requester} · booking`, kind: 'booking', net: round2(gross - commission), status: r.payment === 'paid_out' ? 'paid out' : 'pending' };
     });
-  const requested: LedgerRow[] = payouts
+  const requested: LedgerRow[] = (withHistory ? payouts : [])
     .filter((p) => !isSeedPayout(p))
     .map((p) => ({ id: `pay_${p.id}`, title: payoutTitle(account), sub: 'Bank transfer', date: p.date, kind: 'payout', net: -p.amount, status: p.status === 'processing' ? 'processing' : 'paid out' }));
   return [...fromRequests, ...requested, ...recorded].sort((a, b) => b.date.localeCompare(a.date));
@@ -181,18 +182,26 @@ function EarningsTab() {
     return <PermissionNotice role={user.role === 'fan' ? 'musician' : user.role} action="see booking earnings and payouts" />;
   }
 
+  // Same split as the workspace dashboards: the artist workspace owns the recorded history, balance and payouts;
+  // the venue workspace counts venue-hire requests only; an organizer pays providers and earns nothing here.
+  const withHistory = workspace === 'musician';
+  const mine = requests.filter((r) => (workspace === 'venue' ? r.kind === 'venue' : workspace === 'musician' ? r.kind !== 'venue' : false));
+  const available = withHistory ? balance : 0;
+  const myPayouts = withHistory ? payouts : [];
   const sepa = methods.find((m) => m.badge === 'SEPA');
   const account = sepa?.sub ?? 'your bank account';
-  const txs = ledger(requests, balance, payouts, account);
+  const txs = ledger(mine, balance, payouts, account, withHistory);
   const counted = txs.filter((t) => t.kind === 'booking' && t.status !== 'awaiting');
-  const gross = sum(counted.map((t) => t.gross ?? 0));
-  const commission = sum(counted.map((t) => t.commission ?? 0));
-  const refunds = -sum(txs.filter((t) => t.kind === 'refund').map((t) => t.net));
+  const refundRows = txs.filter((t) => t.kind === 'refund');
+  // A refunded booking counts in gross and commission once, and its reversed net amount shows under refunds, so it nets to zero.
+  const gross = sum([...counted, ...refundRows].map((t) => t.gross ?? 0));
+  const commission = sum([...counted, ...refundRows].map((t) => t.commission ?? 0));
+  const refunds = -sum(refundRows.map((t) => t.net));
   const net = gross - commission - refunds;
   const awaiting = txs.filter((t) => t.status === 'awaiting');
   const pending = sum(txs.filter((t) => t.kind === 'booking' && t.status === 'pending').map((t) => t.net));
-  const paidOut = sum(payouts.filter((p) => p.status === 'paid').map((p) => p.amount));
-  const processing = payouts.filter((p) => p.status === 'processing');
+  const paidOut = sum(myPayouts.filter((p) => p.status === 'paid').map((p) => p.amount));
+  const processing = myPayouts.filter((p) => p.status === 'processing');
   const processingTotal = sum(processing.map((p) => p.amount));
   const subscriptions = -sum(txs.filter((t) => t.kind === 'fee').map((t) => t.net));
   const today = isoDay(TODAY);
@@ -203,6 +212,7 @@ function EarningsTab() {
       router.push('/payment-methods?iban=1');
       return;
     }
+    if (available <= 0) return;
     const amount = requestPayout();
     toast(amount > 0 ? `${euro(amount)} payout on its way to ${account}, arrives by ${arrivesBy(today)}` : 'Nothing to pay out yet');
   };
@@ -210,7 +220,7 @@ function EarningsTab() {
     const caseId = openCase('Earnings or payout question', 'I have a question about my earnings and payouts.', { kind: 'account', id: 'earnings' });
     const ref = useApp.getState().supportCases.find((c) => c.id === caseId)?.ref;
     toast(ref ? `Support case ${ref} opened` : 'Support case opened');
-    router.push('/help');
+    router.push(`/support/${caseId}`);
   };
   const openRow = (t: LedgerRow) => (t.requestId ? () => router.push(`/pro/request/${t.requestId}`) : undefined);
 
@@ -220,7 +230,7 @@ function EarningsTab() {
         <Row justify="space-between" align="flex-start">
           <View style={{ flex: 1 }}>
             <T v="small" color={colors.lilacLight}>Available for payout</T>
-            <Text accessibilityRole="header" style={{ fontFamily: fonts.display, fontSize: 34, lineHeight: 42, color: colors.white }}>{euro(balance)}</Text>
+            <Text accessibilityRole="header" style={{ fontFamily: fonts.display, fontSize: 34, lineHeight: 42, color: colors.white }}>{euro(available)}</Text>
           </View>
           <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="wallet-outline" size={22} color={colors.gold} />
@@ -229,13 +239,15 @@ function EarningsTab() {
         <T v="small" color={colors.lilacLight}>
           {!sepa
             ? 'Add a payout account before you can transfer your balance.'
-            : balance > 0
+            : available > 0
               ? `Net amount after the platform commission. Pay out to ${account} and it arrives by ${arrivesBy(today)}.`
               : processing.length
                 ? `${euro(processingTotal)} is on its way to ${account} and arrives by ${arrivesBy(processing[0].date)}.`
-                : 'All caught up. Completed bookings become available once the settlement policy allows.'}
+                : workspace === 'organizer'
+                  ? 'Organizers pay providers through their bookings. Booking earnings belong to an artist or venue workspace.'
+                  : 'Nothing to pay out yet. Completed bookings become available once the settlement policy allows.'}
         </T>
-        <Button title={!sepa ? 'Set up payouts' : balance > 0 ? `Pay out ${euro(balance)}` : 'Pay out'} icon="bank-transfer-out" variant="light" size="md" disabled={!!sepa && balance <= 0} onPress={payout} />
+        <Button title={!sepa ? 'Set up payouts' : available > 0 ? `Pay out ${euro(available)}` : 'Pay out'} icon="bank-transfer-out" variant="light" size="md" disabled={!!sepa && available <= 0} onPress={payout} />
       </View>
 
       <Card style={{ gap: 6 }}>
@@ -253,8 +265,8 @@ function EarningsTab() {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
         <StatusTile label="Awaiting payment" value={euro(sum(awaiting.map((t) => t.gross ?? 0)))} sub={awaiting.length ? `${plural(awaiting.length, 'booking')} · not counted yet` : 'Nothing waiting'} icon="credit-card-clock-outline" />
         <StatusTile label="Payout pending" value={euro(pending)} sub="Net, after the event" icon="timer-sand" />
-        <StatusTile label="Available" value={euro(balance)} sub="Ready to transfer" icon="arrow-down-bold-circle-outline" />
-        <StatusTile label="Paid out" value={euro(paidOut)} sub={processing.length ? `${euro(processingTotal)} processing` : plural(payouts.length, 'payout')} icon="bank-transfer-out" />
+        <StatusTile label="Available" value={euro(available)} sub="Ready to transfer" icon="arrow-down-bold-circle-outline" />
+        <StatusTile label="Paid out" value={euro(paidOut)} sub={processing.length ? `${euro(processingTotal)} processing` : plural(myPayouts.length, 'payout')} icon="bank-transfer-out" />
       </View>
 
       <Card
@@ -268,7 +280,7 @@ function EarningsTab() {
           <View style={{ flex: 1, gap: 2 }}>
             <T v="bodyBold">Payout setup</T>
             <T v="small">{sepa ? `SEPA · ${account}` : 'No payout account yet'}</T>
-            <T v="small" color={sepa ? colors.success : colors.warning}>{sepa ? `Verified ${workspace === 'venue' ? 'venue' : workspace === 'organizer' ? 'organizer' : 'artist'} account · payouts allowed` : 'Add a bank account to receive payouts'}</T>
+            <T v="small" color={sepa ? colors.inkSoft : colors.warning}>{sepa ? 'Payouts for all your workspaces go to this account' : 'Add a bank account to receive payouts'}</T>
           </View>
           <T v="smallBold" color={colors.brand}>{sepa ? 'Manage' : 'Set up'}</T>
           <Icon name="chevron-right" size={20} color={colors.subtle} />
@@ -326,12 +338,12 @@ function EarningsTab() {
       <View>
         <SectionTitle title="Payout history" />
         <Card padded={false}>
-          {payouts.length === 0 ? (
+          {myPayouts.length === 0 ? (
             <View style={{ padding: 16 }}>
               <T v="small">No payouts yet. Your first payout appears here once you transfer your balance.</T>
             </View>
           ) : (
-            payouts.map((p, i) => {
+            myPayouts.map((p, i) => {
               const st = PAYOUT_STATUS[p.status];
               return (
                 <View key={p.id}>

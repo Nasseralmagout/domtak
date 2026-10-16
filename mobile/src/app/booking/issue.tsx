@@ -114,7 +114,8 @@ export default function BookingIssue() {
         openCase(`Late cancellation request · ${ref}`, `${text}. Booking total ${euro(b.amount, true)}; no refund under the policy unless agreed.`, { kind: 'booking', id: b.id });
         toast('Request sent to support. The booking stays confirmed until they decide.');
       } else {
-        cancelBooking(b.id, text);
+        // The requested amount stays on the booking record (reason and history), so the refund is tracked with its amount.
+        cancelBooking(b.id, `${text} · refund requested ${euro(eligible, true)} of ${euro(b.amount, true)}`);
         openCase(`Refund request · ${ref}`, `${text}. Refund requested under the policy: ${euro(eligible, true)} of ${euro(b.amount, true)}.`, { kind: 'booking', id: b.id });
         toast('Booking cancelled and refund requested. It’s complete only once the payment provider confirms it.');
       }
@@ -212,6 +213,8 @@ export default function BookingIssue() {
         refundFlow || releaseFlow ? (
           <Card style={{ gap: 12 }}>
             <T v="title">{refundFlow ? 'Refund status' : 'Release status'}</T>
+            {refundFlow && b.cancelReason ? <TextLine k="Request" v={b.cancelReason} /> : null}
+            {releaseFlow ? <KeyValue k="Authorized amount" v={euro(b.amount, true)} /> : null}
             <Steps steps={trackSteps} current={trackCurrent} />
             {payment === 'refund_pending' ? <Banner icon="timer-sand" tone="warning">A refund request is not a completed refund. This shows as refunded once the payment provider confirms it.</Banner> : null}
             {payment === 'release_pending' ? <Banner icon="timer-sand" tone="warning">Release pending is not released yet. This updates once the payment provider confirms it.</Banner> : null}
@@ -273,7 +276,7 @@ export default function BookingIssue() {
           variant="secondary"
           onPress={() => {
             openCase(`Question about booking ${ref}`, 'I have a question about this booking after the event.', { kind: 'booking', id: b.id });
-            toast('Support case opened. Their replies appear below and in Help.');
+            toast('Support case opened. Their replies appear below and under Support.');
           }}
         />
       ) : null}
@@ -317,9 +320,10 @@ export default function BookingIssue() {
               <Button title="Send" size="md" disabled={!reply.trim()} onPress={sendReply} style={{ marginTop: 4 }} />
             </Row>
           ) : null}
+          <Button title="Open the full case" icon="lifebuoy" variant="ghost" size="md" onPress={() => router.push(`/support/${linkedCase.id}`)} style={{ alignSelf: 'flex-start' }} />
         </Card>
       ) : mode === 'case' ? (
-        <Banner icon="lifebuoy">Support is reviewing this booking. Add evidence above; they reply here and in Help.</Banner>
+        <Banner icon="lifebuoy">Support is reviewing this booking. Add evidence above; they reply here and under Support.</Banner>
       ) : null}
 
       {mode === 'case' ? (
@@ -365,6 +369,8 @@ export default function BookingIssue() {
             destructive: true,
             onPress: () => {
               setStatus(b.id, 'completed');
+              // Support sees the withdrawal on the case and closes it; a closure never hides a pending refund.
+              if (linkedCase && linkedCase.status !== 'resolved') replyCase(linkedCase.id, 'I’m withdrawing my report about this booking.');
               toast('Report withdrawn');
               toBooking();
             },

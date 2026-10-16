@@ -17,7 +17,8 @@ const YEARLY = 89;
 const SAVING = MONTHLY * 12 - YEARLY;
 const SAVING_PCT = Math.round((SAVING / (MONTHLY * 12)) * 100);
 
-const FEATURES: { label: string; icon: IconName; standard: boolean }[] = [
+/** `approval`: needs an approved professional account (user note 2); the plan alone never unlocks it. */
+const FEATURES: { label: string; icon: IconName; standard: boolean; approval?: boolean }[] = [
   { label: 'Like & comment', icon: 'thumb-up-outline', standard: true },
   { label: 'Photos in comments and event discussions', icon: 'image-outline', standard: true },
   { label: 'Create private events', icon: 'lock-outline', standard: true },
@@ -26,12 +27,11 @@ const FEATURES: { label: string; icon: IconName; standard: boolean }[] = [
   { label: 'Buy tickets', icon: 'ticket-outline', standard: true },
   { label: 'Book musicians & venues', icon: 'calendar-check-outline', standard: true },
   { label: 'Wishlist', icon: 'heart-outline', standard: true },
-  { label: 'Feed posts, videos & stories', icon: 'image-multiple-outline', standard: false },
-  { label: 'Receive bookings & payments in-app', icon: 'cash-check', standard: false },
-  { label: 'Verified badge', icon: 'check-decagram', standard: false },
-  { label: 'Booking fee & availability management', icon: 'calendar-clock', standard: false },
-  { label: 'Live streaming', icon: 'broadcast', standard: false },
-  { label: 'Analytics', icon: 'chart-line', standard: false },
+  { label: 'Feed posts, videos & stories', icon: 'image-multiple-outline', standard: false, approval: true },
+  { label: 'Receive bookings & payments in-app', icon: 'cash-check', standard: false, approval: true },
+  { label: 'Verified badge', icon: 'check-decagram', standard: false, approval: true },
+  { label: 'Booking fee & availability management', icon: 'calendar-clock', standard: false, approval: true },
+  { label: 'Profile and booking analytics', icon: 'chart-line', standard: false, approval: true },
 ];
 
 const PLAN_NAME = { free: 'Standard', monthly: 'Pro · monthly', yearly: 'Pro · yearly' } as const;
@@ -211,7 +211,9 @@ export default function Subscription() {
               ? 'Your professional application is in review. Pro tools unlock once it’s approved.'
               : app?.status === 'info'
                 ? 'Your professional application needs more information. Pro tools unlock once it’s approved.'
-                : 'Pro tools are for approved artists, venues and organizers. The plan adds tools; access itself needs an approved professional application.'}
+                : app?.status === 'rejected'
+                  ? 'Your professional application was not approved. Pro tools need an approved application; you can update it and apply again.'
+                  : 'Pro tools are for approved artists, venues and organizers. The plan adds tools; access itself needs an approved professional application.'}
         </Banner>
       ) : null}
 
@@ -230,10 +232,18 @@ export default function Subscription() {
             </View>
           </Row>
           {FEATURES.map((f) => (
-            <Row key={f.label} gap={0} accessibilityLabel={`${f.label}. Standard: ${f.standard ? 'included' : 'not included'}. Pro: included.`} style={{ paddingLeft: 16, minHeight: 52, borderTopWidth: 1, borderTopColor: colors.divider }}>
-              <Row gap={10} style={{ flex: 1, paddingVertical: 8, paddingRight: 8 }}>
-                <Icon name={f.icon} size={20} color={f.standard ? colors.muted : colors.brand} />
-                <T v={f.standard ? 'body' : 'bodyBold'} style={{ flex: 1 }}>{f.label}</T>
+            <Row
+              key={f.label}
+              gap={0}
+              accessibilityLabel={`${f.label}. Standard: ${f.standard ? 'included' : 'not included'}. Pro: ${f.approval ? 'included once your professional application is approved' : 'included'}.`}
+              style={{ paddingLeft: 16, minHeight: 52, borderTopWidth: 1, borderTopColor: colors.divider }}
+            >
+              <Row gap={10} align="flex-start" style={{ flex: 1, paddingVertical: 8, paddingRight: 8 }}>
+                <Icon name={f.icon} size={20} color={f.standard ? colors.muted : colors.brand} style={{ marginTop: 1 }} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <T v={f.standard ? 'body' : 'bodyBold'}>{f.label}</T>
+                  {f.approval ? <T v="small" style={{ fontSize: 12 }}>Approved professional accounts only</T> : null}
+                </View>
               </Row>
               <Mark on={f.standard} label="Standard" />
               <View style={{ alignSelf: 'stretch', justifyContent: 'center', backgroundColor: colors.brandTint }}>
@@ -248,7 +258,7 @@ export default function Subscription() {
 
       <ActionSheet
         visible={confirmCancel}
-        title="Cancel Domtak Pro? Uploads, live streaming, analytics and in-app payouts stop right away."
+        title="Cancel Domtak Pro? You move back to Standard right away and won’t be charged. Your professional approval, bookings and payouts are not affected."
         actions={cancelActions}
         cancelLabel="Keep Pro"
         onClose={() => setConfirmCancel(false)}

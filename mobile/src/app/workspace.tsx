@@ -60,7 +60,7 @@ export default function Workspaces() {
                   {isActive ? (
                     <Pill label="Active" tone="success" icon="check" />
                   ) : approved ? (
-                    <Pill label="Approved" tone="brand" />
+                    <Pill label={role === 'fan' ? 'Always available' : 'Approved'} tone="brand" />
                   ) : roleApp ? (
                     <Pill label={APPLICATION_STATUS_LABEL[roleApp.status]} tone={APPLICATION_STATUS_TONE[roleApp.status]} />
                   ) : (

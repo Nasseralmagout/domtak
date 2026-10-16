@@ -7,7 +7,16 @@ import { WORKSPACE_ICON, WORKSPACE_LABEL } from '../lib/access';
 import { activeWorkspace, APPLICATION_STATUS_LABEL, APPLICATION_STATUS_TONE, isPro, useApp } from '../store/useApp';
 import { colors } from '../theme';
 
-type Item = { icon: IconName; label: string; href: string; badge?: string; tone?: Tone };
+/** `sub` is a second line (long statuses would squeeze the label as a pill); `badge` is a short pill. */
+type Item = { icon: IconName; label: string; href: string; badge?: string; sub?: string; tone?: Tone };
+
+const SUB_COLOR: Record<Tone, string> = {
+  success: colors.success,
+  warning: colors.warning,
+  danger: colors.danger,
+  brand: colors.brand,
+  neutral: colors.muted,
+};
 
 export default function Menu() {
   const user = useApp((s) => s.user);
@@ -27,23 +36,24 @@ export default function Menu() {
     workspace === 'musician'
       ? [{ icon: 'calendar-clock', label: 'Availability', href: '/pro/availability' }, earnings]
       : workspace === 'organizer'
-        ? [{ icon: 'calendar-star', label: 'My events', href: '/pro/events' }, earnings]
+        ? [{ icon: 'calendar-star', label: 'Organizer events', href: '/pro/events' }, earnings]
         : workspace === 'venue'
           ? [{ icon: 'storefront-outline', label: 'My venue', href: '/pro/venue-listing' }, earnings]
           : [];
 
   // One row for professional status: the application when there is one, else the way to apply.
   const applicationItem: Item | undefined = app
-    ? { icon: 'file-document-outline', label: 'Professional application', href: '/application', badge: APPLICATION_STATUS_LABEL[app.status], tone: APPLICATION_STATUS_TONE[app.status] }
+    ? { icon: 'file-document-outline', label: 'Professional application', href: '/application', sub: `${WORKSPACE_LABEL[app.role]} · ${APPLICATION_STATUS_LABEL[app.status]}`, tone: APPLICATION_STATUS_TONE[app.status] }
     : hasProRole
       ? undefined
       : { icon: 'check-decagram', label: 'Apply as a professional', href: '/apply' };
 
   const items: Item[] = [
     { icon: 'account-circle-outline', label: 'Profile', href: '/profile/me' },
-    { icon: 'swap-horizontal', label: 'Switch workspace', href: '/workspace', badge: WORKSPACE_LABEL[workspace], tone: 'neutral' },
+    { icon: 'swap-horizontal', label: 'Switch workspace', href: '/workspace', sub: `Now: ${WORKSPACE_LABEL[workspace]}`, tone: 'neutral' },
     ...(isPro(workspace) ? [{ icon: 'view-grid-outline' as const, label: 'Pro workspace', href: '/pro/workspace' }] : []),
     ...roleItems,
+    { icon: 'calendar-heart', label: 'My events', href: '/my-events' },
     { icon: 'basket-outline', label: 'Your bookings', href: '/my-bookings?tab=musician' },
     { icon: 'ticket-confirmation-outline', label: 'Your tickets', href: '/my-bookings?tab=tickets' },
     { icon: 'heart-outline', label: 'Wishlist', href: '/wishlist' },
@@ -72,9 +82,12 @@ export default function Menu() {
             </View>
           </Pressable>
           {items.map((it) => (
-            <Pressable key={it.label} accessibilityRole="button" accessibilityLabel={it.badge ? `${it.label}, ${it.badge}` : it.label} onPress={() => go(it.href)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 48, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 12, backgroundColor: pressed ? colors.brandSoft : 'transparent' })}>
+            <Pressable key={it.label} accessibilityRole="button" accessibilityLabel={[it.label, it.sub, it.badge].filter(Boolean).join(', ')} onPress={() => go(it.href)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 48, paddingVertical: it.sub ? 8 : 12, paddingHorizontal: 8, borderRadius: 12, backgroundColor: pressed ? colors.brandSoft : 'transparent' })}>
               <Icon name={it.icon} size={24} color={colors.ink} />
-              <T v="bodyBold" style={{ fontSize: 16, flex: 1 }} numberOfLines={1}>{it.label}</T>
+              <View style={{ flex: 1 }}>
+                <T v="bodyBold" style={{ fontSize: 16 }} numberOfLines={1}>{it.label}</T>
+                {it.sub ? <T v="small" color={SUB_COLOR[it.tone ?? 'neutral']} numberOfLines={2}>{it.sub}</T> : null}
+              </View>
               {it.badge ? <Pill label={it.badge} tone={it.tone ?? 'brand'} /> : null}
             </Pressable>
           ))}

@@ -4,7 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { ReasonSheet } from '../../components/ActionSheet';
 import { DemoBar, goBack, Screen, ScreenHeader } from '../../components/layout';
-import { Banner, Button, Card, Icon, type IconName, KeyValue, LineItems, PaymentPill, Photo, Pill, Row, StatusPill, Steps, T, TimeLeft, type Tone } from '../../components/ui';
+import { Banner, Button, Card, Icon, type IconName, KeyValue, LineItems, Photo, Pill, Row, StatusPill, Steps, T, TimeLeft, type Tone } from '../../components/ui';
 import type { Booking, Profile, QuoteItem, Venue } from '../../data/types';
 import {
   bookingRef,
@@ -18,6 +18,7 @@ import {
   PAYMENT_LABEL,
   PAYMENT_NOTE,
   PAYMENT_PROVIDER_LABEL,
+  PAYMENT_TONE,
   providerOf,
   QUOTE_LIFECYCLE,
   QUOTE_STATUS_LABEL,
@@ -56,6 +57,25 @@ const PANEL_BG: Record<Tone, string> = { success: colors.successBg, warning: col
 const PANEL_FG: Record<Tone, string> = { success: colors.success, warning: colors.warning, danger: colors.danger, brand: colors.brand, neutral: colors.label };
 
 const round10 = (n: number) => Math.round(n / 10) * 10;
+
+/**
+ * What the customer sees about the money. A closed request or an open quote never asks for a payment:
+ * "Payment needed" only makes sense while a payment step is actually open.
+ */
+function moneyView(b: Booking): { label: string; tone: Tone; note: string } {
+  const p = b.payment;
+  if (!p) return { label: 'No payment', tone: 'neutral', note: 'No payment has been taken.' };
+  if (isClosed(b.status) && (p === 'not_started' || p === 'failed')) return { label: 'Not charged', tone: 'neutral', note: 'Nothing was charged for this booking.' };
+  if (b.status === 'requested' && p === 'not_started') return { label: 'Not charged yet', tone: 'neutral', note: 'Nothing is charged until you accept a quote and complete the payment step.' };
+  return { label: PAYMENT_LABEL[p], tone: PAYMENT_TONE[p], note: PAYMENT_NOTE[p] };
+}
+
+/** What the charges card explains under the line items, per kind of booking. */
+const CHARGES_NOTE: Record<Booking['type'], string> = {
+  musician: 'Travel and equipment are separate from the performance fee. Agreed terms stay as they are if prices change later.',
+  venue: 'Catering and security are priced by the number of guests. Agreed terms stay as they are if prices change later.',
+  lesson: 'A lesson has its own price; performance fees never apply. Agreed terms stay as they are if prices change later.',
+};
 
 /** Itemised quote a provider could send for this request (demo controls only). */
 function demoQuote(b: Booking, artist?: Profile, venue?: Venue, revise = false): QuoteItem[] {
@@ -100,7 +120,6 @@ export default function BookingDetail() {
   const cancelBooking = useApp((s) => s.cancelBooking);
   const requestChange = useApp((s) => s.requestChange);
   const resolveChange = useApp((s) => s.resolveChange);
-  const retryPayment = useApp((s) => s.retryPayment);
   const verifyPayment = useApp((s) => s.verifyPayment);
   const failPayment = useApp((s) => s.failPayment);
   const setPayment = useApp((s) => s.setPayment);
@@ -129,9 +148,12 @@ export default function BookingDetail() {
   const isQuote = b.pricing === 'quote';
   const q = b.quote ? quoteState(b.quote) : undefined;
   const priced = !isQuote || (!!b.quote && b.quote.version > 0);
+  // A withdrawn request keeps its last quote status; that offer is closed, not "received".
+  const offerClosed = isClosed(b.status) && q !== 'accepted' && q !== 'rejected';
   const items = chargeItems(b);
   const method = methods.find((m) => m.id === selectedPayment);
   const payment = b.payment;
+  const money = moneyView(b);
   const tab = b.type === 'venue' ? 'venue' : b.type === 'lesson' ? 'lesson' : 'musician';
   const browse = b.type === 'venue' ? '/venues' : '/artists/all';
   // Problems can be reported up to 48 h after the event.
@@ -139,8 +161,8 @@ export default function BookingDetail() {
   const confirmed = b.status === 'confirmed' || b.status === 'paid';
 
   const chat = () => router.push(`/chat/${ensureConversation(b.targetId)}`);
+  // A failed payment is retried on this same booking when you submit the payment step (checkout), not by opening it.
   const pay = () => {
-    if (payment === 'failed') retryPayment(b.id);
     startCheckout(b.id);
     router.push('/checkout');
   };
@@ -151,6 +173,26 @@ export default function BookingDetail() {
     router.push(`/chat/${cid}`);
   };
   const bookAgain = () => router.push({ pathname: '/booking/new', params: b.type === 'lesson' ? { type: 'lesson', id: b.targetId, lesson: b.lessonId ?? '' } : { type: b.type, id: b.targetId } });
+  // A closed request stays closed (its release is tracked on its own). Asking again is a new request with the same details,
+  // so the terms and payment details are confirmed again and nothing is authorized silently.
+  const requestAgain = () =>
+    router.push({
+      pathname: '/booking/new',
+      params: {
+        type: b.type,
+        id: b.targetId,
+        ...(b.lessonId ? { lesson: b.lessonId } : {}),
+        ...(b.eventId ? { eventId: b.eventId } : {}),
+        date: b.date,
+        title: b.eventTitle,
+        start: b.startTime,
+        hours: String(Math.max(1, Math.round(b.hours))),
+        location: b.location,
+        guests: String(b.guests),
+        ...(b.type === 'venue' ? { catering: b.charges?.catering ? '1' : '0', security: b.charges?.security ? '1' : '0' } : {}),
+        ...(b.pricing === 'quote' ? { quote: '1' } : {}),
+      },
+    });
   const addToCalendar = () => {
     toast(`${b.eventTitle} is in your calendar`);
     router.push({ pathname: '/(tabs)/calendar', params: { date: b.date } });
@@ -159,7 +201,7 @@ export default function BookingDetail() {
   const cancelAction: Action = confirmed ? { label: 'Cancel or request a refund', onPress: refundCase } : { label: b.status === 'pending' || b.status === 'requested' ? 'Cancel request' : 'Cancel booking', onPress: () => setSheet('cancel') };
 
   // ---------- What happens now ----------
-  const moneyLine = payment ? PAYMENT_NOTE[payment] : 'No payment has been taken.';
+  const moneyLine = money.note;
   let panel: Panel;
   switch (b.status) {
     case 'requested':
@@ -207,7 +249,7 @@ export default function BookingDetail() {
             tone: 'warning',
             icon: 'clock-alert-outline',
             title: 'Deadline passed',
-            body: `${name} didn’t answer within ${RESPONSE_HOURS} hours, so this request is closing. The payment is released; you’ll see when that is complete.`,
+            body: `${name} didn’t answer within ${RESPONSE_HOURS} hours, so this request is closing. The payment authorization is then released; you’ll see when that is complete.`,
             primary: { label: 'Update status', onPress: () => { const n = expireOverdue(); toast(n ? 'Request closed as expired' : 'Status is up to date'); } },
           }
         : {
@@ -301,7 +343,7 @@ export default function BookingDetail() {
         icon: 'clock-outline',
         title: `No response within ${RESPONSE_HOURS} hours`,
         body: `The request expired before ${name} answered. ${moneyLine}`,
-        primary: { label: 'Send request again', onPress: () => { setStatus(b.id, 'pending'); toast(`Request sent to ${name} again · ${RESPONSE_HOURS} h to respond`); } },
+        primary: { label: 'Send a new request', onPress: requestAgain },
         secondary: { label: 'Browse others', onPress: () => router.push(browse) },
       };
       break;
@@ -321,7 +363,7 @@ export default function BookingDetail() {
         tone: 'warning',
         icon: 'flag-outline',
         title: 'Problem reported',
-        body: `Support is reviewing the case. The payment stays visible meanwhile: ${payment ? PAYMENT_LABEL[payment].toLowerCase() : 'no payment'}.`,
+        body: `Support is reviewing the case. The payment stays visible meanwhile: ${money.label.toLowerCase()}.`,
         primary: { label: 'Open case', onPress: refundCase },
         secondary: { label: `Message ${name}`, onPress: chat },
       };
@@ -372,7 +414,7 @@ export default function BookingDetail() {
       <Row justify="space-between" align="flex-start" gap={8}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1 }}>
           <StatusPill booking={b} />
-          <PaymentPill state={payment} />
+          <Pill label={money.label} tone={money.tone} icon="credit-card-outline" />
           {b.status === 'pending' ? <TimeLeft deadline={b.deadline} /> : null}
         </View>
         <T v="small">Requested {shortDate(b.createdAt)}</T>
@@ -418,27 +460,27 @@ export default function BookingDetail() {
       <Card style={{ gap: 10 }}>
         <Row justify="space-between">
           <T v="title">{isQuote ? (b.quote && b.quote.version > 0 ? `Quote v${b.quote.version}` : 'Quote') : confirmed || b.status === 'completed' ? 'Agreed charges' : 'Charges'}</T>
-          {isQuote && q ? <Pill label={QUOTE_STATUS_LABEL[q]} tone={QUOTE_STATUS_TONE[q]} /> : null}
+          {isQuote && q ? (offerClosed ? <Pill label="Offer closed" tone="neutral" /> : <Pill label={QUOTE_STATUS_LABEL[q]} tone={QUOTE_STATUS_TONE[q]} />) : null}
         </Row>
         {priced ? (
           <LineItems items={items} total={b.amount} />
         ) : (
           <T v="body" color={colors.muted}>No price yet. {name} sends an itemised quote; nothing is charged before you accept it.</T>
         )}
-        {isQuote && b.quote?.validUntil && (q === 'sent' || q === 'revised') ? <T v="small">Valid until {shortDate(b.quote.validUntil)}.</T> : null}
+        {isQuote && b.quote?.validUntil && (q === 'sent' || q === 'revised') && !offerClosed ? <T v="small">Valid until {shortDate(b.quote.validUntil)}.</T> : null}
         {isQuote && b.quote && b.quote.version > 0 ? <Button title="Open quote" variant="light" size="md" icon="file-document-outline" onPress={() => router.push(`/quote/${b.id}`)} /> : null}
-        {!isQuote && priced ? <T v="small">Travel, equipment, catering and security are separate charges. Agreed terms stay as they are if prices change later.</T> : null}
+        {!isQuote && priced ? <T v="small">{CHARGES_NOTE[b.type]}</T> : null}
       </Card>
 
       <Card style={{ gap: 8 }}>
         <Row justify="space-between">
           <T v="title">Payment</T>
-          {payment ? <PaymentPill state={payment} /> : <Pill label="No payment" tone="neutral" />}
+          <Pill label={money.label} tone={money.tone} icon="credit-card-outline" />
         </Row>
         <T v="body" color={colors.inkSoft}>{moneyLine}</T>
         {payment === 'release_pending' ? <T v="small">Release pending means the release has started but isn’t confirmed yet. It shows as released once the payment provider confirms it.</T> : null}
         {payment === 'refund_pending' ? <T v="small">A refund request is not a completed refund. It shows as refunded once the payment provider confirms it.</T> : null}
-        {method && (payment === 'authorized' || payment === 'capture_pending' || payment === 'paid' || payment === 'failed') ? <KeyValue k="Method" v={method.label} /> : null}
+        {method && b.status === 'payment_failed' ? <KeyValue k="Retry with" v={method.label} /> : null}
         {b.paymentRef ? <KeyValue k="Reference" v={b.paymentRef} /> : null}
         {b.paymentAttempts ? <KeyValue k="Payment attempts" v={String(b.paymentAttempts)} /> : null}
         <KeyValue k="Booking reference" v={ref} />

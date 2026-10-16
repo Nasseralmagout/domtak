@@ -4,7 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { DemoBar, Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, EmptyState, Icon, type IconName, Pill, Row, Steps, T, TimeLeft } from '../components/ui';
-import type { ApplicationStatus } from '../data/types';
+import type { ApplicationStatus, ProfessionalRole } from '../data/types';
 import { DEMO_MISSING, DEMO_REJECT_REASON, PRO_ROLE_TITLE, WORKSPACE_ICON, WORKSPACE_LABEL, WORKSPACE_SUMMARY, workspaceHome } from '../lib/access';
 import { addHours, dateTime, hoursUntil } from '../lib/format';
 import { toast } from '../store/toast';
@@ -13,6 +13,13 @@ import { colors, radius } from '../theme';
 
 /** Target time for a first decision (blueprint F02). Separate from the 24-hour booking response deadline. */
 const REVIEW_TARGET_HOURS = 24;
+
+/** What approval unlocks for each role (section 02): public events are for organizers only. */
+const UNLOCKS: Record<ProfessionalRole, string> = {
+  musician: 'Feed posts, stories and booking requests from hosts',
+  venue: 'Feed posts, stories and venue bookings',
+  organizer: 'Feed posts, stories and publishing public events',
+};
 
 const HERO: Record<ApplicationStatus, { icon: IconName; title: string }> = {
   pending: { icon: 'clock-outline', title: 'Application in review' },
@@ -157,7 +164,7 @@ export default function ApplicationStatusScreen() {
       ) : null}
 
       {app.status !== 'approved' ? (
-        <Banner icon="account-heart-outline">Your member account keeps working. Feed posts, bookings you receive and public events unlock only after approval.</Banner>
+        <Banner icon="account-heart-outline">{`Your member account keeps working. ${UNLOCKS[role]} unlock only after approval.`}</Banner>
       ) : null}
 
       <Card style={{ gap: 12 }}>

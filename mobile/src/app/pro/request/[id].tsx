@@ -6,10 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ReasonSheet } from '../../../components/ActionSheet';
 import { BottomBar, DemoBar, goBack, PermissionNotice, Screen, ScreenHeader } from '../../../components/layout';
 import { Avatar, Banner, Button, Card, Chip, Divider, Field, IconButton, KeyValue, LineItems, PaymentPill, Pill, Row, T, TimeLeft } from '../../../components/ui';
-import { profiles, venueById } from '../../../data/mock';
+import { profiles, transactions, venueById } from '../../../data/mock';
 import type { IncomingRequest, QuoteItem, QuoteStatus } from '../../../data/types';
 import { CHARGE_LABEL, PAYMENT_PROVIDER_LABEL, QUOTE_STATUS_TONE, quoteState, quoteTotal, REMINDER_HOURS, reminderDue, REQUEST_STATUS_LABEL, requestConflict, RESPONSE_HOURS } from '../../../lib/booking';
 import { ago, dateTime, euro, isoDay, parse, shortDate, TODAY } from '../../../lib/format';
+import { requestRef } from '../../../lib/admin';
 import { commissionOf, PLATFORM_COMMISSION_RATE, providerNet, toLineItems, venueEstimate } from '../../../lib/pricing';
 import { OWN_ARTIST_ID, useArtist } from '../../../store/services';
 import { toast } from '../../../store/toast';
@@ -26,6 +27,13 @@ const PROVIDER_QUOTE_LABEL: Record<QuoteStatus, string> = { requested: 'Quote re
 
 type Line = { label: string; amount: string };
 
+/** Settlement wording for a completed booking already recorded in the earnings ledger (same rule as /pro/earnings). */
+const SETTLED: Record<'pending' | 'available' | 'paid out', { label: string; tone: 'warning' | 'success' | 'neutral'; text: string }> = {
+  pending: { label: 'Payout pending', tone: 'warning', text: 'The payout is pending under the settlement policy.' },
+  available: { label: 'Available', tone: 'success', text: 'The net amount is in your available balance, ready to transfer.' },
+  'paid out': { label: 'Paid out', tone: 'neutral', text: 'The net amount was paid out to your bank account.' },
+};
+
 /** The request's charges as line items (base fee plus separate charges). */
 function requestItems(r: IncomingRequest): QuoteItem[] {
   if (!r.charges) return [{ label: BASE_LABEL[r.kind ?? 'performance'], amount: r.offer }];
@@ -41,10 +49,12 @@ export default function RequestReview() {
   const { id, decline } = useLocalSearchParams<{ id: string; decline?: string }>();
   const insets = useSafeAreaInsets();
   const user = useApp((s) => s.user);
+  const adminMode = useApp((s) => s.adminMode);
   const req = useApp((s) => s.requests.find((r) => r.id === id));
   const requests = useApp((s) => s.requests);
   const availability = useApp((s) => s.availability);
   const venueListing = useApp((s) => s.venueListing);
+  const balance = useApp((s) => s.balance);
   const setStatus = useApp((s) => s.setRequestStatus);
   const quoteRequest = useApp((s) => s.quoteRequest);
   const setRequestPayment = useApp((s) => s.setRequestPayment);
@@ -58,23 +68,29 @@ export default function RequestReview() {
   const [validDays, setValidDays] = useState(7);
   const [quoteNote, setQuoteNote] = useState('');
 
-  if (!canAcceptBookings(user)) {
-    return (
-      <Screen header={<ScreenHeader title="Request" onBack={() => goBack('/(tabs)')} />}>
-        <PermissionNotice role={user.role === 'venue' ? 'venue' : 'musician'} action="respond to booking requests" />
-      </Screen>
-    );
-  }
   if (!req) {
     return (
-      <Screen header={<ScreenHeader title="Request" onBack={() => goBack('/pro/requests')} />}>
+      <Screen header={<ScreenHeader title="Request" onBack={() => goBack(adminMode ? '/admin/bookings' : '/pro/requests')} />}>
         <T v="body">Request not found.</T>
-        <Button title="All requests" onPress={() => router.replace('/pro/requests')} />
+        <Button title={adminMode ? 'Booking investigations' : 'All requests'} onPress={() => router.replace(adminMode ? '/admin/bookings' : '/pro/requests')} />
       </Screen>
     );
   }
 
   const r = req;
+  // A venue-hire request is answered in the venue workspace; performances and lessons in the artist workspace.
+  const neededRole = r.kind === 'venue' ? 'venue' : 'musician';
+  const canAnswer = canAcceptBookings(user) && user.role === neededRole;
+  // Admins open requests from their queues to investigate: they can read everything but never accept or decline (section 02).
+  const readOnly = !canAnswer;
+  if (!canAnswer && !adminMode) {
+    return (
+      <Screen header={<ScreenHeader title="Request" onBack={() => goBack('/pro/requests')} />}>
+        <PermissionNotice role={neededRole} action={neededRole === 'venue' ? 'respond to venue requests' : 'respond to booking requests'} />
+      </Screen>
+    );
+  }
+
   const first = r.requester.split(' ')[0];
   // Requests from people with a Domtak profile can be answered in chat.
   const contact = profiles.find((p) => p.name === r.requester);
@@ -95,6 +111,9 @@ export default function RequestReview() {
   const items = isQuote ? (r.quote?.items ?? []) : requestItems(r);
   const gross = isQuote ? (r.quote?.total ?? 0) : r.offer;
   const reminded = reminderDue(r);
+  // Completed work that is already in the earnings ledger shows the same settlement state there and here.
+  const recorded = r.status === 'past' ? transactions.find((t) => t.title === r.title && t.amount > 0 && t.status !== 'fee') : undefined;
+  const settled = recorded ? SETTLED[recorded.status === 'escrow' ? 'pending' : recorded.status === 'available' ? (balance > 0 ? 'available' : 'paid out') : 'paid out'] : undefined;
 
   const say = (text: string) => {
     if (contact) sendMessage(ensureConversation(contact.id), { type: 'text', text });
@@ -154,7 +173,7 @@ export default function RequestReview() {
   } else if (r.status === 'expired') {
     status = { tone: 'warning', icon: 'clock-outline', text: `No response within ${RESPONSE_HOURS} hours, so the request expired. ${r.payment === 'released' ? 'The customer’s payment was released.' : 'Release of the customer’s payment has started.'}` };
   } else if (r.status === 'past') {
-    status = { tone: 'success', icon: 'cash-check', text: `Completed. Payout: ${r.payment ? PAYMENT_PROVIDER_LABEL[r.payment].toLowerCase() : 'see Earnings'}.` };
+    status = { tone: 'success', icon: 'cash-check', text: `Completed. ${settled ? settled.text : `Payout: ${r.payment ? PAYMENT_PROVIDER_LABEL[r.payment].toLowerCase() : 'see Earnings'}.`}` };
   }
 
   // ---------- Demo controls ----------
@@ -168,11 +187,17 @@ export default function RequestReview() {
   }
   if (r.status === 'accepted' && r.payment === 'paid') demo.push({ label: 'The event took place', onPress: () => { setStatus(r.id, 'past'); setRequestPayment(r.id, 'payout_pending'); toast('Completed · payout pending'); } });
   if (r.payment === 'release_pending') demo.push({ label: 'Payment provider confirms the release', onPress: () => { setRequestPayment(r.id, 'released'); toast('Release confirmed'); } });
-  if (r.status === 'past' && r.payment === 'payout_pending') demo.push({ label: 'Payout sent', onPress: () => { setRequestPayment(r.id, 'paid_out'); toast('Paid out'); } });
+  if (r.status === 'past' && r.payment === 'payout_pending' && !settled) demo.push({ label: 'Payout sent', onPress: () => { setRequestPayment(r.id, 'paid_out'); toast('Paid out'); } });
 
   // ---------- Footer ----------
   let footer = null;
-  if (r.status === 'new') {
+  if (readOnly) {
+    footer = (
+      <BottomBar>
+        <T v="small" center>Admin view · read only. Only the provider accepts or declines; support investigates and records decisions on the case.</T>
+      </BottomBar>
+    );
+  } else if (r.status === 'new') {
     footer = (
       <BottomBar>
         {conflict ? <T v="small" color={colors.danger} style={{ marginBottom: 8 }}>{`Accepting is blocked: you already accepted ${conflict.title} on this date.`}</T> : null}
@@ -181,12 +206,12 @@ export default function RequestReview() {
           {isQuote ? (
             <Button title={quoteSent ? (q === 'expired' ? 'Send new quote' : 'Revise quote') : 'Send quote'} size="md" style={{ flex: 1.4 }} onPress={openComposer} />
           ) : (
-            <>
-              <Button title="Propose changes" accessibilityLabel="Propose different terms as a revised offer" variant="secondary" size="md" style={{ flex: 1.2, paddingHorizontal: 10 }} onPress={openComposer} />
-              <Button title="Accept" accessibilityLabel={`Accept ${first}’s request for ${euro(r.offer)}`} size="md" style={{ flex: 1 }} disabled={!!conflict} onPress={accept} />
-            </>
+            <Button title="Accept" accessibilityLabel={`Accept ${first}’s request for ${euro(r.offer)}`} size="md" style={{ flex: 1.4 }} disabled={!!conflict} onPress={accept} />
           )}
         </Row>
+        {!isQuote ? (
+          <Button title="Propose changes" icon="file-replace-outline" accessibilityLabel="Propose different terms as a revised offer" variant="ghost" size="md" onPress={openComposer} style={{ marginTop: 4 }} />
+        ) : null}
       </BottomBar>
     );
   } else if (r.status === 'accepted') {
@@ -207,8 +232,10 @@ export default function RequestReview() {
             <T v="bodyBold">{r.requester}</T>
             <T v="small">{r.requesterRole}</T>
           </View>
-          {r.status === 'new' ? <TimeLeft deadline={r.deadline} /> : <PaymentPill state={r.payment} provider />}
+          {r.status === 'new' ? <TimeLeft deadline={r.deadline} /> : settled ? <Pill label={settled.label} tone={settled.tone} icon="credit-card-outline" /> : <PaymentPill state={r.payment} provider />}
         </Row>
+
+        {readOnly ? <Banner icon="shield-search" tone="neutral">{`Admin view of request ${requestRef(r)}. The provider’s actions, the customer’s payment state and the deadline are shown as recorded.`}</Banner> : null}
 
         {r.status === 'new' ? (
           <Banner icon={reminded ? 'bell-ring-outline' : 'timer-sand'} tone={reminded ? 'warning' : 'brand'}>
@@ -226,7 +253,7 @@ export default function RequestReview() {
           <KeyValue k="Location" v={r.location} />
           <KeyValue k="Guests" v={`~${r.guests} people`} />
           <KeyValue k="Equipment" v={r.equipment} />
-          {r.message ? <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.brandTint, marginTop: 4 }}><T v="body" color="#2E1D5E">“{r.message}”</T></View> : null}
+          {r.message ? <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.brandTint, marginTop: 4 }}><T v="body" color={colors.brandDeep}>“{r.message}”</T></View> : null}
         </Card>
 
         {r.status === 'new' ? (
@@ -271,10 +298,10 @@ export default function RequestReview() {
           </Card>
         ) : null}
 
-        {contact && r.status !== 'new' && r.status !== 'accepted' ? <Button title={`Message ${first}`} variant="secondary" icon="message-text-outline" onPress={openChat} /> : null}
-        {r.status === 'new' && contact ? <Button title={`Discuss scope with ${first}`} variant="ghost" icon="message-text-outline" onPress={openChat} /> : null}
+        {!readOnly && contact && r.status !== 'new' && r.status !== 'accepted' ? <Button title={`Message ${first}`} variant="secondary" icon="message-text-outline" onPress={openChat} /> : null}
+        {!readOnly && r.status === 'new' && contact ? <Button title={`Discuss scope with ${first}`} variant="ghost" icon="message-text-outline" onPress={openChat} /> : null}
 
-        {demo.length ? (
+        {!readOnly && demo.length ? (
           <DemoBar note="Simulate what the customer, the bank or time does next. Each button changes this request for real.">
             <View style={{ gap: 8 }}>
               {demo.map((a) => <Button key={a.label} title={a.label} variant="light" size="md" onPress={a.onPress} />)}
@@ -284,7 +311,7 @@ export default function RequestReview() {
       </Screen>
 
       <ReasonSheet
-        visible={declineOpen && r.status === 'new'}
+        visible={declineOpen && r.status === 'new' && !readOnly}
         title="Why are you declining?"
         body={`${first} is told you can’t take it. ${r.payment === 'authorized' ? 'Their payment authorization is released.' : 'Nothing was charged.'} Declining doesn’t affect their other bookings.`}
         reasons={DECLINE_REASONS}
@@ -299,7 +326,7 @@ export default function RequestReview() {
         onClose={() => setDeclineOpen(false)}
       />
 
-      <Modal visible={composer} transparent animationType="slide" onRequestClose={() => setComposer(false)}>
+      <Modal visible={composer && !readOnly} transparent animationType="slide" onRequestClose={() => setComposer(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
             <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1 }} onPress={() => setComposer(false)} />

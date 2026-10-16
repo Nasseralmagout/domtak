@@ -57,11 +57,14 @@ function answerOf(f: ApplyField, a: Answers): string {
   return v;
 }
 
-function problemOf(f: ApplyField, a: Answers): string | undefined {
-  if (f.kind === 'genres') return f.required && !a.genres.length ? 'Pick at least one genre' : undefined;
-  if (f.kind === 'media') return f.required && !a.media[f.label]?.length ? 'Choose at least one photo' : undefined;
+/** `requested`: the reviewer asked for this item, so it cannot be left empty on resubmission (even when optional). */
+function problemOf(f: ApplyField, a: Answers, requested = false): string | undefined {
+  const needed = f.required || requested;
+  const askedFor = 'The reviewer asked for this. Please add it before resubmitting';
+  if (f.kind === 'genres') return needed && !a.genres.length ? (requested ? askedFor : 'Pick at least one genre') : undefined;
+  if (f.kind === 'media') return needed && !a.media[f.label]?.length ? (requested ? askedFor : 'Choose at least one photo') : undefined;
   const v = (a.values[f.label] ?? '').trim();
-  if (!v) return f.required ? (f.kind === 'choice' ? 'Choose one option' : `${f.label} is required`) : undefined;
+  if (!v) return needed ? (requested && !f.required ? askedFor : f.kind === 'choice' ? 'Choose one option' : `${f.label} is required`) : undefined;
   if (f.kind === 'number' && !(Number(v) > 0)) return 'Enter a number above 0';
   if (f.kind === 'link' && !/^\S+\.\S{2,}/.test(v)) return 'Enter a web address, e.g. soundcloud.com/yourname';
   if (f.min && v.length < f.min) return `Add a little more detail (at least ${f.min} characters)`;
@@ -204,6 +207,8 @@ export default function Apply() {
   }
 
   const fields = role ? APPLY_FIELDS[role] : [];
+  // A resubmission only when it is for the same role; another role is a new application.
+  const sameRole = !!resubmitting && resubmitting.role === role;
   const requested = resubmitting?.status === 'info' && resubmitting.role === role ? (resubmitting.missing ?? []) : [];
   const stepFields = step === 1 || step === 2 ? fields.filter((f) => f.step === FIELD_STEP[step]) : [];
   const allApproved = PROFESSIONAL_ROLES.every((r) => isApproved(user, r));
@@ -221,7 +226,7 @@ export default function Apply() {
   const validate = (list: ApplyField[]) => {
     const e: Record<string, string> = {};
     for (const f of list) {
-      const p = problemOf(f, answers);
+      const p = problemOf(f, answers, requested.includes(f.label));
       if (p) e[f.label] = p;
     }
     setErrors(e);
@@ -241,7 +246,7 @@ export default function Apply() {
     }
     if (!role) return;
     if (!validate(fields)) {
-      const firstBad = fields.find((f) => problemOf(f, answers));
+      const firstBad = fields.find((f) => problemOf(f, answers, requested.includes(f.label)));
       if (firstBad) setStep(firstBad.step === 'details' ? 1 : 2);
       return;
     }
@@ -252,12 +257,19 @@ export default function Apply() {
       if (v) details[f.label] = v;
     }
     submitApplication(role, details);
-    toast(resubmitting ? 'Application resubmitted for review' : 'Application submitted for review');
+    toast(sameRole ? 'Application resubmitted for review' : 'Application submitted for review');
     router.replace('/application');
   };
 
   const errorCount = Object.keys(errors).filter((k) => k !== 'confirm').length;
-  const primaryTitle = step === 3 ? (resubmitting ? 'Resubmit application' : 'Submit application') : step === 0 ? 'Continue' : 'Next';
+  // Only one application is kept: applying for another role replaces an open info request or rejection.
+  const replaces =
+    resubmitting && role && role !== resubmitting.role ? (
+      <Banner icon="swap-horizontal" tone="warning">
+        {`Submitting this replaces your ${PRO_ROLE_TITLE[resubmitting.role]} application (${APPLICATION_STATUS_LABEL[resubmitting.status].toLowerCase()}). One application is reviewed at a time.`}
+      </Banner>
+    ) : null;
+  const primaryTitle = step === 3 ? (sameRole ? 'Resubmit application' : 'Submit application') : step === 0 ? 'Continue' : 'Next';
 
   return (
     <Screen
@@ -321,6 +333,7 @@ export default function Apply() {
           {allApproved ? (
             <Banner icon="check-decagram" tone="success">You’re approved for every professional role. Switch between them from your workspaces.</Banner>
           ) : null}
+          {replaces}
           {role ? (
             <Card style={{ gap: 8 }}>
               <T v="title">What you’ll need</T>
@@ -385,6 +398,7 @@ export default function Apply() {
               })}
             </Card>
           ))}
+          {replaces}
           <Pressable
             accessibilityRole="checkbox"
             accessibilityLabel={DECLARATION[role]}

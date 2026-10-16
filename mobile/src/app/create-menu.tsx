@@ -27,7 +27,7 @@ const ROLE_TOOLS: Record<Role, Action[]> = {
     { icon: 'cash-multiple', title: 'Earnings', sub: 'Payouts, balance and booking income', href: '/pro/earnings' },
   ],
   venue: [{ icon: 'storefront-edit-outline', title: 'My venue listing', sub: 'Capacity, parking, outdoor space, catering and security', href: '/pro/venue-listing' }],
-  organizer: [{ icon: 'calendar-star', title: 'My events', sub: 'Ticket sales, attendees and promotions', href: '/pro/events' }],
+  organizer: [{ icon: 'calendar-star', title: 'Organizer events', sub: 'Ticket sales, attendees and promotions', href: '/pro/events' }],
 };
 
 /** Where "Publish public events" leads when you cannot publish yet (blueprint F12: redirect to the application flow). */
@@ -117,7 +117,7 @@ export default function CreateMenu() {
           {actions.map((a) => <ActionRow key={a.title} action={a} onPress={() => go(a.href)} />)}
           {locked.length ? (
             <>
-              <T v="caption" style={{ marginTop: 10, marginBottom: 2 }}>NEEDS PROFESSIONAL APPROVAL</T>
+              <T v="caption" style={{ marginTop: 10, marginBottom: 2 }}>FOR APPROVED PROFESSIONALS</T>
               {locked.map((a) => <ActionRow key={a.title} action={a} onPress={() => go(a.href)} />)}
             </>
           ) : null}

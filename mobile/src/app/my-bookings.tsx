@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../components/layout';
@@ -8,7 +8,7 @@ import { venueById } from '../data/mock';
 import type { Booking } from '../data/types';
 import { bookingLabel, isClosed, isOutstanding, providerOf, QUOTE_STATUS_LABEL, quoteState } from '../lib/booking';
 import { euro, parse, plural, shortDate, time, TODAY } from '../lib/format';
-import { useAllEvents, useApp } from '../store/useApp';
+import { useAllEvents, useApp, useInvitedEvents } from '../store/useApp';
 import { colors, radius, shadow } from '../theme';
 
 type Tab = 'tickets' | 'musician' | 'venue' | 'lesson';
@@ -17,7 +17,8 @@ const rank = (status: string, end: string) => (status === 'cancelled' || status 
 
 /** What the customer has to do next on a booking, if anything (blueprint member dashboard). */
 function actionFor(b: Booking): string | undefined {
-  if (b.status === 'payment_failed' || b.payment === 'failed') return 'Payment failed · retry on this booking';
+  // A closed booking has nothing left to pay, even if its last payment attempt failed.
+  if (b.status === 'payment_failed' || (b.payment === 'failed' && !isClosed(b.status))) return 'Payment failed · retry on this booking';
   if (b.pendingCancellation && !isClosed(b.status) && b.status !== 'completed') return 'Event cancelled · decide on this booking';
   if (b.pricing === 'quote' && b.quote && b.status === 'requested') {
     const q = quoteState(b.quote);
@@ -38,7 +39,10 @@ export default function MyBookings() {
   const tickets = useApp((s) => s.tickets);
   const bookings = useApp((s) => s.bookings);
   const reviews = useApp((s) => s.reviews);
-  const allEvents = useAllEvents();
+  const publicEvents = useAllEvents();
+  const invited = useInvitedEvents();
+  // Tickets for private events you were invited to (e.g. a paid cost-sharing contribution) belong here too.
+  const allEvents = useMemo(() => (invited.length ? [...publicEvents, ...invited.map((x) => x.event)] : publicEvents), [publicEvents, invited]);
 
   // Opening "Your tickets" from the menu while this screen is already mounted should still switch tabs.
   const [lastParam, setLastParam] = useState(params.tab);
@@ -96,7 +100,7 @@ export default function MyBookings() {
                 <View style={{ flex: 1, padding: 12, gap: 6 }}>
                   <T v="h3" color={colors.brandDeep} numberOfLines={1}>{e.title}</T>
                   <T v="smallBold" color={colors.inkSoft}>{shortDate(e.start)} · {time(e.start)}–{time(e.end)}</T>
-                  <Row gap={4}><Icon name="map-marker-outline" size={16} color={colors.inkSoft} /><T v="small" color={colors.inkSoft} numberOfLines={1} style={{ flex: 1 }}>{venueById(e.venueId)?.name}, Berlin</T></Row>
+                  <Row gap={4}><Icon name="map-marker-outline" size={16} color={colors.inkSoft} /><T v="small" color={colors.inkSoft} numberOfLines={1} style={{ flex: 1 }}>{venueById(e.venueId)?.name ?? 'Venue shared by the host'}, Berlin</T></Row>
                   {group.length > 1 ? <T v="small">{group.length} tickets</T> : null}
                   <Row justify="flex-end" gap={8} style={{ flexWrap: 'wrap', rowGap: 6 }}>
                     {cancelled ? (
@@ -150,9 +154,9 @@ export default function MyBookings() {
                   <Row gap={4}><Icon name="map-marker-outline" size={16} color={colors.inkSoft} /><T v="small" color={colors.inkSoft} numberOfLines={1} style={{ flex: 1 }}>{b.location}</T></Row>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                     <StatusPill booking={b} />
-                    {b.payment && b.payment !== 'not_started' ? <PaymentPill state={b.payment} /> : null}
+                    {b.payment && b.payment !== 'not_started' && !(isClosed(b.status) && b.payment === 'failed') ? <PaymentPill state={b.payment} /> : null}
                     {b.status === 'pending' ? <TimeLeft deadline={b.deadline} /> : null}
-                    {q && b.quote && b.quote.version > 0 && b.status !== 'requested' ? <Pill label={`Quote v${b.quote.version} · ${QUOTE_STATUS_LABEL[q]}`} tone="neutral" icon="file-document-outline" /> : null}
+                    {q && b.quote && b.quote.version > 0 && b.status !== 'requested' && !(isClosed(b.status) && q !== 'accepted' && q !== 'rejected') ? <Pill label={`Quote v${b.quote.version} · ${QUOTE_STATUS_LABEL[q]}`} tone="neutral" icon="file-document-outline" /> : null}
                   </View>
                   {action ? (
                     <Row gap={6}>

@@ -10,6 +10,7 @@ import { PAYMENT_NOTE, REMINDER_HOURS, RESPONSE_HOURS } from '../../lib/booking'
 import { euro, isoDay, parse, plural, shortDate, TODAY } from '../../lib/format';
 import { artistEstimate, type Estimate, guardsFor, lessonEstimate, securityRequired, toCharges, toLineItems, venueEstimate } from '../../lib/pricing';
 import { LESSON_FORMAT_LABEL, useArtist, useArtistServices, useLesson } from '../../store/services';
+import { toast } from '../../store/toast';
 import { useApp, useEvent, useVenue } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
 
@@ -63,6 +64,11 @@ export default function NewBooking() {
     eventId?: string;
     quote?: string;
     date?: string;
+    /** Prefill from an earlier request ("Send a new request" on an expired or declined booking). */
+    title?: string;
+    start?: string;
+    hours?: string;
+    location?: string;
   }>();
   const kind: Kind = params.type === 'venue' ? 'venue' : params.type === 'lesson' ? 'lesson' : 'musician';
 
@@ -86,20 +92,25 @@ export default function NewBooking() {
 
   const lessons: Lesson[] = useMemo(() => (kind === 'lesson' ? (artist?.lessons ?? []) : []), [kind, artist]);
   const days = useMemo(() => Array.from({ length: 90 }, (_, i) => isoDay(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + 2 + i, 12))), []);
-  const linkable = useMemo(() => myEvents.filter((e) => e.state !== 'cancelled' && e.state !== 'completed' && parse(e.end).getTime() >= TODAY.getTime()), [myEvents]);
+  // Your upcoming events, plus the event this request was opened from (e.g. a sample event you run from its workspace).
+  const linkable = useMemo(() => {
+    const open = (e: EventItem) => e.state !== 'cancelled' && e.state !== 'completed' && parse(e.end).getTime() >= TODAY.getTime();
+    const own = myEvents.filter(open);
+    return initialEvent && open(initialEvent) && !own.some((e) => e.id === initialEvent.id) ? [initialEvent, ...own] : own;
+  }, [myEvents, initialEvent]);
   const firstDay = (iso?: string) => (iso && parse(iso).getTime() > TODAY.getTime() ? iso.slice(0, 10) : days[10]);
 
   const [step, setStep] = useState<'form' | 'review'>('form');
   const [lessonId, setLessonId] = useState(lessonHit?.lesson.id ?? params.lesson);
   const [eventId, setEventId] = useState<string | undefined>(initialEvent?.id);
-  const [title, setTitle] = useState(initialEvent?.title ?? '');
+  const [title, setTitle] = useState(initialEvent?.title ?? params.title ?? '');
   // Venues only list the occasions they host, so start on one of those.
   const [occasion, setOccasion] = useState(venue && !venue.occasions.slice(0, 6).includes('Birthday') ? (venue.occasions[0] ?? 'Other') : 'Birthday');
   const [date, setDate] = useState(firstDay(params.date ?? initialEvent?.start));
-  const [start, setStart] = useState(kind === 'lesson' ? '18:00' : '20:00');
-  const [hours, setHours] = useState(kind === 'venue' ? 6 : 4);
+  const [start, setStart] = useState(params.start && STARTS.includes(params.start) ? params.start : kind === 'lesson' ? '18:00' : '20:00');
+  const [hours, setHours] = useState(Number(params.hours) >= 1 && Number(params.hours) <= 12 ? Math.round(Number(params.hours)) : kind === 'venue' ? 6 : 4);
   const [sessions, setSessions] = useState(1);
-  const [location, setLocation] = useState(venue ? `${venue.name}, ${venue.area}` : initialEvent ? (venueById(initialEvent.venueId)?.name ?? '') : '');
+  const [location, setLocation] = useState(venue ? `${venue.name}, ${venue.area}` : initialEvent ? (venueById(initialEvent.venueId)?.name ?? '') : (params.location ?? ''));
   const [guests, setGuests] = useState(params.guests && Number(params.guests) > 0 ? params.guests : initialEvent?.expectedGuests ? String(initialEvent.expectedGuests) : '80');
   const [gearOn, setGearOn] = useState(false);
   const [cateringOn, setCateringOn] = useState(params.catering === '1');
@@ -222,6 +233,7 @@ export default function NewBooking() {
     // Idempotent: a repeated submit opens the request that already exists instead of creating a second one.
     const existing = useApp.getState().bookings.find((b) => b.targetId === targetId && b.date === date && (kind !== 'lesson' || b.lessonId === lesson?.id) && !CLOSED.includes(b.status));
     if (existing) {
+      toast(`You already have an open request with ${name} on ${shortDate(date)}`);
       router.replace(`/booking/${existing.id}`);
       return;
     }
@@ -271,7 +283,13 @@ export default function NewBooking() {
           <BottomBar>
             <Button title={mode === 'quote' ? 'Send quote request' : `Send request · ${euro(estimate.total)}`} disabled={!ready} onPress={send} />
             <T v="small" center style={{ marginTop: 8 }}>
-              {!agreed ? 'Confirm the details above to continue.' : mode === 'quote' ? 'Nothing is charged until you accept a quote.' : 'Payment pending the provider’s decision.'}
+              {!agreed
+                ? 'Confirm the details above to continue.'
+                : mode === 'quote'
+                  ? 'Nothing is charged until you accept a quote.'
+                  : method
+                    ? 'Payment pending the provider’s decision.'
+                    : 'Choose or add a payment method to continue.'}
             </T>
           </BottomBar>
         }

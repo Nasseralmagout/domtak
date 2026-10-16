@@ -5,7 +5,7 @@ import { View } from 'react-native';
 import { ActionSheet, ReasonSheet } from '../../components/ActionSheet';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Banner, Button, Card, Icon, KeyValue, LineItems, PaymentPill, Photo, Pill, Row, T, TimeLeft } from '../../components/ui';
-import { bookingRef, PAYMENT_NOTE, providerOf, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteState } from '../../lib/booking';
+import { bookingRef, isClosed, isConfirmed, PAYMENT_NOTE, providerOf, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteState } from '../../lib/booking';
 import { euro, parse, plural, shortDate, TODAY } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp } from '../../store/useApp';
@@ -83,12 +83,17 @@ export default function QuoteReview() {
   }
 
   const state = quoteState(quote);
-  const open = state === 'sent' || state === 'revised';
+  // A withdrawn or cancelled request keeps its last quote status, but that offer can't be accepted anymore.
+  const open = (state === 'sent' || state === 'revised') && b.status === 'requested';
   const daysLeft = quote.validUntil ? Math.floor((parse(quote.validUntil).getTime() + 12 * 3_600_000 - TODAY.getTime()) / 86_400_000) : undefined;
   const awaitingPayment = state === 'accepted' && (b.status === 'accepted' || b.status === 'payment_failed') && b.payment !== 'paid';
+  const confirmed = isConfirmed(b.status);
+  // The request can be withdrawn, or the booking cancelled after acceptance: nothing is payable or acceptable then.
+  const closed = state !== 'rejected' && isClosed(b.status);
+  const nothingCharged = !b.payment || b.payment === 'not_started' || b.payment === 'failed';
 
   const accept = () => {
-    if (!acceptQuote(b.id)) {
+    if (!open || !acceptQuote(b.id)) {
       toast('This quote can’t be accepted anymore. Ask for a new one.');
       return;
     }
@@ -118,7 +123,7 @@ export default function QuoteReview() {
             </Row>
             <Button title="Ask a question" variant="ghost" size="md" icon="message-text-outline" onPress={chat} style={{ marginTop: 4 }} />
           </BottomBar>
-        ) : state === 'expired' ? (
+        ) : state === 'expired' && !closed ? (
           <BottomBar>
             <Button title="Ask for a new quote" onPress={askNew} />
             <Button title="Open booking" variant="ghost" onPress={toBooking} style={{ marginTop: 4 }} />
@@ -133,21 +138,25 @@ export default function QuoteReview() {
       {header}
 
       <Row gap={8} style={{ flexWrap: 'wrap' }}>
-        <Pill label={QUOTE_STATUS_LABEL[state]} tone={QUOTE_STATUS_TONE[state]} />
+        <Pill label={closed ? 'Request closed' : QUOTE_STATUS_LABEL[state]} tone={closed ? 'neutral' : QUOTE_STATUS_TONE[state]} />
         {open && daysLeft !== undefined ? <Pill label={daysLeft <= 0 ? 'Last day to accept' : `${plural(daysLeft, 'day')} left to accept`} tone={daysLeft <= 2 ? 'warning' : 'brand'} icon="timer-sand" /> : null}
-        {state === 'accepted' ? <PaymentPill state={b.payment} /> : null}
+        {state === 'accepted' && !closed ? <PaymentPill state={b.payment} /> : null}
       </Row>
 
-      {state === 'revised' ? (
+      {state === 'revised' && open ? (
         <Banner icon="file-replace-outline" tone="warning">{`${name} revised the quote. Version ${quote.version} replaces the earlier offer and needs your explicit acceptance; nothing changes until you accept it.`}</Banner>
       ) : null}
-      {state === 'expired' ? (
+      {state === 'expired' && !closed ? (
         <Banner icon="timer-off-outline" tone="danger">{`This quote was valid until ${quote.validUntil ? shortDate(quote.validUntil) : 'its deadline'}. An expired quote can’t be accepted. Ask ${name} for a new one; nothing was charged.`}</Banner>
       ) : null}
       {state === 'rejected' ? <Banner icon="close-circle-outline" tone="neutral">You declined this quote. The offer is closed and nothing was charged.</Banner> : null}
-      {state === 'accepted' ? (
-        <Banner icon={b.payment === 'paid' ? 'check-decagram' : 'credit-card-clock-outline'} tone={b.payment === 'paid' ? 'success' : 'warning'}>
-          {b.payment === 'paid' ? 'You accepted this quote and the payment is verified. The booking is confirmed.' : `You accepted this quote. ${b.payment ? PAYMENT_NOTE[b.payment] : ''} The booking is confirmed only once the payment is verified.`}
+      {closed ? (
+        <Banner icon="calendar-remove-outline" tone="neutral">
+          {`${state === 'accepted' ? 'You accepted this quote, but the booking was cancelled' : 'This request was closed, so the quote can’t be accepted anymore'}${b.cancelReason ? ` (${b.cancelReason})` : ''}. ${nothingCharged || !b.payment ? 'Nothing was charged.' : PAYMENT_NOTE[b.payment]}`}
+        </Banner>
+      ) : state === 'accepted' ? (
+        <Banner icon={confirmed ? 'check-decagram' : 'credit-card-clock-outline'} tone={confirmed ? 'success' : 'warning'}>
+          {confirmed ? 'You accepted this quote and the payment is verified. The booking is confirmed.' : `You accepted this quote. ${b.payment ? PAYMENT_NOTE[b.payment] : ''} The booking is confirmed only once the payment is verified.`}
         </Banner>
       ) : null}
 
@@ -160,7 +169,7 @@ export default function QuoteReview() {
         {quote.note ? (
           <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.brandTint }}>
             <T v="small" color={colors.muted}>Note from {name}</T>
-            <T v="body" color="#2E1D5E">“{quote.note}”</T>
+            <T v="body" color={colors.brandDeep}>“{quote.note}”</T>
           </View>
         ) : null}
       </Card>
@@ -171,7 +180,7 @@ export default function QuoteReview() {
         <KeyValue k="When" v={`${shortDate(b.date)}, ${b.startTime}–${b.endTime}`} />
         <TextLine k="Where" v={b.location} />
         {b.type !== 'lesson' ? <KeyValue k="Guests" v={String(b.guests)} /> : null}
-        <TextLine k={b.type === 'venue' ? 'Setup' : 'Equipment'} v={b.equipment} />
+        <TextLine k={b.type === 'venue' ? 'Setup' : b.type === 'lesson' ? 'Format' : 'Equipment'} v={b.equipment} />
         <TextLine k="Options" v={b.extras || 'None'} />
         {b.note ? <TextLine k="Your message" v={b.note} /> : null}
       </Card>
