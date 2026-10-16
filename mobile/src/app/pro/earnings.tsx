@@ -2,13 +2,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { goBack, Screen, ScreenHeader } from '../../components/layout';
-import { Button, Card, Divider, Icon, type IconName, KeyValue, Pill, Row, SectionTitle, Segmented, T } from '../../components/ui';
-import { analytics, transactions, type Transaction } from '../../data/mock';
+import { goBack, PermissionNotice, Screen, ScreenHeader } from '../../components/layout';
+import { Banner, Button, Card, Divider, Icon, type IconName, KeyValue, Pill, Row, SectionTitle, Segmented, T } from '../../components/ui';
+import { analytics, transactions } from '../../data/mock';
 import type { IncomingRequest } from '../../data/types';
-import { euro, isoDay, parse, shortDate, TODAY } from '../../lib/format';
+import { euro, isoDay, parse, plural, shortDate, TODAY } from '../../lib/format';
+import { PLATFORM_COMMISSION_RATE } from '../../lib/pricing';
 import { toast } from '../../store/toast';
-import { type Payout, useApp } from '../../store/useApp';
+import { activeWorkspace, type Payout, useApp } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 type Tab = 'earnings' | 'insights';
@@ -21,15 +22,32 @@ const money = (n: number) => euro(Math.abs(n), !Number.isInteger(n));
 /** ISO days for the 14 analytics points, oldest first, ending on TODAY. */
 const DAYS = analytics.profileViews.map((_, i, all) => isoDay(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() - (all.length - 1 - i), 12)));
 
-/** A ledger row: a mock transaction, an accepted gig in escrow, or a payout you requested (processing). */
-type LedgerRow = Omit<Transaction, 'status'> & { status: Transaction['status'] | 'processing' };
+type RowStatus = 'awaiting' | 'pending' | 'available' | 'paid out' | 'processing' | 'fee' | 'refund';
 
-const TX_STATUS: Record<LedgerRow['status'], { label: string; tone: 'success' | 'warning' | 'neutral' | 'brand'; icon: IconName }> = {
-  escrow: { label: 'In escrow', tone: 'warning', icon: 'lock-clock' },
+/** One line of the earnings ledger. Booking rows carry gross, commission and net separately. */
+interface LedgerRow {
+  id: string;
+  title: string;
+  sub: string;
+  date: string;
+  kind: 'booking' | 'payout' | 'fee' | 'refund';
+  /** What you receive (negative for payouts, fees and refunds). */
+  net: number;
+  gross?: number;
+  commission?: number;
+  status: RowStatus;
+  /** The request behind a booking row, for the settlement detail. */
+  requestId?: string;
+}
+
+const TX_STATUS: Record<RowStatus, { label: string; tone: 'success' | 'warning' | 'neutral' | 'brand' | 'danger'; icon: IconName }> = {
+  awaiting: { label: 'Awaiting payment', tone: 'brand', icon: 'credit-card-clock-outline' },
+  pending: { label: 'Payout pending', tone: 'warning', icon: 'timer-sand' },
   available: { label: 'Available', tone: 'success', icon: 'arrow-down-bold-circle-outline' },
   'paid out': { label: 'Paid out', tone: 'neutral', icon: 'bank-transfer-out' },
-  fee: { label: 'Fee', tone: 'neutral', icon: 'receipt-text-outline' },
   processing: { label: 'Processing', tone: 'warning', icon: 'bank-transfer-out' },
+  fee: { label: 'Subscription', tone: 'neutral', icon: 'receipt-text-outline' },
+  refund: { label: 'Refund', tone: 'danger', icon: 'cash-refund' },
 };
 
 const PAYOUT_STATUS: Record<Payout['status'], { label: string; tone: 'success' | 'warning' }> = {
@@ -40,6 +58,9 @@ const PAYOUT_STATUS: Record<Payout['status'], { label: string; tone: 'success' |
 const KNOWN_TITLES = new Set(transactions.map((t) => t.title));
 /** Seed payouts ("po1"…) are already in the mock history; payouts requested in the app get ids like "po_…". */
 const isSeedPayout = (p: Payout) => /^po\d+$/.test(p.id);
+const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Gross from a net amount recorded after the platform commission. */
+const grossOf = (net: number) => Math.round(net / (1 - PLATFORM_COMMISSION_RATE));
 
 /** The day a transfer requested on `from` arrives: `n` business days later (demo clock, never the device clock). */
 function businessDaysAfter(from: Date, n: number) {
@@ -59,21 +80,34 @@ const payoutTitle = (account: string) => {
 };
 
 /**
- * Mock transactions plus an escrow row for every accepted request that has none yet
- * (offer minus the 10% Domtak fee, same as the workspace escrow total) and a row for each
- * payout you requested. "Available" rows add up to the balance; once it has been paid out,
- * they show as paid out.
+ * Settlement ledger: recorded transactions plus every request that isn't in them yet.
+ * Accepted requests without a verified payment are listed as "Awaiting payment" and never counted.
+ * "Available" rows add up to the balance; once it has been paid out they show as paid out.
  */
 function ledger(requests: IncomingRequest[], balance: number, payouts: Payout[], account: string): LedgerRow[] {
-  const accepted: LedgerRow[] = requests
-    .filter((r) => r.status === 'accepted' && !KNOWN_TITLES.has(r.title))
-    .map((r) => ({ id: `req_${r.id}`, title: r.title, sub: `${r.requester} · booking`, amount: Math.round(r.offer * 0.9), date: isoDay(TODAY), status: 'escrow' }));
+  const byTitle = (title: string) => requests.find((r) => r.title === title)?.id;
+  const recorded: LedgerRow[] = transactions.map((t) => {
+    if (t.status === 'fee') return { id: t.id, title: t.title, sub: t.sub, date: t.date, kind: 'fee', net: t.amount, status: 'fee' };
+    if (t.amount < 0) return { id: t.id, title: t.title, sub: t.sub, date: t.date, kind: 'payout', net: t.amount, status: 'paid out' };
+    const gross = grossOf(t.amount);
+    const status: RowStatus = t.status === 'escrow' ? 'pending' : t.status === 'available' ? (balance > 0 ? 'available' : 'paid out') : 'paid out';
+    return { id: t.id, title: t.title, sub: t.sub, date: t.date, kind: 'booking', net: t.amount, gross, commission: round2(gross - t.amount), status, requestId: byTitle(t.title) };
+  });
+  const fromRequests: LedgerRow[] = requests
+    .filter((r) => !KNOWN_TITLES.has(r.title) && (r.status === 'accepted' || r.status === 'past' || r.payment === 'refund_pending' || r.payment === 'refunded'))
+    .map((r): LedgerRow => {
+      const gross = r.pricing === 'quote' && r.quote ? r.quote.total : r.offer;
+      const commission = round2(gross * PLATFORM_COMMISSION_RATE);
+      const base = { id: `req_${r.id}`, title: r.title, date: r.isoDate ?? isoDay(TODAY), requestId: r.id, gross, commission };
+      if (r.payment === 'refund_pending' || r.payment === 'refunded') return { ...base, sub: `${r.requester} · ${r.payment === 'refunded' ? 'refunded' : 'refund pending'}`, kind: 'refund', net: -round2(gross - commission), status: 'refund' };
+      const verified = r.payment === 'paid' || r.payment === 'payout_pending' || r.payment === 'paid_out';
+      if (!verified) return { ...base, sub: `${r.requester} · ${r.payment === 'failed' ? 'customer payment failed' : 'not yet verified'}`, kind: 'booking', net: round2(gross - commission), status: 'awaiting' };
+      return { ...base, sub: `${r.requester} · booking`, kind: 'booking', net: round2(gross - commission), status: r.payment === 'paid_out' ? 'paid out' : 'pending' };
+    });
   const requested: LedgerRow[] = payouts
     .filter((p) => !isSeedPayout(p))
-    .map((p) => ({ id: `pay_${p.id}`, title: payoutTitle(account), sub: 'Bank transfer', amount: -p.amount, date: p.date, status: p.status === 'processing' ? 'processing' : 'paid out' }));
-  return [...accepted, ...requested, ...transactions]
-    .map((t): LedgerRow => (t.status === 'available' && balance <= 0 ? { ...t, status: 'paid out' } : t))
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .map((p) => ({ id: `pay_${p.id}`, title: payoutTitle(account), sub: 'Bank transfer', date: p.date, kind: 'payout', net: -p.amount, status: p.status === 'processing' ? 'processing' : 'paid out' }));
+  return [...fromRequests, ...requested, ...recorded].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /** Change of the last 7 days against the 7 days before, in percent (undefined when there is no baseline). */
@@ -120,10 +154,13 @@ function BarChart({ data, title }: { data: number[]; title: string }) {
   );
 }
 
-function StatTile({ label, value, sub }: { label: string; value: string; sub: string }) {
+function StatusTile({ label, value, sub, icon }: { label: string; value: string; sub: string; icon: IconName }) {
   return (
-    <View style={{ flex: 1, padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, gap: 2, ...shadow(1) }}>
-      <T v="small" style={{ fontSize: 12 }}>{label}</T>
+    <View style={{ flexBasis: '46%', flexGrow: 1, padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, gap: 2, ...shadow(1) }}>
+      <Row gap={6}>
+        <Icon name={icon} size={16} color={colors.brand} />
+        <T v="small" style={{ fontSize: 12, flex: 1 }} numberOfLines={1}>{label}</T>
+      </Row>
       <T v="h3">{value}</T>
       <T v="small" style={{ fontSize: 12 }}>{sub}</T>
     </View>
@@ -131,33 +168,58 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub: st
 }
 
 function EarningsTab() {
+  const user = useApp((s) => s.user);
   const balance = useApp((s) => s.balance);
   const payouts = useApp((s) => s.payouts);
   const methods = useApp((s) => s.paymentMethods);
   const requestPayout = useApp((s) => s.requestPayout);
   const requests = useApp((s) => s.requests);
+  const openCase = useApp((s) => s.openCase);
 
-  const account = methods.find((m) => m.badge === 'SEPA')?.sub ?? 'your bank account';
+  const workspace = activeWorkspace(user);
+  if (workspace === 'fan') {
+    return <PermissionNotice role={user.role === 'fan' ? 'musician' : user.role} action="see booking earnings and payouts" />;
+  }
+
+  const sepa = methods.find((m) => m.badge === 'SEPA');
+  const account = sepa?.sub ?? 'your bank account';
   const txs = ledger(requests, balance, payouts, account);
-  const escrow = sum(txs.filter((t) => t.status === 'escrow').map((t) => t.amount));
-  const available = txs.filter((t) => t.status === 'available');
+  const counted = txs.filter((t) => t.kind === 'booking' && t.status !== 'awaiting');
+  const gross = sum(counted.map((t) => t.gross ?? 0));
+  const commission = sum(counted.map((t) => t.commission ?? 0));
+  const refunds = -sum(txs.filter((t) => t.kind === 'refund').map((t) => t.net));
+  const net = gross - commission - refunds;
+  const awaiting = txs.filter((t) => t.status === 'awaiting');
+  const pending = sum(txs.filter((t) => t.kind === 'booking' && t.status === 'pending').map((t) => t.net));
   const paidOut = sum(payouts.filter((p) => p.status === 'paid').map((p) => p.amount));
   const processing = payouts.filter((p) => p.status === 'processing');
   const processingTotal = sum(processing.map((p) => p.amount));
+  const subscriptions = -sum(txs.filter((t) => t.kind === 'fee').map((t) => t.net));
   const today = isoDay(TODAY);
+  const pct = `${Math.round(PLATFORM_COMMISSION_RATE * 100)}%`;
 
   const payout = () => {
+    if (!sepa) {
+      router.push('/payment-methods?iban=1');
+      return;
+    }
     const amount = requestPayout();
     toast(amount > 0 ? `${euro(amount)} payout on its way to ${account}, arrives by ${arrivesBy(today)}` : 'Nothing to pay out yet');
   };
-  const gigs = available.length === 1 ? '1 completed gig' : `${available.length} completed gigs`;
+  const reportIssue = () => {
+    const caseId = openCase('Earnings or payout question', 'I have a question about my earnings and payouts.', { kind: 'account', id: 'earnings' });
+    const ref = useApp.getState().supportCases.find((c) => c.id === caseId)?.ref;
+    toast(ref ? `Support case ${ref} opened` : 'Support case opened');
+    router.push('/help');
+  };
+  const openRow = (t: LedgerRow) => (t.requestId ? () => router.push(`/pro/request/${t.requestId}`) : undefined);
 
   return (
     <>
       <View style={{ padding: 18, borderRadius: radius.xl, backgroundColor: colors.brandDeep, gap: 12, ...shadow(2) }}>
         <Row justify="space-between" align="flex-start">
           <View style={{ flex: 1 }}>
-            <T v="small" color={colors.lilacLight}>Available balance</T>
+            <T v="small" color={colors.lilacLight}>Available for payout</T>
             <Text accessibilityRole="header" style={{ fontFamily: fonts.display, fontSize: 34, lineHeight: 42, color: colors.white }}>{euro(balance)}</Text>
           </View>
           <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>
@@ -165,70 +227,99 @@ function EarningsTab() {
           </View>
         </Row>
         <T v="small" color={colors.lilacLight}>
-          {balance > 0
-            ? `${available.length && sum(available.map((t) => t.amount)) === balance ? `From ${gigs}. ` : ''}Pay out to ${account} and it arrives by ${arrivesBy(today)}.`
-            : processing.length
-              ? `${euro(processingTotal)} is on its way to ${account} and arrives by ${arrivesBy(processing[0].date)}. New earnings land here 24 h after each gig.`
-              : 'All caught up. New earnings land here 24 h after each gig.'}
+          {!sepa
+            ? 'Add a payout account before you can transfer your balance.'
+            : balance > 0
+              ? `Net amount after the platform commission. Pay out to ${account} and it arrives by ${arrivesBy(today)}.`
+              : processing.length
+                ? `${euro(processingTotal)} is on its way to ${account} and arrives by ${arrivesBy(processing[0].date)}.`
+                : 'All caught up. Completed bookings become available once the settlement policy allows.'}
         </T>
-        <Button title={balance > 0 ? `Pay out ${euro(balance)}` : 'Pay out'} icon="bank-transfer-out" variant="light" size="md" disabled={balance <= 0} onPress={payout} />
+        <Button title={!sepa ? 'Set up payouts' : balance > 0 ? `Pay out ${euro(balance)}` : 'Pay out'} icon="bank-transfer-out" variant="light" size="md" disabled={!!sepa && balance <= 0} onPress={payout} />
       </View>
 
-      <Row gap={10} align="stretch">
-        <StatTile label="Held in escrow" value={euro(escrow)} sub="Released 24 h after the gig" />
-        <StatTile
-          label="Paid out"
-          value={euro(paidOut)}
-          sub={processing.length ? `${euro(processingTotal)} processing` : `${payouts.length} ${payouts.length === 1 ? 'payout' : 'payouts'}`}
-        />
-      </Row>
+      <Card style={{ gap: 6 }}>
+        <T v="title" style={{ marginBottom: 2 }}>Booking earnings</T>
+        <KeyValue k="Gross booking value" v={euro(gross)} />
+        <KeyValue k={`Platform commission (${pct})`} v={`−${euro(commission)}`} />
+        <KeyValue k="Refunds and adjustments" v={refunds > 0 ? `−${euro(refunds)}` : euro(0)} />
+        <Divider style={{ marginVertical: 4 }} />
+        <KeyValue k="Net earnings" v={euro(net)} strong color={colors.brand} />
+        <T v="small" style={{ fontSize: 12 }}>
+          {`Gross is what customers paid for your verified bookings, not what you receive. ${refunds > 0 ? 'Refunds reduce what is payable.' : 'No refunds or adjustments so far.'}${awaiting.length ? ` ${plural(awaiting.length, 'accepted booking')} without a verified payment ${awaiting.length === 1 ? 'is' : 'are'} not counted.` : ''}`}
+        </T>
+      </Card>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        <StatusTile label="Awaiting payment" value={euro(sum(awaiting.map((t) => t.gross ?? 0)))} sub={awaiting.length ? `${plural(awaiting.length, 'booking')} · not counted yet` : 'Nothing waiting'} icon="credit-card-clock-outline" />
+        <StatusTile label="Payout pending" value={euro(pending)} sub="Net, after the event" icon="timer-sand" />
+        <StatusTile label="Available" value={euro(balance)} sub="Ready to transfer" icon="arrow-down-bold-circle-outline" />
+        <StatusTile label="Paid out" value={euro(paidOut)} sub={processing.length ? `${euro(processingTotal)} processing` : plural(payouts.length, 'payout')} icon="bank-transfer-out" />
+      </View>
 
       <Card
         padded={false}
-        onPress={() => router.push('/payment-methods')}
-        accessibilityLabel={`Payout account, SEPA, ${account}. Manage payment methods`}
-        style={{ paddingHorizontal: 16, minHeight: 64, justifyContent: 'center' }}
+        onPress={() => router.push(sepa ? '/payment-methods' : '/payment-methods?iban=1')}
+        accessibilityLabel={sepa ? `Payout account, SEPA, ${account}. Manage` : 'Set up a payout account'}
+        style={{ paddingHorizontal: 16, paddingVertical: 12, minHeight: 64, justifyContent: 'center' }}
       >
         <Row gap={12}>
           <Icon name="bank-outline" size={22} color={colors.brand} />
-          <View style={{ flex: 1 }}>
-            <T v="bodyBold">Payout account</T>
-            <T v="small">SEPA · {account}</T>
+          <View style={{ flex: 1, gap: 2 }}>
+            <T v="bodyBold">Payout setup</T>
+            <T v="small">{sepa ? `SEPA · ${account}` : 'No payout account yet'}</T>
+            <T v="small" color={sepa ? colors.success : colors.warning}>{sepa ? `Verified ${workspace === 'venue' ? 'venue' : workspace === 'organizer' ? 'organizer' : 'artist'} account · payouts allowed` : 'Add a bank account to receive payouts'}</T>
           </View>
-          <T v="smallBold" color={colors.brand}>Manage</T>
+          <T v="smallBold" color={colors.brand}>{sepa ? 'Manage' : 'Set up'}</T>
           <Icon name="chevron-right" size={20} color={colors.subtle} />
         </Row>
       </Card>
 
+      {subscriptions > 0 ? <Banner icon="information-outline">{`Your Pro plan (${euro(subscriptions, true)}) is a subscription charge and isn’t deducted from booking earnings.`}</Banner> : null}
+
       <View>
         <SectionTitle title="Transactions" />
         <Card padded={false}>
-          {txs.map((t, i) => {
-            const st = TX_STATUS[t.status];
-            const income = t.amount > 0;
-            return (
-              <View key={t.id}>
-                {i > 0 ? <Divider style={{ marginLeft: 68 }} /> : null}
-                <Row
-                  gap={12}
-                  style={{ paddingHorizontal: 16, paddingVertical: 12 }}
-                  accessibilityLabel={`${t.title}, ${t.sub}, ${shortDate(t.date)}, ${income ? 'plus' : 'minus'} ${money(t.amount)}, ${st.label}`}
-                >
+          {txs.length === 0 ? (
+            <View style={{ padding: 16 }}>
+              <T v="small">No transactions yet. Paid bookings appear here with their gross value, commission and net amount.</T>
+            </View>
+          ) : (
+            txs.map((t, i) => {
+              const st = TX_STATUS[t.status];
+              const income = t.net > 0;
+              const onPress = openRow(t);
+              const row = (
+                <Row gap={12} style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
                   <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: income ? colors.brandSoft : colors.chipIdle, alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name={st.icon} size={20} color={income ? colors.brand : colors.label} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <T v="bodyBold" numberOfLines={1}>{t.title}</T>
                     <T v="small" numberOfLines={1}>{t.sub} · {shortDate(t.date)}</T>
+                    {t.gross !== undefined ? <T v="small" style={{ fontSize: 12 }}>Gross {euro(t.gross)} · commission −{euro(t.commission ?? 0)}</T> : null}
                   </View>
                   <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                    <T v="bodyBold" color={income ? colors.success : colors.ink}>{income ? '+' : '−'}{money(t.amount)}</T>
+                    <T v="bodyBold" color={t.status === 'awaiting' ? colors.muted : income ? colors.success : colors.ink}>{income ? '+' : '−'}{money(t.net)}</T>
                     <Pill label={st.label} tone={st.tone} />
                   </View>
                 </Row>
-              </View>
-            );
-          })}
+              );
+              const label = `${t.title}, ${t.sub}, ${shortDate(t.date)}, ${income ? 'plus' : 'minus'} ${money(t.net)}${t.gross !== undefined ? `, gross ${euro(t.gross)}` : ''}, ${st.label}`;
+              return (
+                <View key={t.id}>
+                  {i > 0 ? <Divider style={{ marginLeft: 68 }} /> : null}
+                  {onPress ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${label}. Open settlement detail`} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+                      {row}
+                    </Pressable>
+                  ) : (
+                    <View accessible accessibilityLabel={label}>{row}</View>
+                  )}
+                </View>
+              );
+            })
+          )}
         </Card>
       </View>
 
@@ -265,6 +356,8 @@ function EarningsTab() {
           )}
         </Card>
       </View>
+
+      <Button title="Report a payout issue" icon="lifebuoy" variant="ghost" onPress={reportIssue} />
     </>
   );
 }

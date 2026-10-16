@@ -3,16 +3,34 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../components/layout';
-import { Button, EmptyState, Icon, Photo, Pill, Row, Segmented, T } from '../components/ui';
-import { profileById, venueById } from '../data/mock';
-import { STATUS_LABEL, STATUS_TONE } from '../lib/booking';
-import { parse, shortDate, time, TODAY } from '../lib/format';
+import { Button, EmptyState, Icon, PaymentPill, Photo, Pill, Row, Segmented, StatusPill, T, TimeLeft } from '../components/ui';
+import { venueById } from '../data/mock';
+import type { Booking } from '../data/types';
+import { bookingLabel, isClosed, isOutstanding, providerOf, QUOTE_STATUS_LABEL, quoteState } from '../lib/booking';
+import { euro, parse, plural, shortDate, time, TODAY } from '../lib/format';
 import { useAllEvents, useApp } from '../store/useApp';
 import { colors, radius, shadow } from '../theme';
 
-type Tab = 'tickets' | 'musician' | 'venue';
-const asTab = (t?: string): Tab => (t === 'musician' || t === 'venue' ? t : 'tickets');
-const rank = (status: string, end: string) => (status === 'cancelled' ? 2 : status === 'used' || parse(end) < TODAY ? 1 : 0);
+type Tab = 'tickets' | 'musician' | 'venue' | 'lesson';
+const asTab = (t?: string): Tab => (t === 'musician' || t === 'venue' || t === 'lesson' ? t : 'tickets');
+const rank = (status: string, end: string) => (status === 'cancelled' || status === 'refunded' ? 2 : status === 'used' || parse(end) < TODAY ? 1 : 0);
+
+/** What the customer has to do next on a booking, if anything (blueprint member dashboard). */
+function actionFor(b: Booking): string | undefined {
+  if (b.status === 'payment_failed' || b.payment === 'failed') return 'Payment failed · retry on this booking';
+  if (b.pendingCancellation && !isClosed(b.status) && b.status !== 'completed') return 'Event cancelled · decide on this booking';
+  if (b.pricing === 'quote' && b.quote && b.status === 'requested') {
+    const q = quoteState(b.quote);
+    if (q === 'sent' || q === 'revised') return q === 'revised' ? 'Revised quote · needs your acceptance' : 'Quote received · review it';
+    if (q === 'expired') return 'Quote expired · ask for a new one';
+  }
+  if (b.status === 'accepted' && b.payment !== 'paid') return 'Complete the payment step to confirm';
+  if (b.status === 'change_requested') return 'Change requested · waiting for both sides';
+  return undefined;
+}
+
+/** Needs action first, then open requests, then confirmed work, then closed or done. */
+const bookingRank = (b: Booking) => (actionFor(b) ? 0 : isOutstanding(b.status) ? 1 : b.status === 'confirmed' || b.status === 'paid' ? 2 : 3);
 
 export default function MyBookings() {
   const params = useLocalSearchParams<{ tab?: string }>();
@@ -42,7 +60,9 @@ export default function MyBookings() {
     // Upcoming first (soonest on top), then past nights, then cancelled orders.
     .sort((a, b) => rank(a.group[0].status, a.event.end) - rank(b.group[0].status, b.event.end) || a.event.start.localeCompare(b.event.start));
 
-  const bookingList = bookings.filter((b) => b.type === tab).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const bookingList = bookings.filter((b) => b.type === tab).sort((a, b) => bookingRank(a) - bookingRank(b) || b.createdAt.localeCompare(a.createdAt));
+  const needAction = bookingList.filter((b) => actionFor(b)).length;
+  const hasLessons = bookings.some((b) => b.type === 'lesson');
 
   return (
     <Screen header={<ScreenHeader title="Your bookings" onBack={() => goBack('/(tabs)')} />}>
@@ -52,6 +72,7 @@ export default function MyBookings() {
           { key: 'tickets', label: `Tickets (${ticketGroups.length})` },
           { key: 'musician', label: 'Musicians' },
           { key: 'venue', label: 'Venues' },
+          ...(hasLessons || tab === 'lesson' ? [{ key: 'lesson' as const, label: 'Lessons' }] : []),
         ]}
         value={tab}
         onChange={setTab}
@@ -62,7 +83,7 @@ export default function MyBookings() {
           ticketGroups.map(({ group, event: e }) => {
             const t = group[0];
             const past = parse(e.end) < TODAY;
-            const cancelled = t.status === 'cancelled';
+            const cancelled = t.status === 'cancelled' || t.status === 'refunded';
             return (
               <Pressable
                 key={`${t.eventId}-${t.status}`}
@@ -80,7 +101,7 @@ export default function MyBookings() {
                   <Row justify="flex-end" gap={8} style={{ flexWrap: 'wrap', rowGap: 6 }}>
                     {cancelled ? (
                       <>
-                        <Pill label="Cancelled · refunded" tone="danger" />
+                        <Pill label={t.status === 'refunded' ? 'Refunded' : 'Cancelled'} tone={t.status === 'refunded' ? 'neutral' : 'danger'} />
                         <Button title="Refund details" size="sm" variant="ghost" onPress={() => router.push('/help?section=refunds')} />
                       </>
                     ) : past || t.status === 'used' ? (
@@ -102,35 +123,54 @@ export default function MyBookings() {
         )
       ) : null}
 
+      {tab !== 'tickets' && bookingList.length ? (
+        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+          <Pill label={plural(bookingList.length, tab === 'lesson' ? 'lesson booking' : 'booking')} tone="neutral" />
+          {needAction ? <Pill label={`${needAction} need${needAction === 1 ? 's' : ''} your action`} tone="warning" icon="alert-circle-outline" /> : null}
+        </Row>
+      ) : null}
+
       {tab !== 'tickets' ? (
         bookingList.length ? (
           bookingList.map((b) => {
-            const target = b.type === 'musician' ? profileById(b.targetId) : undefined;
-            const venue = b.type === 'venue' ? venueById(b.targetId) : undefined;
-            const name = target?.name ?? venue?.name ?? 'Booking';
+            const provider = providerOf(b);
+            const action = actionFor(b);
+            const q = b.pricing === 'quote' && b.quote ? quoteState(b.quote) : undefined;
+            const priced = b.pricing !== 'quote' || (!!b.quote && b.quote.version > 0);
             return (
-              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={`${name}, ${b.eventTitle}, ${STATUS_LABEL[b.status]}`} onPress={() => router.push(`/booking/${b.id}`)} style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', ...shadow(1) }}>
-                <Photo src={target?.avatar ?? venue?.cover ?? 'ven_moon'} style={{ width: 116 }} />
+              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={`${provider.name}, ${b.eventTitle}, ${bookingLabel(b)}${action ? `, ${action}` : ''}`} onPress={() => router.push(`/booking/${b.id}`)} style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', ...shadow(1) }}>
+                <Photo src={provider.image ?? 'ven_moon'} style={{ width: 104 }} />
                 <View style={{ flex: 1, padding: 12, gap: 6 }}>
-                  <T v="h3" color={colors.brandDeep} numberOfLines={1}>{name}</T>
+                  <Row justify="space-between" gap={8}>
+                    <T v="h3" color={colors.brandDeep} numberOfLines={1} style={{ flex: 1 }}>{provider.name}</T>
+                    {priced ? <T v="bodyBold">{euro(b.amount)}</T> : null}
+                  </Row>
+                  <T v="small" numberOfLines={1}>{b.eventTitle}</T>
                   <T v="smallBold" color={colors.inkSoft}>{shortDate(b.date)} · {b.startTime}–{b.endTime}</T>
                   <Row gap={4}><Icon name="map-marker-outline" size={16} color={colors.inkSoft} /><T v="small" color={colors.inkSoft} numberOfLines={1} style={{ flex: 1 }}>{b.location}</T></Row>
-                  <Row justify="space-between" gap={8}>
-                    <T v="small" numberOfLines={1} style={{ flex: 1 }}>{b.eventTitle}</T>
-                    <Pill label={STATUS_LABEL[b.status]} tone={STATUS_TONE[b.status]} />
-                  </Row>
-                  {b.status === 'accepted' ? <T v="smallBold" color={colors.warning}>Action needed: pay to lock the date</T> : null}
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    <StatusPill booking={b} />
+                    {b.payment && b.payment !== 'not_started' ? <PaymentPill state={b.payment} /> : null}
+                    {b.status === 'pending' ? <TimeLeft deadline={b.deadline} /> : null}
+                    {q && b.quote && b.quote.version > 0 && b.status !== 'requested' ? <Pill label={`Quote v${b.quote.version} · ${QUOTE_STATUS_LABEL[q]}`} tone="neutral" icon="file-document-outline" /> : null}
+                  </View>
+                  {action ? (
+                    <Row gap={6}>
+                      <Icon name="alert-circle-outline" size={16} color={b.payment === 'failed' ? colors.danger : colors.warning} />
+                      <T v="smallBold" color={b.payment === 'failed' ? colors.danger : colors.warning} style={{ flex: 1 }}>{action}</T>
+                    </Row>
+                  ) : null}
                 </View>
               </Pressable>
             );
           })
         ) : (
           <EmptyState
-            icon={tab === 'musician' ? 'account-music-outline' : 'storefront-outline'}
-            title="No bookings yet"
-            body={tab === 'musician' ? 'Book a musician or DJ for your next event.' : 'Find a venue for your party, wedding or showcase.'}
-            action={tab === 'musician' ? 'Browse artists' : 'Browse venues'}
-            onAction={() => router.push(tab === 'musician' ? '/artists/all' : '/venues')}
+            icon={tab === 'musician' ? 'account-music-outline' : tab === 'lesson' ? 'school-outline' : 'storefront-outline'}
+            title={tab === 'lesson' ? 'No lessons booked' : 'No bookings yet'}
+            body={tab === 'musician' ? 'Book a musician, band or DJ for your next event.' : tab === 'lesson' ? 'Lessons you book with artists show up here.' : 'Find a venue for your party, wedding or showcase.'}
+            action={tab === 'venue' ? 'Browse venues' : 'Browse artists'}
+            onAction={() => router.push(tab === 'venue' ? '/venues' : '/artists/all')}
           />
         )
       ) : null}

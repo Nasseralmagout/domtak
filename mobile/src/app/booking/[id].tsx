@@ -61,7 +61,7 @@ const round10 = (n: number) => Math.round(n / 10) * 10;
 function demoQuote(b: Booking, artist?: Profile, venue?: Venue, revise = false): QuoteItem[] {
   let items: QuoteItem[];
   if (b.type === 'venue' && venue) {
-    const est = venueEstimate(venue, { guests: b.guests, hours: b.hours, catering: /catering/i.test(b.extras), security: /security/i.test(b.extras) });
+    const est = venueEstimate(venue, { guests: b.guests, catering: /catering/i.test(b.extras), security: /security/i.test(b.extras) });
     items = toLineItems(est.items).map(({ label, amount }) => ({ label, amount }));
     if (est.quote) items.unshift({ label: 'Venue hire · 1 night', amount: venue.pricePerNight });
   } else if (b.type === 'lesson') {

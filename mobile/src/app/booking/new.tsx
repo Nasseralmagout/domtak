@@ -118,10 +118,11 @@ export default function NewBooking() {
 
   const estimate: Estimate | undefined = useMemo(() => {
     if (kind === 'lesson') return lesson ? lessonEstimate(lesson, sessions) : undefined;
-    if (kind === 'venue') return venue ? venueEstimate(venue, { guests: g, hours, catering: cateringOn, security: securityOn, extras }) : undefined;
+    // The venue price is per night, so the hire line says "1 night" rather than the hours booked.
+    if (kind === 'venue') return venue ? venueEstimate(venue, { guests: g, catering: cateringOn, security: securityOn, extras }) : undefined;
     // Travel is billed whenever the artist lists it; equipment only when they bring their own gear.
     return artist ? artistEstimate(artist, { hours, travel: true, equipment: gearOn }) : undefined;
-  }, [kind, lesson, sessions, venue, g, hours, cateringOn, securityOn, extras, artist, gearOn]);
+  }, [kind, lesson, sessions, venue, g, cateringOn, securityOn, extras, artist, gearOn, hours]);
 
   // Android back on the summary returns to the form instead of dropping everything typed so far.
   useEffect(() => {

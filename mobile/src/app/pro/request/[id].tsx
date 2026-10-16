@@ -1,62 +1,70 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/layout';
-import { Avatar, Banner, Button, Card, Divider, Field, Icon, KeyValue, Radio, Row, Stepper, T } from '../../../components/ui';
-import { profiles, transactions } from '../../../data/mock';
-import type { IncomingRequest } from '../../../data/types';
-import { euro, isoDay, MONTHS_LONG } from '../../../lib/format';
+import { ReasonSheet } from '../../../components/ActionSheet';
+import { BottomBar, DemoBar, goBack, PermissionNotice, Screen, ScreenHeader } from '../../../components/layout';
+import { Avatar, Banner, Button, Card, Chip, Divider, Field, IconButton, KeyValue, LineItems, PaymentPill, Pill, Row, T, TimeLeft } from '../../../components/ui';
+import { profiles, venueById } from '../../../data/mock';
+import type { IncomingRequest, QuoteItem, QuoteStatus } from '../../../data/types';
+import { CHARGE_LABEL, PAYMENT_PROVIDER_LABEL, QUOTE_STATUS_TONE, quoteState, quoteTotal, REMINDER_HOURS, reminderDue, REQUEST_STATUS_LABEL, requestConflict, RESPONSE_HOURS } from '../../../lib/booking';
+import { ago, dateTime, euro, isoDay, parse, shortDate, TODAY } from '../../../lib/format';
+import { commissionOf, PLATFORM_COMMISSION_RATE, providerNet, toLineItems, venueEstimate } from '../../../lib/pricing';
+import { OWN_ARTIST_ID, useArtist } from '../../../store/services';
 import { toast } from '../../../store/toast';
-import { type Availability, useApp, type Weekday } from '../../../store/useApp';
+import { canAcceptBookings, OWN_VENUE_ID, overlayVenue, useApp, type Weekday } from '../../../store/useApp';
 import { colors } from '../../../theme';
 
-const REASONS = ['Already booked that date', 'Offer below my fee', 'Not my music style', 'Other reason'];
-const FEE_RATE = 0.1;
+const DECLINE_REASONS = ['Already booked that date', 'The price doesn’t work for me', 'Not my music style', 'Can’t meet the requirements', 'Other reason'];
 const WEEKDAY: Weekday[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-/** Text colour on brand-tinted banners (same as Banner's own text). */
-const COUNTER_INK = '#2E1D5E';
+const VALIDITY = [3, 7, 14];
+const BASE_LABEL: Record<NonNullable<IncomingRequest['kind']>, string> = { performance: 'Performance fee', venue: 'Venue hire', lesson: 'Lesson' };
+const pct = `${Math.round(PLATFORM_COMMISSION_RATE * 100)}%`;
+/** Quote states in the provider's words (the customer sees "Quote received"). */
+const PROVIDER_QUOTE_LABEL: Record<QuoteStatus, string> = { requested: 'Quote requested', sent: 'Quote sent', revised: 'Revised quote sent', accepted: 'Quote accepted', rejected: 'Quote declined', expired: 'Quote expired' };
 
-/** "Thu 24 Dec 2026" -> Date */
-function requestDate(label: string) {
-  const [, d, mon, y] = label.split(' ');
-  const m = MONTHS_LONG.findIndex((x) => x.startsWith(mon ?? ''));
-  const date = new Date(Number(y), m, Number(d), 12);
-  return Number.isNaN(date.getTime()) || m < 0 ? undefined : date;
-}
+type Line = { label: string; amount: string };
 
-/** Checks the request against your availability and other accepted gigs. */
-function conflictFor(req: IncomingRequest, all: IncomingRequest[], availability: Availability) {
-  const date = requestDate(req.date);
-  if (!date) return undefined;
-  const iso = isoDay(date);
-  const other = all.find((r) => r.id !== req.id && r.status === 'accepted' && r.date === req.date);
-  if (other) return { tone: 'danger' as const, text: `You already accepted ${other.title} that night.` };
-  if (availability.blockedDates.includes(iso)) return { tone: 'warning' as const, text: 'You blocked this date in your availability.' };
-  const wd = WEEKDAY[date.getDay()];
-  if (!availability.days[wd]) return { tone: 'warning' as const, text: `${wd} isn’t one of your usual gig days.` };
-  return undefined;
+/** The request's charges as line items (base fee plus separate charges). */
+function requestItems(r: IncomingRequest): QuoteItem[] {
+  if (!r.charges) return [{ label: BASE_LABEL[r.kind ?? 'performance'], amount: r.offer }];
+  const items: QuoteItem[] = [{ label: `${BASE_LABEL[r.kind ?? 'performance']}${r.kind === 'venue' ? '' : ` · ${r.hours} h`}`, amount: r.charges.base }];
+  (['travel', 'equipment', 'catering', 'security', 'fee'] as const).forEach((k) => {
+    const v = r.charges?.[k];
+    if (v) items.push({ label: CHARGE_LABEL[k], amount: v });
+  });
+  return items;
 }
 
 export default function RequestReview() {
   const { id, decline } = useLocalSearchParams<{ id: string; decline?: string }>();
   const insets = useSafeAreaInsets();
+  const user = useApp((s) => s.user);
   const req = useApp((s) => s.requests.find((r) => r.id === id));
   const requests = useApp((s) => s.requests);
   const availability = useApp((s) => s.availability);
+  const venueListing = useApp((s) => s.venueListing);
   const setStatus = useApp((s) => s.setRequestStatus);
+  const quoteRequest = useApp((s) => s.quoteRequest);
+  const setRequestPayment = useApp((s) => s.setRequestPayment);
   const ensureConversation = useApp((s) => s.ensureConversation);
   const sendMessage = useApp((s) => s.sendMessage);
-  const counterRequest = useApp((s) => s.counterRequest);
-  const balance = useApp((s) => s.balance);
+  const ownArtist = useArtist(OWN_ARTIST_ID);
   // ?decline=1 (from the requests list) opens the decline sheet; it only applies while the request is open.
-  const [sheet, setSheet] = useState(decline === '1');
-  const [reason, setReason] = useState(REASONS[0]);
-  const [counterOpen, setCounterOpen] = useState(false);
-  const [counter, setCounter] = useState(0);
-  const [counterNote, setCounterNote] = useState('');
+  const [declineOpen, setDeclineOpen] = useState(decline === '1');
+  const [composer, setComposer] = useState(false);
+  const [lines, setLines] = useState<Line[]>([]);
+  const [validDays, setValidDays] = useState(7);
+  const [quoteNote, setQuoteNote] = useState('');
 
+  if (!canAcceptBookings(user)) {
+    return (
+      <Screen header={<ScreenHeader title="Request" onBack={() => goBack('/(tabs)')} />}>
+        <PermissionNotice role={user.role === 'venue' ? 'venue' : 'musician'} action="respond to booking requests" />
+      </Screen>
+    );
+  }
   if (!req) {
     return (
       <Screen header={<ScreenHeader title="Request" onBack={() => goBack('/pro/requests')} />}>
@@ -65,203 +73,274 @@ export default function RequestReview() {
       </Screen>
     );
   }
-  const declining = sheet && req.status === 'new';
-  // A saved counter offer is pending until the booker answers; accepting takes their original offer.
-  const countered = req.status === 'new' ? req.counterOffer : undefined;
-  // A counter only makes sense above their offer; the stepper and quick picks start there.
-  const counterMin = req.offer + 50;
-  const counterUnchanged = countered !== undefined && counter === countered && counterNote.trim() === (req.counterNote ?? '');
-  // A completed gig's earnings sit in your available balance until you pay out (same rule as /pro/earnings).
-  const inBalance = req.status === 'past' && balance > 0 && transactions.some((t) => t.title === req.title && t.status === 'available');
-  const amount = countered ?? req.offer;
-  const fee = amount * FEE_RATE;
-  const first = req.requester.split(' ')[0];
+
+  const r = req;
+  const first = r.requester.split(' ')[0];
   // Requests from people with a Domtak profile can be answered in chat.
-  const contact = profiles.find((p) => p.name === req.requester);
-  const conflict = conflictFor(req, requests, availability);
+  const contact = profiles.find((p) => p.name === r.requester);
+  const isQuote = r.pricing === 'quote';
+  const q: QuoteStatus | undefined = r.quote ? (r.status === 'accepted' || r.status === 'past' ? 'accepted' : quoteState(r.quote)) : undefined;
+  const quoteSent = !!r.quote && r.quote.version > 0;
+  const conflict = r.status === 'new' ? requestConflict(r, requests) : undefined;
+  const day = r.isoDate ? parse(r.isoDate) : undefined;
+  const weekday = day ? WEEKDAY[day.getDay()] : undefined;
+  const softWarning =
+    r.status === 'new' && r.isoDate && r.kind !== 'venue'
+      ? availability.blockedDates.includes(r.isoDate)
+        ? 'You blocked this date in your availability.'
+        : weekday && !availability.days[weekday]
+          ? `${weekday} isn’t one of your usual days.`
+          : undefined
+      : undefined;
+  const items = isQuote ? (r.quote?.items ?? []) : requestItems(r);
+  const gross = isQuote ? (r.quote?.total ?? 0) : r.offer;
+  const reminded = reminderDue(r);
+
+  const say = (text: string) => {
+    if (contact) sendMessage(ensureConversation(contact.id), { type: 'text', text });
+  };
   const openChat = () => (contact ? router.push(`/chat/${ensureConversation(contact.id)}`) : router.push('/inbox'));
-  const startCounter = () => {
-    setCounter(Math.max(countered ?? Math.max(availability.feePerHour * req.hours, req.offer + 100), counterMin));
-    setCounterNote(req.counterNote ?? '');
-    setCounterOpen(true);
-  };
-  const sendCounter = () => {
-    if (counter < counterMin || counterUnchanged) return;
-    const note = counterNote.trim();
-    const edited = countered !== undefined;
-    counterRequest(req.id, counter, note);
-    setCounterOpen(false);
-    if (contact) {
-      const cid = ensureConversation(contact.id);
-      sendMessage(cid, { type: 'text', text: `${edited ? 'Updated counter offer' : 'Counter offer'} for ${req.title} (${req.date}): ${euro(counter)} for ${req.hours} h.${note ? ` ${note}` : ''}` });
+
+  // ---------- Quote composer ----------
+  const openComposer = () => {
+    let start: QuoteItem[];
+    if (r.quote?.items.length) start = r.quote.items;
+    else if (!isQuote) start = requestItems(r);
+    else if (r.kind === 'venue') {
+      const v = overlayVenue(venueById(OWN_VENUE_ID), venueListing);
+      start = v ? toLineItems(venueEstimate({ ...v, pricing: 'listed' }, { guests: r.guests }).items).map(({ label, amount }) => ({ label, amount })) : [{ label: 'Venue hire', amount: r.offer }];
+    } else if (r.kind === 'lesson') start = [{ label: 'Lesson', amount: r.offer }];
+    else {
+      start = [{ label: `Performance · ${r.hours} h`, amount: availability.feePerHour * r.hours }];
+      if (ownArtist?.charges?.travel) start.push({ label: 'Travel', amount: ownArtist.charges.travel });
+      if (ownArtist?.charges?.equipment && !/provided|on site|setup/i.test(r.equipment)) start.push({ label: 'Equipment', amount: ownArtist.charges.equipment });
     }
-    toast(`${edited ? 'Updated counter offer' : 'Counter offer'} of ${euro(counter)} sent to ${first}`);
+    setLines(start.map((i) => ({ label: i.label, amount: String(i.amount) })));
+    setQuoteNote(r.quote?.note ?? '');
+    setValidDays(7);
+    setComposer(true);
   };
-  const accept = () => {
-    setStatus(req.id, 'accepted');
-    // Same model as the requests list, workspace and earnings: an accepted gig's payment is held in escrow right away.
-    toast(`Accepted ${req.title}. ${euro(req.offer)} is held in escrow until after the gig.`);
+  const draftItems: QuoteItem[] = lines.map((l) => ({ label: l.label.trim(), amount: Number(l.amount.replace(',', '.')) || 0 })).filter((l) => l.label && l.amount > 0);
+  const draftTotal = quoteTotal(draftItems);
+  const validUntil = isoDay(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + validDays, 12));
+  const unchanged = quoteSent && r.quote && JSON.stringify(r.quote.items) === JSON.stringify(draftItems) && (r.quote.note ?? '') === quoteNote.trim();
+  const sendQuote = () => {
+    if (!draftItems.length || unchanged) return;
+    const revision = quoteSent || !isQuote;
+    quoteRequest(r.id, draftItems, validUntil, quoteNote.trim() || undefined);
+    say(`${revision ? 'Revised offer' : 'Quote'} for ${r.title} (${r.date}): ${draftItems.map((i) => `${i.label} ${euro(i.amount)}`).join(', ')}. Total ${euro(draftTotal)}, valid until ${shortDate(validUntil)}.${quoteNote.trim() ? ` ${quoteNote.trim()}` : ''}`);
+    setComposer(false);
+    toast(revision ? `Revised offer sent to ${first}. It needs their acceptance.` : `Quote sent to ${first}`);
   };
 
-  if (req.status === 'accepted') {
-    return (
-      <Screen
-        header={<ScreenHeader title={req.title} onBack={() => goBack('/pro/requests')} />}
-        footer={
-          <BottomBar>
-            <Button title={contact ? `Message ${first}` : 'Open inbox'} icon="message-text-outline" onPress={openChat} />
-            <Button title="Open calendar" variant="ghost" onPress={() => { const d = requestDate(req.date); router.push(d ? { pathname: '/(tabs)/calendar', params: { date: isoDay(d) } } : '/(tabs)/calendar'); }} style={{ marginTop: 6 }} />
-          </BottomBar>
-        }
-        contentStyle={{ alignItems: 'center', gap: 14, paddingTop: 40, paddingHorizontal: 24 }}
-      >
-        <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="check" size={48} color={colors.white} />
-        </View>
-        <T v="h2" center>Booking accepted</T>
-        <T v="body" color={colors.muted} center>{`${req.requester}’s payment of ${euro(req.offer)} is held in escrow. You receive ${euro(req.offer * (1 - FEE_RATE))} 24 h after the gig, and the date is locked in your calendar.`}</T>
-        <Card style={{ alignSelf: 'stretch', gap: 6, marginTop: 8 }}>
-          <KeyValue k="Date" v={req.date} />
-          <KeyValue k="Time" v={req.time} />
-          <KeyValue k="Offer" v={euro(req.offer, true)} />
-          <KeyValue k="You receive" v={euro(req.offer * (1 - FEE_RATE), true)} color={colors.brand} />
-        </Card>
-      </Screen>
+  const accept = () => {
+    if (conflict) return;
+    setStatus(r.id, 'accepted');
+    say(`I’ve accepted ${r.title} on ${r.date}. Looking forward to it!`);
+    toast('Accepted. The customer’s payment is being finalized; the booking is confirmed once it’s verified.');
+  };
+
+  // ---------- Status banner ----------
+  let status: { tone: 'success' | 'warning' | 'danger' | 'brand' | 'neutral'; icon: 'check-decagram' | 'credit-card-clock-outline' | 'credit-card-off-outline' | 'close-circle-outline' | 'clock-outline' | 'cash-check'; text: string } | undefined;
+  if (r.status === 'accepted') {
+    status =
+      r.payment === 'paid'
+        ? { tone: 'success', icon: 'check-decagram', text: 'Confirmed: the customer’s payment is verified and the date is locked in your calendar.' }
+        : r.payment === 'failed'
+          ? { tone: 'danger', icon: 'credit-card-off-outline', text: 'The customer’s payment failed, so this booking isn’t confirmed. They can retry safely on the same booking; nothing was charged.' }
+          : { tone: 'warning', icon: 'credit-card-clock-outline', text: `Accepted · waiting for the customer’s verified payment. Don’t treat the ${r.kind === 'venue' ? 'date' : 'gig'} as confirmed until then.` };
+  } else if (r.status === 'declined') {
+    status = { tone: 'neutral', icon: 'close-circle-outline', text: `You declined this request. ${r.payment === 'released' ? 'The customer’s payment authorization was released.' : r.payment === 'release_pending' ? 'The customer’s payment authorization is being released (release pending).' : 'The customer wasn’t charged.'}` };
+  } else if (r.status === 'expired') {
+    status = { tone: 'warning', icon: 'clock-outline', text: `No response within ${RESPONSE_HOURS} hours, so the request expired. ${r.payment === 'released' ? 'The customer’s payment was released.' : 'Release of the customer’s payment has started.'}` };
+  } else if (r.status === 'past') {
+    status = { tone: 'success', icon: 'cash-check', text: `Completed. Payout: ${r.payment ? PAYMENT_PROVIDER_LABEL[r.payment].toLowerCase() : 'see Earnings'}.` };
+  }
+
+  // ---------- Demo controls ----------
+  const demo: { label: string; onPress: () => void }[] = [];
+  if (r.status === 'new' && isQuote && (q === 'sent' || q === 'revised')) {
+    demo.push({ label: `${first} accepts your quote`, onPress: () => { setStatus(r.id, 'accepted'); setRequestPayment(r.id, 'capture_pending'); toast(`${first} accepted · payment being finalized`); } });
+  }
+  if (r.status === 'accepted' && r.payment !== 'paid') {
+    demo.push({ label: 'Customer payment verified', onPress: () => { setRequestPayment(r.id, 'paid'); toast('Payment verified · booking confirmed'); } });
+    if (r.payment !== 'failed') demo.push({ label: 'Customer payment fails', onPress: () => { setRequestPayment(r.id, 'failed'); toast('Payment failed · not confirmed'); } });
+  }
+  if (r.status === 'accepted' && r.payment === 'paid') demo.push({ label: 'The event took place', onPress: () => { setStatus(r.id, 'past'); setRequestPayment(r.id, 'payout_pending'); toast('Completed · payout pending'); } });
+  if (r.payment === 'release_pending') demo.push({ label: 'Payment provider confirms the release', onPress: () => { setRequestPayment(r.id, 'released'); toast('Release confirmed'); } });
+  if (r.status === 'past' && r.payment === 'payout_pending') demo.push({ label: 'Payout sent', onPress: () => { setRequestPayment(r.id, 'paid_out'); toast('Paid out'); } });
+
+  // ---------- Footer ----------
+  let footer = null;
+  if (r.status === 'new') {
+    footer = (
+      <BottomBar>
+        {conflict ? <T v="small" color={colors.danger} style={{ marginBottom: 8 }}>{`Accepting is blocked: you already accepted ${conflict.title} on this date.`}</T> : null}
+        <Row gap={8}>
+          <Button title="Decline" variant="secondary" size="md" style={{ flex: 1, borderColor: colors.borderStrong }} onPress={() => setDeclineOpen(true)} />
+          {isQuote ? (
+            <Button title={quoteSent ? (q === 'expired' ? 'Send new quote' : 'Revise quote') : 'Send quote'} size="md" style={{ flex: 1.4 }} onPress={openComposer} />
+          ) : (
+            <>
+              <Button title="Propose changes" accessibilityLabel="Propose different terms as a revised offer" variant="secondary" size="md" style={{ flex: 1.2, paddingHorizontal: 10 }} onPress={openComposer} />
+              <Button title="Accept" accessibilityLabel={`Accept ${first}’s request for ${euro(r.offer)}`} size="md" style={{ flex: 1 }} disabled={!!conflict} onPress={accept} />
+            </>
+          )}
+        </Row>
+      </BottomBar>
+    );
+  } else if (r.status === 'accepted') {
+    footer = (
+      <BottomBar>
+        <Button title={contact ? `Message ${first}` : 'Open inbox'} icon="message-text-outline" onPress={openChat} />
+        <Button title="Open calendar" variant="ghost" onPress={() => router.push(r.isoDate ? { pathname: '/(tabs)/calendar', params: { date: r.isoDate } } : '/(tabs)/calendar')} style={{ marginTop: 6 }} />
+      </BottomBar>
     );
   }
 
   return (
     <>
-      <Screen
-        header={<ScreenHeader title={`Request from ${first}`} onBack={() => goBack('/pro/requests')} />}
-        footer={
-          req.status === 'new' ? (
-            <BottomBar>
-              <Row gap={8}>
-                <Button title="Decline" variant="secondary" size="md" style={{ flex: 1, borderColor: colors.borderStrong }} onPress={() => setSheet(true)} />
-                <Button title="Counter" accessibilityLabel={countered ? `Edit your counter offer of ${euro(countered)}` : 'Make a counter offer'} variant="secondary" size="md" style={{ flex: 1, paddingHorizontal: 12 }} onPress={startCounter} />
-                <Button title="Accept" accessibilityLabel={`Accept ${first}’s offer of ${euro(req.offer)}`} size="md" style={{ flex: 1 }} onPress={accept} />
-              </Row>
-            </BottomBar>
-          ) : null
-        }
-      >
+      <Screen header={<ScreenHeader title={r.status === 'new' ? `Request from ${first}` : r.title} subtitle={REQUEST_STATUS_LABEL[r.status]} onBack={() => goBack('/pro/requests')} />} footer={footer}>
         <Row gap={12}>
-          <Avatar src={contact?.avatar} label={req.initials} size={48} verified={contact?.verified} />
+          <Avatar src={contact?.avatar} label={r.initials} size={48} verified={contact?.verified} />
           <View style={{ flex: 1 }}>
-            <T v="bodyBold">{req.requester}</T>
-            <T v="small">{req.requesterRole}</T>
+            <T v="bodyBold">{r.requester}</T>
+            <T v="small">{r.requesterRole}</T>
           </View>
-          {req.status === 'new' ? <T v="smallBold" color={colors.warning}>Expires in {req.expires}</T> : null}
+          {r.status === 'new' ? <TimeLeft deadline={r.deadline} /> : <PaymentPill state={r.payment} provider />}
         </Row>
-        <Card style={{ gap: 12 }}>
-          <T v="h2">{req.title}</T>
-          <KeyValue k="Date" v={req.date} />
-          <KeyValue k="Time" v={`${req.time} (${req.hours} h)`} />
-          <KeyValue k="Location" v={req.location} />
-          <KeyValue k="Guests" v={`~${req.guests} people`} />
-          <KeyValue k="Equipment" v={req.equipment} />
-          {req.message ? <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.brandTint }}><T v="body" color="#2E1D5E">“{req.message}”</T></View> : null}
-        </Card>
-        {req.status === 'new' ? (
-          conflict ? (
-            <Banner icon="calendar-alert" tone={conflict.tone}>{conflict.text}</Banner>
-          ) : (
-            <Banner icon="calendar-check" tone="success">You’re free that night. No calendar conflicts.</Banner>
-          )
-        ) : null}
-        {countered !== undefined ? (
-          <Banner icon="swap-horizontal" tone="brand">
-            <View style={{ gap: 8 }}>
-              <View style={{ gap: 2 }}>
-                <T v="bodyBold" color={COUNTER_INK}>Counter offer {euro(countered)} sent</T>
-                <T v="small" color={COUNTER_INK}>{`${first} offered ${euro(req.offer)} and can accept your counter or reply${contact ? ' in chat' : ''}. Tap Accept to take the original offer instead.`}</T>
-                {req.counterNote ? <T v="small" color={COUNTER_INK}>{`Your note: “${req.counterNote}”`}</T> : null}
-              </View>
-              <Button title="Edit counter offer" icon="pencil-outline" variant="secondary" size="sm" accessibilityLabel={`Edit your counter offer of ${euro(countered)}`} style={{ alignSelf: 'flex-start' }} onPress={startCounter} />
-            </View>
+
+        {r.status === 'new' ? (
+          <Banner icon={reminded ? 'bell-ring-outline' : 'timer-sand'} tone={reminded ? 'warning' : 'brand'}>
+            {`Answer by ${r.deadline ? dateTime(r.deadline) : 'the deadline'}. ${reminded && r.reminderAt ? `A reminder was sent ${ago(r.reminderAt)} after ${REMINDER_HOURS} hours without a response. ` : `You get a reminder after ${REMINDER_HOURS} hours. `}If you don’t answer, the request expires and the customer’s payment is released.`}
           </Banner>
         ) : null}
+
+        {status ? <Banner icon={status.icon} tone={status.tone}>{status.text}</Banner> : null}
+
         <Card style={{ gap: 6 }}>
-          {countered !== undefined ? <KeyValue k="Their offer" v={euro(req.offer, true)} /> : null}
-          <KeyValue k={countered !== undefined ? 'Your counter offer' : 'Offer'} v={euro(amount, true)} />
-          <KeyValue k="Domtak fee (10%)" v={`−${euro(fee, true)}`} />
-          <Divider style={{ marginVertical: 6 }} />
-          <KeyValue k={countered !== undefined ? `You receive if ${first} accepts` : 'You receive'} v={euro(amount - fee, true)} strong color={colors.brand} />
-          <T v="small" style={{ fontSize: 12 }}>Held in escrow once you accept, released 24 h after the gig.</T>
+          <T v="h2">{r.title}</T>
+          {r.kind && r.kind !== 'performance' ? <Pill label={BASE_LABEL[r.kind]} tone="neutral" /> : null}
+          <KeyValue k="Date" v={r.date} />
+          <KeyValue k="Time" v={`${r.time} (${r.hours} h)`} />
+          <KeyValue k="Location" v={r.location} />
+          <KeyValue k="Guests" v={`~${r.guests} people`} />
+          <KeyValue k="Equipment" v={r.equipment} />
+          {r.message ? <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.brandTint, marginTop: 4 }}><T v="body" color="#2E1D5E">“{r.message}”</T></View> : null}
         </Card>
-        {req.status === 'declined' ? <Banner icon="close" tone="danger">You declined this request. The booker was notified and not charged.</Banner> : null}
-        {req.status === 'past' ? (
-          inBalance ? (
-            <Banner icon="check" tone="success">{`Completed. ${euro(req.offer * (1 - FEE_RATE))} is in your available balance until you pay out.`}</Banner>
+
+        {r.status === 'new' ? (
+          conflict ? (
+            <Banner icon="calendar-alert" tone="danger">{`You already accepted ${conflict.title} on ${conflict.date}. Accepting this request is blocked so you don’t double-book. Decline it, or message ${first} about another date.`}</Banner>
+          ) : softWarning ? (
+            <Banner icon="calendar-alert" tone="warning">{`${softWarning} You can still accept if you’re available.`}</Banner>
           ) : (
-            <Banner icon="check" tone="success">Completed and paid out.</Banner>
+            <Banner icon="calendar-check" tone="success">No conflicts with your confirmed work on this date.</Banner>
           )
         ) : null}
-        {inBalance ? <Button title="Pay out in Earnings" variant="secondary" icon="wallet-outline" onPress={() => router.push('/pro/earnings')} /> : null}
-        {contact && req.status !== 'new' ? <Button title={`Message ${first}`} variant="secondary" icon="message-text-outline" onPress={openChat} /> : null}
+
+        {r.counterOffer !== undefined && r.status === 'new' && !quoteSent ? (
+          <Banner icon="swap-horizontal">{`Your earlier counter offer of ${euro(r.counterOffer)} is still with ${first}. Use Propose changes to send an itemised revised offer they can accept.`}</Banner>
+        ) : null}
+
+        <Card style={{ gap: 10 }}>
+          <Row justify="space-between">
+            <T v="title">{isQuote ? (quoteSent ? `Your quote v${r.quote?.version}` : 'Quote requested') : 'Requested charges'}</T>
+            {isQuote && q ? <Pill label={PROVIDER_QUOTE_LABEL[q]} tone={QUOTE_STATUS_TONE[q]} /> : null}
+          </Row>
+          {isQuote && !quoteSent ? (
+            <T v="body" color={colors.muted}>{`${first} asked for an itemised quote. List the performance, travel, equipment and any other charges separately.`}</T>
+          ) : (
+            <LineItems items={items} total={gross} totalLabel={isQuote ? 'Quote total' : 'Customer total'} />
+          )}
+          {isQuote && quoteSent && r.quote?.validUntil ? (
+            <T v="small">{q === 'expired' ? `Expired on ${shortDate(r.quote.validUntil)}. Send a new quote if you still want the booking.` : `Valid until ${shortDate(r.quote.validUntil)}. ${q === 'revised' ? 'A revised quote needs the customer’s acceptance again.' : `Waiting for ${first} to accept, decline or ask questions.`}`}</T>
+          ) : null}
+          {!isQuote ? <T v="small">Accepting keeps exactly these terms. To change anything, send a revised offer instead; nothing changes until {first} accepts it.</T> : null}
+        </Card>
+
+        {gross > 0 ? (
+          <Card style={{ gap: 6 }}>
+            <T v="title" style={{ marginBottom: 2 }}>Your estimated earnings</T>
+            <KeyValue k="Gross booking value" v={euro(gross, true)} />
+            <KeyValue k={`Platform commission (${pct})`} v={`−${euro(commissionOf(gross), true)}`} />
+            <Divider style={{ marginVertical: 4 }} />
+            <KeyValue k="Estimated payout" v={euro(providerNet(gross), true)} strong color={colors.brand} />
+            <T v="small" style={{ fontSize: 12 }}>Estimated. You’re paid only after a verified payment, and payout timing follows the settlement policy. Gross is not what you receive.</T>
+            {r.status === 'past' ? <Button title="Open earnings" variant="light" size="md" icon="wallet-outline" onPress={() => router.push('/pro/earnings')} style={{ marginTop: 6 }} /> : null}
+          </Card>
+        ) : null}
+
+        {contact && r.status !== 'new' && r.status !== 'accepted' ? <Button title={`Message ${first}`} variant="secondary" icon="message-text-outline" onPress={openChat} /> : null}
+        {r.status === 'new' && contact ? <Button title={`Discuss scope with ${first}`} variant="ghost" icon="message-text-outline" onPress={openChat} /> : null}
+
+        {demo.length ? (
+          <DemoBar note="Simulate what the customer, the bank or time does next. Each button changes this request for real.">
+            <View style={{ gap: 8 }}>
+              {demo.map((a) => <Button key={a.label} title={a.label} variant="light" size="md" onPress={a.onPress} />)}
+            </View>
+          </DemoBar>
+        ) : null}
       </Screen>
 
-      <Modal visible={declining} transparent animationType="slide" onRequestClose={() => setSheet(false)}>
-        <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1 }} onPress={() => setSheet(false)} />
-          <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: insets.bottom + 20, gap: 12 }}>
-            <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
-            <T v="h3">Why are you declining?</T>
-            <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
-              {REASONS.map((r) => (
-                <Pressable key={r} accessibilityRole="radio" accessibilityState={{ checked: reason === r }} onPress={() => setReason(r)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, height: 52, paddingHorizontal: 14, borderRadius: 14, borderWidth: reason === r ? 2 : 1, borderColor: reason === r ? colors.brand : colors.border, backgroundColor: reason === r ? colors.brandTint : colors.surface }}>
-                  <Radio selected={reason === r} />
-                  <T v="body">{r}</T>
-                </Pressable>
-              ))}
-            </View>
-            <T v="small">The requester is notified and not charged.</T>
-            <Row gap={10}>
-              <Button title="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setSheet(false)} />
-              <Button
-                title="Decline request"
-                variant="danger"
-                style={{ flex: 1 }}
-                onPress={() => {
-                  setStatus(req.id, 'declined');
-                  setSheet(false);
-                  toast(`Declined: ${reason.toLowerCase()}`);
-                  goBack('/pro/requests');
-                }}
-              />
-            </Row>
-          </View>
-        </View>
-      </Modal>
+      <ReasonSheet
+        visible={declineOpen && r.status === 'new'}
+        title="Why are you declining?"
+        body={`${first} is told you can’t take it. ${r.payment === 'authorized' ? 'Their payment authorization is released.' : 'Nothing was charged.'} Declining doesn’t affect their other bookings.`}
+        reasons={DECLINE_REASONS}
+        confirmLabel="Decline request"
+        destructive
+        notePlaceholder={`Note for ${first} (optional)`}
+        onSubmit={(reason, note) => {
+          setStatus(r.id, 'declined');
+          say(`Sorry, I can’t take ${r.title} on ${r.date}: ${reason.toLowerCase()}.${note ? ` ${note}` : ''}`);
+          toast(`Declined: ${reason.toLowerCase()}`);
+        }}
+        onClose={() => setDeclineOpen(false)}
+      />
 
-      <Modal visible={counterOpen} transparent animationType="slide" onRequestClose={() => setCounterOpen(false)}>
+      <Modal visible={composer} transparent animationType="slide" onRequestClose={() => setComposer(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={{ flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' }}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close counter offer" style={{ flex: 1 }} onPress={() => setCounterOpen(false)} />
-            <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: insets.bottom + 20, gap: 14 }}>
-              <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
-              <T v="h3">{countered !== undefined ? 'Edit counter offer' : 'Counter offer'}</T>
-              <T v="small">{req.title} · {req.date} · {req.hours} h. {first} offered {euro(req.offer)}; your usual fee is {euro(availability.feePerHour)}/h ({euro(availability.feePerHour * req.hours)}).</T>
-              <Row justify="space-between">
-                <View>
-                  <T v="label">Your price</T>
-                  <T v="small">{euro(counter / req.hours)}/h</T>
-                </View>
-                <Stepper value={counter} onChange={setCounter} min={counterMin} max={20000} step={50} label="counter offer" format={(n) => euro(n)} />
-              </Row>
-              <Row gap={8} style={{ flexWrap: 'wrap' }}>
-                {[req.offer + 100, req.offer + 250, availability.feePerHour * req.hours].filter((v, i, all) => v >= counterMin && all.indexOf(v) === i).map((v) => (
-                  <Button key={v} title={euro(v)} variant={counter === v ? 'primary' : 'light'} size="sm" accessibilityState={{ selected: counter === v }} onPress={() => setCounter(v)} />
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" style={{ flex: 1 }} onPress={() => setComposer(false)} />
+            <View accessibilityViewIsModal style={{ maxHeight: '90%', backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, paddingBottom: insets.bottom + 16 }}>
+              <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong, marginBottom: 8 }} />
+              <ScrollView contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }} keyboardShouldPersistTaps="handled">
+                <T v="h3" accessibilityRole="header">{!isQuote ? 'Propose different terms' : quoteSent ? `Revise quote (v${(r.quote?.version ?? 0) + 1})` : 'Send an itemised quote'}</T>
+                <T v="small">
+                  {!isQuote
+                    ? `${first}’s request stays exactly as sent until they accept your revised offer. Nothing changes silently.`
+                    : quoteSent
+                      ? 'The revision replaces your earlier quote and needs the customer’s explicit acceptance.'
+                      : 'List each charge separately. The customer accepts, declines or asks questions before paying.'}
+                </T>
+                {lines.map((l, i) => (
+                  <Row key={i} gap={8} align="flex-start">
+                    <Field placeholder="Item" value={l.label} onChangeText={(t) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, label: t } : x)))} accessibilityLabel={`Item ${i + 1} name`} style={{ flex: 1 }} />
+                    <Field placeholder="€" value={l.amount} onChangeText={(t) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, amount: t.replace(/[^\d,.]/g, '') } : x)))} keyboardType="decimal-pad" accessibilityLabel={`Item ${i + 1} amount in euro`} style={{ width: 96 }} />
+                    <IconButton name="close" label={`Remove item ${i + 1}`} size={44} iconSize={20} color={colors.muted} onPress={() => setLines((ls) => ls.filter((_, j) => j !== i))} />
+                  </Row>
                 ))}
-              </Row>
-              <Field label="Note (optional)" value={counterNote} onChangeText={setCounterNote} placeholder="e.g. Includes my own CDJs and an extra 30 min" multiline />
-              <KeyValue k="You’d receive" v={euro(counter * (1 - FEE_RATE), true)} color={colors.brand} />
-              <Row gap={10}>
-                <Button title="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setCounterOpen(false)} />
-                <Button title={countered !== undefined ? 'Update counter' : 'Send counter'} style={{ flex: 1 }} disabled={counterUnchanged} onPress={sendCounter} />
-              </Row>
-              {counterUnchanged ? <T v="small" center>Change the price or the note to update your counter.</T> : null}
+                <Button title="Add a line" icon="plus" variant="ghost" size="md" onPress={() => setLines((ls) => [...ls, { label: '', amount: '' }])} style={{ alignSelf: 'flex-start' }} />
+                <View style={{ gap: 8 }}>
+                  <T v="label">Valid for</T>
+                  <Row gap={8}>
+                    {VALIDITY.map((d) => <Chip key={d} label={`${d} days`} selected={validDays === d} onPress={() => setValidDays(d)} />)}
+                  </Row>
+                  <T v="small">Valid until {shortDate(validUntil)}. An expired quote can’t be accepted.</T>
+                </View>
+                <Field label="Note (optional)" value={quoteNote} onChangeText={setQuoteNote} multiline placeholder="e.g. Two sets with a 30-minute break" />
+                <View style={{ gap: 4 }}>
+                  <KeyValue k="Total for the customer" v={euro(draftTotal, true)} strong />
+                  <KeyValue k={`Platform commission (${pct})`} v={`−${euro(commissionOf(draftTotal), true)}`} />
+                  <KeyValue k="Your estimated payout" v={euro(providerNet(draftTotal), true)} color={colors.brand} />
+                </View>
+                <Row gap={10}>
+                  <Button title="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setComposer(false)} />
+                  <Button title={!isQuote || quoteSent ? 'Send revision' : 'Send quote'} style={{ flex: 1 }} disabled={!draftItems.length || !!unchanged} onPress={sendQuote} />
+                </Row>
+                {!draftItems.length ? <T v="small" center>Add at least one item with a name and an amount.</T> : unchanged ? <T v="small" center>Change an item or the note to send a revision.</T> : null}
+              </ScrollView>
             </View>
           </View>
         </KeyboardAvoidingView>

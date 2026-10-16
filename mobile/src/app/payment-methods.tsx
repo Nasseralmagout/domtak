@@ -3,18 +3,24 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { Screen, ScreenHeader } from '../components/layout';
-import { Banner, Button, Card, Field, Radio, Row, T } from '../components/ui';
+import { Banner, Button, Card, Field, Radio, Row, SectionTitle, T } from '../components/ui';
 import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors, fonts, radius } from '../theme';
 
 export default function PaymentMethods() {
-  const params = useLocalSearchParams<{ add?: string; payout?: string }>();
+  const params = useLocalSearchParams<{ add?: string; payout?: string; iban?: string }>();
   const methods = useApp((s) => s.paymentMethods);
   const selected = useApp((s) => s.selectedPayment);
   const setSelected = useApp((s) => s.setSelectedPayment);
   const addMethod = useApp((s) => s.addPaymentMethod);
+  const role = useApp((s) => s.user.role);
   const [adding, setAdding] = useState(params.add === '1');
+  const [addingIban, setAddingIban] = useState(params.iban === '1');
+  const [iban, setIban] = useState('');
+  const [holder, setHolder] = useState('');
+  const [ibanError, setIbanError] = useState<string>();
+  const payoutAccount = methods.find((m) => m.badge === 'SEPA');
   const [number, setNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvc, setCvc] = useState('');
@@ -34,6 +40,22 @@ export default function PaymentMethods() {
     toast(`Card ending ${digits.slice(-4)} added and set as default`);
     // Opened from checkout to add a card: return there (only when there is a screen to return to).
     if (params.add === '1' && router.canGoBack()) router.back();
+  };
+
+  const saveIban = () => {
+    const compact = iban.replace(/\s/g, '').toUpperCase();
+    if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(compact)) return setIbanError('Enter a valid IBAN, e.g. DE89 3704 0044 0532 0130 00');
+    if (holder.trim().length < 3) return setIbanError('Enter the account holder’s name');
+    const previous = selected;
+    addMethod({ label: 'SEPA direct debit', sub: `${compact.slice(0, 2)}•• •••• ${compact.slice(-4)}`, badge: 'SEPA' });
+    // A payout account shouldn't silently become the default way to pay for bookings.
+    if (previous) setSelected(previous);
+    setAddingIban(false);
+    setIban('');
+    setHolder('');
+    setIbanError(undefined);
+    toast(`Bank account ending ${compact.slice(-4)} added`);
+    if (params.iban === '1' && router.canGoBack()) router.back();
   };
 
   const cancel = () => {
@@ -81,7 +103,37 @@ export default function PaymentMethods() {
       ) : (
         <Button title="Add new card" icon="plus" variant="secondary" onPress={() => setAdding(true)} />
       )}
-      <Banner icon="lock-outline">Card details are tokenised by our payment provider (e.g. Stripe) — Domtak never stores your full card number.</Banner>
+      <Banner icon="credit-card-clock-outline">For booking requests your payment stays pending the provider’s decision. It is released or refunded if they decline or don’t answer within 24 hours.</Banner>
+
+      {role !== 'fan' || addingIban || payoutAccount ? (
+        <View style={{ gap: 10 }}>
+          <SectionTitle title="Payout account" />
+          {payoutAccount ? (
+            <Card style={{ gap: 4 }}>
+              <T v="bodyBold">{payoutAccount.label}</T>
+              <T v="small">{payoutAccount.sub} · used for provider payouts</T>
+            </Card>
+          ) : (
+            <T v="small">Providers need a bank account to receive payouts for completed bookings.</T>
+          )}
+          {addingIban ? (
+            <Card style={{ gap: 12 }}>
+              <T v="title">Add a bank account (SEPA)</T>
+              <Field label="IBAN" value={iban} onChangeText={(t) => { setIban(t.replace(/[^A-Za-z0-9 ]/g, '').slice(0, 42)); setIbanError(undefined); }} autoCapitalize="characters" placeholder="DE89 3704 0044 0532 0130 00" icon="bank-outline" />
+              <Field label="Account holder" value={holder} onChangeText={(t) => { setHolder(t); setIbanError(undefined); }} placeholder="Name on the account" />
+              {ibanError ? <T v="small" color={colors.danger}>{ibanError}</T> : null}
+              <Row gap={10}>
+                <Button title="Cancel" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => { setAddingIban(false); setIbanError(undefined); if (params.iban === '1' && router.canGoBack()) router.back(); }} />
+                <Button title="Save account" size="md" style={{ flex: 1 }} onPress={saveIban} />
+              </Row>
+            </Card>
+          ) : !payoutAccount ? (
+            <Button title="Add bank account" icon="bank-plus" variant="secondary" onPress={() => setAddingIban(true)} />
+          ) : null}
+        </View>
+      ) : null}
+
+      <Banner icon="lock-outline">Card and bank details are tokenised by our payment provider. Domtak never stores your full card number.</Banner>
     </Screen>
   );
 }

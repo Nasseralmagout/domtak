@@ -1,16 +1,22 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { useMemo } from 'react';
 import { Pressable, Share, View } from 'react-native';
 
 import { Screen, ScreenHeader } from '../components/layout';
-import { Button, EmptyState, Icon, Photo, Row, T } from '../components/ui';
-import { venueById } from '../data/mock';
+import { Banner, Button, Card, Checklist, EmptyState, Icon, Photo, Pill, Row, T } from '../components/ui';
+import { readinessLine } from '../lib/eventHost';
+import { draftIssues, EVENT_STATE_TONE, eventState, eventStateLabel, linkedBookings, readiness } from '../lib/events';
 import { shortDate, time } from '../lib/format';
-import { useEvent } from '../store/useApp';
+import { toast } from '../store/toast';
+import { useApp, useEvent, useVenue } from '../store/useApp';
 import { colors, radius, shadow } from '../theme';
 
 export default function EventCreated() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const event = useEvent(id);
+  const venue = useVenue(event?.venueId);
+  const bookings = useApp((s) => s.bookings);
+  const linked = useMemo(() => (event ? linkedBookings(event, bookings) : []), [event, bookings]);
 
   if (!event) {
     return (
@@ -20,29 +26,88 @@ export default function EventCreated() {
     );
   }
 
-  const venue = venueById(event.venueId);
-  return (
-    <Screen edges={['top', 'bottom']} contentStyle={{ alignItems: 'center', paddingHorizontal: 24, paddingTop: 32, gap: 12 }}>
-      <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: colors.brandDeep, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name="check" size={50} color={colors.white} />
-      </View>
-      <T v="h1" color={colors.brandMid} center>Nice!{'\n'}Your event is created!</T>
-      <T v="body" color={colors.muted} center>You can now edit or add more information, create a promotion and start inviting guests.</T>
-      <T v="h3" color={colors.brandMid} center style={{ marginTop: 8 }}>{event.title}</T>
-      <T v="body" center>{shortDate(event.start)} at {time(event.start)}{'\n'}{venue?.name ?? 'Venue to be announced'}, Berlin</T>
-      <Photo src={event.cover} style={{ width: '100%', height: 200 }} radius={18} accessibilityLabel={`${event.title} cover`} />
-      <Row gap={12} style={{ alignSelf: 'stretch' }}>
-        <Button title="Invite guests" icon="account-plus-outline" style={{ flex: 1 }} size="md" onPress={() => router.push(`/invite?event=${event.id}`)} />
-        <Button title="Share event" icon="share-variant-outline" style={{ flex: 1, backgroundColor: colors.brandMid }} size="md" onPress={() => Share.share({ message: `Join me at ${event.title} on Domtak` }).catch(() => {})} />
-      </Row>
+  const state = eventState(event, bookings);
+  const isDraft = state === 'draft';
+  const issues = isDraft ? draftIssues(event) : [];
+  const r = readiness(event, bookings);
+  const hasArtist = linked.some((b) => b.type === 'musician');
+  const hasVenueBooking = linked.some((b) => b.type === 'venue');
+  const invited = event.invitations?.length ?? 0;
+  // Promotion is for public events that are live (never drafts, private or cancelled events).
+  const canPromote = !event.isPrivate && state !== 'draft' && state !== 'cancelled' && state !== 'completed';
+  const heading = isDraft ? 'Draft saved' : event.isPrivate ? 'Invitations are open' : 'Your event is published!';
+  const body = isDraft
+    ? event.isPrivate
+      ? 'Only you can see it. Next: find artists and a venue, then invite your guests.'
+      : 'Only you can see it until you publish. Arrange your providers, then publish from the event workspace.'
+    : event.isPrivate
+      ? 'Invite guests and set cost sharing. Only people you invite can see it.'
+      : 'It is visible in Discover, Search and on the map.';
 
-      {!event.isPrivate ? (
+  const share = () =>
+    Share.share({ message: event.isPrivate ? `You’re invited to ${event.title} on Domtak: https://domtak.de/e/${event.id}` : `Join me at ${event.title} on Domtak` }).catch(() => toast('Could not open the share sheet'));
+
+  return (
+    <Screen edges={['top', 'bottom']} contentStyle={{ paddingHorizontal: 20, paddingTop: 24, gap: 14 }}>
+      <View style={{ alignItems: 'center', gap: 10 }}>
+        <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: colors.brandDeep, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={isDraft ? 'content-save-outline' : 'check'} size={44} color={colors.white} />
+        </View>
+        <T v="h1" color={colors.brandMid} center>{heading}</T>
+        <T v="body" color={colors.muted} center>{body}</T>
+      </View>
+
+      <Card padded={false} style={{ overflow: 'hidden' }} onPress={() => router.push(`/event/${event.id}`)} accessibilityLabel={`${event.title}. Open event page`}>
+        <Photo src={event.cover} style={{ height: 150 }} accessibilityLabel={`${event.title} cover`} />
+        <View style={{ padding: 14, gap: 6 }}>
+          <Row gap={6} style={{ flexWrap: 'wrap' }}>
+            <Pill label={eventStateLabel(state, event.isPrivate)} tone={EVENT_STATE_TONE[state]} />
+            <Pill label={event.isPrivate ? 'Private' : 'Public'} icon={event.isPrivate ? 'lock-outline' : 'earth'} tone="neutral" />
+          </Row>
+          <T v="h3">{event.title}</T>
+          <T v="small">{shortDate(event.start)} at {time(event.start)} · {venue ? `${venue.name}, ${venue.area}` : 'Venue not decided yet'}</T>
+          {linked.length ? <T v="smallBold" color={r.ready ? colors.success : colors.warning}>{readinessLine(r)}</T> : null}
+        </View>
+      </Card>
+
+      {issues.length ? (
+        <Banner icon="clipboard-alert-outline" tone="warning">{`To finish before ${event.isPrivate ? 'inviting guests' : 'publishing'}: ${issues.join('; ')}.`}</Banner>
+      ) : null}
+
+      <Card style={{ gap: 4 }}>
+        <Checklist
+          title="Next steps"
+          items={[
+            {
+              label: 'Find artists',
+              done: hasArtist,
+              hint: 'Send each artist a separate request and pick this event in the form, so it is linked here.',
+              onPress: () => router.push('/artists/all'),
+            },
+            venue
+              ? {
+                  label: `Request ${venue.name}`,
+                  done: hasVenueBooking,
+                  hint: 'Venue hire, plus catering and security priced by guest count.',
+                  onPress: () => router.push({ pathname: '/booking/new', params: { type: 'venue', id: venue.id, eventId: event.id } }),
+                }
+              : { label: 'Find a venue', done: hasVenueBooking, hint: 'Compare capacity, parking and outdoor space.', onPress: () => router.push('/venues') },
+            {
+              label: event.isPrivate ? 'Invite guests and set cost sharing' : 'Invite friends',
+              done: invited > 0,
+              hint: isDraft && issues.length ? 'Finish the draft first, then invite.' : event.isPrivate ? 'Friends or people you follow; guests pay their share when they accept.' : 'Send the event to friends on Domtak.',
+              onPress: () => router.push(`/invite?event=${event.id}`),
+            },
+          ]}
+        />
+      </Card>
+
+      {canPromote ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Promote event. Featured in Discover, Map and Search from 49 euros a week"
           onPress={() => router.push(`/pro/promote/${event.id}`)}
           style={({ pressed }) => ({
-            alignSelf: 'stretch',
             flexDirection: 'row',
             alignItems: 'center',
             gap: 12,
@@ -65,11 +130,12 @@ export default function EventCreated() {
         </Pressable>
       ) : null}
 
-      <Row gap={12} style={{ alignSelf: 'stretch' }}>
+      <Button title="Open event workspace" icon="view-dashboard-outline" full onPress={() => router.replace(`/event-workspace/${event.id}`)} />
+      <Row gap={12}>
         <Button title="Edit event" icon="pencil-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} />
-        <Button title="Manage" icon="account-group-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.replace(`/pro/attendees/${event.id}`)} />
+        {!isDraft ? <Button title="Share" icon="share-variant-outline" variant="secondary" size="md" style={{ flex: 1 }} onPress={share} /> : null}
       </Row>
-      <Button title="To Home page" full onPress={() => router.replace('/(tabs)')} />
+      <Button title="To Home page" variant="ghost" full onPress={() => router.replace('/(tabs)')} />
     </Screen>
   );
 }
