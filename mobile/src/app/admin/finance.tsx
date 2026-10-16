@@ -6,7 +6,7 @@ import { AdminGate, RecordRow } from '../../components/admin';
 import { goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Banner, Button, Card, Chip, Divider, EmptyState, LineItems, Pill, Row, T, type Tone } from '../../components/ui';
 import type { PaymentState } from '../../data/types';
-import { FINANCE_NOTE, FINANCE_STATE_LABEL, type FinanceItem, financeQueue, financeTotals } from '../../lib/admin';
+import { FINANCE_NOTE, FINANCE_STATE_LABEL, type FinanceItem, financeQueue, financeTotals, requestAmount, requestRef } from '../../lib/admin';
 import { bookingRef, PAYMENT_PROVIDER_LABEL, PAYMENT_TONE, providerOf } from '../../lib/booking';
 import { euro, plural } from '../../lib/format';
 import { CASE_QUEUE_LABEL } from '../../lib/support';
@@ -39,6 +39,9 @@ const COMPLETE: Partial<Record<PaymentState, { label: string; to: PaymentState; 
   capture_pending: { label: 'Record verified payment', to: 'paid', done: 'Payment verified' },
 };
 
+/** Final money states that are kept with their reference. */
+const DONE: PaymentState[] = ['released', 'refunded', 'paid_out'];
+
 const toneOf = (state: FinanceItem['state']): Tone => (state === 'processing' ? 'warning' : PAYMENT_TONE[state]);
 
 export default function AdminFinance() {
@@ -56,7 +59,8 @@ export default function AdminFinance() {
 
   const queue = useMemo(() => financeQueue(bookings, requests, payouts, cases), [bookings, requests, payouts, cases]);
   const totals = useMemo(() => financeTotals(bookings, requests, payouts), [bookings, requests, payouts]);
-  const completed = useMemo(() => bookings.filter((b) => b.payment === 'released' || b.payment === 'refunded' || b.payment === 'paid_out'), [bookings]);
+  const completed = useMemo(() => bookings.filter((b) => b.payment && DONE.includes(b.payment)), [bookings]);
+  const completedRequests = useMemo(() => requests.filter((r) => r.payment && DONE.includes(r.payment)), [requests]);
 
   if (!adminMode) return <AdminGate title="Payments and refunds" />;
 
@@ -148,7 +152,7 @@ export default function AdminFinance() {
                 {step ? <Button title={step.label} size="sm" icon="check" onPress={() => complete(item)} /> : null}
                 {item.state === 'capture_pending' && item.bookingId ? <Button title="Record failed payment" size="sm" variant="secondary" icon="close" onPress={() => fail(item)} /> : null}
                 {item.bookingId ? <Button title="Investigate" size="sm" variant="light" icon="magnify" onPress={() => router.push(`/admin/bookings?id=${item.bookingId}`)} /> : null}
-                {item.requestId ? <Button title="Open request" size="sm" variant="light" onPress={() => router.push(`/pro/request/${item.requestId}`)} /> : null}
+                {item.requestId ? <Button title="Investigate" size="sm" variant="light" icon="magnify" onPress={() => router.push(`/admin/bookings?request=${item.requestId}`)} /> : null}
               </Row>
             </Card>
           );
@@ -159,19 +163,33 @@ export default function AdminFinance() {
 
       <Card style={{ gap: 6 }}>
         <T v="title" accessibilityRole="header">Completed with a reference</T>
-        {completed.length ? (
-          completed.map((b, i) => (
-            <View key={b.id}>
-              {i ? <Divider /> : null}
-              <RecordRow
-                icon="receipt-text-outline"
-                title={`${bookingRef(b)} · ${providerOf(b).name}`}
-                sub={`${b.payment ? PAYMENT_PROVIDER_LABEL[b.payment] : ''} · ${euro(b.amount)}${b.paymentRef ? ` · ${b.paymentRef}` : ''}`}
-                tone="success"
-                onPress={() => router.push(`/admin/bookings?id=${b.id}`)}
-              />
-            </View>
-          ))
+        {completed.length || completedRequests.length ? (
+          <>
+            {completed.map((b, i) => (
+              <View key={b.id}>
+                {i ? <Divider /> : null}
+                <RecordRow
+                  icon="receipt-text-outline"
+                  title={`${bookingRef(b)} · ${providerOf(b).name}`}
+                  sub={`${b.payment ? PAYMENT_PROVIDER_LABEL[b.payment] : ''} · ${euro(b.amount)}${b.paymentRef ? ` · ${b.paymentRef}` : ''}`}
+                  tone="success"
+                  onPress={() => router.push(`/admin/bookings?id=${b.id}`)}
+                />
+              </View>
+            ))}
+            {completedRequests.map((r, i) => (
+              <View key={r.id}>
+                {i || completed.length ? <Divider /> : null}
+                <RecordRow
+                  icon="receipt-text-outline"
+                  title={`${requestRef(r)} · ${r.requester}`}
+                  sub={`Provider request · ${r.payment ? PAYMENT_PROVIDER_LABEL[r.payment] : ''} · ${euro(requestAmount(r))}`}
+                  tone="success"
+                  onPress={() => router.push(`/admin/bookings?request=${r.id}`)}
+                />
+              </View>
+            ))}
+          </>
         ) : (
           <T v="small">No completed releases, refunds or payouts yet.</T>
         )}

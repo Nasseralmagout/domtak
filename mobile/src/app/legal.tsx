@@ -123,6 +123,12 @@ function Sections({ items }: { items: Section[] }) {
 export default function Legal() {
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>(asTab(params.tab));
+  // A new ?tab= (e.g. "Privacy" from another screen while this one is open) switches the tab.
+  const [lastParam, setLastParam] = useState(params.tab);
+  if (params.tab !== lastParam) {
+    setLastParam(params.tab);
+    if (params.tab) setTab(asTab(params.tab));
+  }
   const mail = () => Linking.openURL('mailto:yourcareer@domtak.de').catch(() => toast('Write to yourcareer@domtak.de'));
 
   return (

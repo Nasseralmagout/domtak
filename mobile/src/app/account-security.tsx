@@ -6,7 +6,7 @@ import { ActionSheet } from '../components/ActionSheet';
 import { Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, Divider, Field, Icon, type IconName, Pill, Row, T, Toggle } from '../components/ui';
 import { isOutstanding } from '../lib/booking';
-import { parse, plural, TODAY } from '../lib/format';
+import { isoDay, plural, TODAY } from '../lib/format';
 import { CASE_STATUS_LABEL, CASE_STATUS_TONE } from '../lib/support';
 import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
@@ -103,7 +103,8 @@ export default function AccountSecurity() {
   const openCase = useApp((s) => s.openCase);
 
   // Open work that has to be finished before records can be closed.
-  const openBookings = useMemo(() => bookings.filter((b) => isOutstanding(b.status) || ((b.status === 'confirmed' || b.status === 'paid') && parse(b.date).getTime() >= TODAY.getTime())).length, [bookings]);
+  // Confirmed bookings count until their day has passed (b.date is YYYY-MM-DD).
+  const openBookings = useMemo(() => bookings.filter((b) => isOutstanding(b.status) || ((b.status === 'confirmed' || b.status === 'paid') && b.date >= isoDay(TODAY))).length, [bookings]);
   const moneyPending = useMemo(() => bookings.filter((b) => b.payment === 'refund_pending' || b.payment === 'release_pending' || b.payment === 'capture_pending').length, [bookings]);
   const deletionCase = useMemo(() => cases.find((c) => c.linked?.kind === 'account' && c.linked.id === 'deletion' && c.status !== 'resolved'), [cases]);
 
@@ -226,7 +227,7 @@ export default function AccountSecurity() {
           disabled={exportAsked}
           onPress={() => {
             setExportAsked(true);
-            toast(`We’ll email your data to ${user.email} within 48 hours`);
+            toast(`Export requested. We’ll email your data to ${user.email} when it’s ready`);
           }}
         />
       </Card>

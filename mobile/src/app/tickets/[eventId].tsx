@@ -38,16 +38,38 @@ export default function ChooseTicket() {
       </Screen>
     );
   }
-  // Private events have no public ticket sales: entry is by invitation (F20).
-  if (event.isPrivate && event.organizerId !== 'me' && event.hostId !== 'me') {
-    const invite = invites.find((g) => g.eventId === event.id);
-    const own = myTickets.find((t) => t.eventId === event.id && t.status === 'valid');
+  // Private events have no public ticket sales: entry is by invitation (F20), for guests and for the host.
+  if (event.isPrivate && (event.organizerId === 'me' || event.hostId === 'me')) {
     return (
       <Screen header={<ScreenHeader title="Tickets" onBack={() => goBack(`/event/${event.id}`)} />}>
         <EmptyState
           icon="lock-outline"
           title="Entry by invitation"
-          body={own ? 'You already have a ticket for this private event.' : invite ? 'This is a private event. Answer your invitation to get your ticket.' : 'This is a private event. Only invited guests get tickets.'}
+          body="This is your private event, so tickets aren’t sold. Each guest gets a ticket with a QR code once they accept your invitation and pay any shared cost."
+          action="Manage guests"
+          onAction={() => router.replace(`/event-workspace/${event.id}`)}
+        />
+      </Screen>
+    );
+  }
+  if (event.isPrivate) {
+    const invite = invites.find((g) => g.eventId === event.id);
+    const own = myTickets.find((t) => t.eventId === event.id && t.status === 'valid');
+    const declined = invite?.status === 'declined';
+    return (
+      <Screen header={<ScreenHeader title="Tickets" onBack={() => goBack(`/event/${event.id}`)} />}>
+        <EmptyState
+          icon="lock-outline"
+          title="Entry by invitation"
+          body={
+            own
+              ? 'You already have a ticket for this private event.'
+              : declined
+                ? 'You declined the invitation to this private event, so no ticket was issued.'
+                : invite
+                  ? 'This is a private event. Answer your invitation to get your ticket.'
+                  : 'This is a private event. Only invited guests get tickets.'
+          }
           action={own ? 'Open ticket' : invite ? 'Open invitation' : 'Back to event'}
           onAction={() => (own ? router.replace(`/ticket/${own.id}`) : invite ? router.replace(`/invitation/${invite.id}`) : goBack(`/event/${event.id}`))}
         />

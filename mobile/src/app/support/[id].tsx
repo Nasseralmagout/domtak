@@ -56,7 +56,9 @@ export default function SupportCaseDetail() {
   const record = linkedRecord(c.linked, { bookings, tickets, events });
   const money = pendingMoney(c, bookings);
   const resolved = c.status === 'resolved';
-  const resolution = resolved ? [...c.messages].reverse().find((m) => m.from === 'support') : undefined;
+  // The case stores no resolver, so the outcome is support's answer only when it is the last word.
+  const last = lastMessage(c);
+  const resolution = resolved && last?.from === 'support' ? last : undefined;
   const moneyWord = money?.payment === 'refund_pending' ? 'refund' : 'release';
 
   const send = () => {
@@ -145,7 +147,7 @@ export default function SupportCaseDetail() {
         {resolved ? (
           <Row gap={8} justify="center">
             <Icon name="check-circle-outline" size={14} color={colors.success} />
-            <T v="small" color={colors.success}>Resolved{lastMessage(c) ? ` · ${dateTime(lastMessage(c).at)}` : ''}</T>
+            <T v="small" color={colors.success}>Resolved</T>
           </Row>
         ) : null}
       </View>
@@ -153,7 +155,8 @@ export default function SupportCaseDetail() {
       {resolved ? (
         <Card style={{ gap: 10 }}>
           <T v="title" accessibilityRole="header">Outcome</T>
-          <T v="body" color={colors.inkSoft}>{resolution?.text ?? 'This case was marked as solved.'}</T>
+          {resolution ? <T v="small">{`Support’s last answer · ${dateTime(resolution.at)}`}</T> : null}
+          <T v="body" color={colors.inkSoft}>{resolution?.text ?? 'You marked this case as solved.'}</T>
           <T v="small">Not happy with the outcome? An appeal reopens the case with your reason so support reviews the decision again.</T>
           <Button title="Appeal this outcome" icon="scale-balance" variant="secondary" size="md" onPress={() => setAppeal(true)} />
           <Button title="Something new? Open another case" variant="ghost" size="sm" onPress={() => router.push('/support/new')} />

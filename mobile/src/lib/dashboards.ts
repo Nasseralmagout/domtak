@@ -1,7 +1,9 @@
 import { transactions } from '../data/mock';
-import type { IncomingRequest, PaymentState } from '../data/types';
+import type { Booking, EventItem, IncomingRequest, PaymentState } from '../data/types';
 import type { Availability, Payout, Weekday } from '../store/useApp';
-import { isoDay, parse, TODAY } from './format';
+import { isClosed } from './booking';
+import { linkedBookings } from './events';
+import { isoDay, MONTHS_LONG, parse, TODAY } from './format';
 import { PLATFORM_COMMISSION_RATE } from './pricing';
 
 /**
@@ -21,6 +23,18 @@ const VERIFIED: PaymentState[] = ['paid', 'payout_pending', 'paid_out'];
 /** The agreed price of a request: the quote total for quote requests, else the request total. */
 export function requestGross(r: Pick<IncomingRequest, 'pricing' | 'quote' | 'offer'>) {
   return r.pricing === 'quote' && r.quote ? r.quote.total : r.offer;
+}
+
+/**
+ * ISO day (YYYY-MM-DD) of a request: its isoDate, else parsed from the date label
+ * ("Thu 24 Dec 2026"). Undefined when neither can be read, so callers never fall back to today.
+ */
+export function requestDay(r: Pick<IncomingRequest, 'isoDate' | 'date'>): string | undefined {
+  if (r.isoDate) return r.isoDate;
+  const [, d, mon, y] = r.date.split(' ');
+  const m = mon ? MONTHS_LONG.findIndex((x) => x.startsWith(mon)) : -1;
+  if (m < 0 || !Number(d) || !Number(y)) return undefined;
+  return isoDay(new Date(Number(y), m, Number(d), 12));
 }
 
 export interface EarningsSummary {
@@ -54,7 +68,7 @@ export interface EarningsSummary {
  * `recorded: false` uses the requests only (e.g. the venue workspace, whose sample ledger is empty).
  */
 export function earningsSummary(requests: IncomingRequest[], opts: { recorded: boolean; balance: number; payouts: Payout[] }): EarningsSummary {
-  const rows: { gross: number; commission: number; net: number; status: 'pending' | 'available' | 'paid out' }[] = [];
+  const rows: { gross: number; commission: number; net: number; status: 'pending' | 'available' | 'paid out' | 'refund' }[] = [];
   let refunds = 0;
   let awaiting = 0;
   let awaitingCount = 0;
@@ -72,6 +86,9 @@ export function earningsSummary(requests: IncomingRequest[], opts: { recorded: b
       const gross = requestGross(r);
       const commission = round2(gross * PLATFORM_COMMISSION_RATE);
       if (r.payment === 'refund_pending' || r.payment === 'refunded') {
+        // Same rule as Pro → Earnings: the booking counts once in gross and commission, and its
+        // reversed net amount shows under refunds, so it nets to zero (never subtracted twice).
+        rows.push({ gross, commission, net: round2(gross - commission), status: 'refund' });
         refunds += round2(gross - commission);
         return;
       }
@@ -97,6 +114,23 @@ export function earningsSummary(requests: IncomingRequest[], opts: { recorded: b
     processing: opts.recorded ? sum(opts.payouts.filter((p) => p.status === 'processing').map((p) => p.amount)) : 0,
     count: rows.length,
   };
+}
+
+// ---------- Event providers ----------
+
+/**
+ * Closed (declined, expired or cancelled) provider bookings of an event that still need a
+ * replacement: one per provider type, and only while no other booking of that type is active.
+ * Once the host books another artist or venue, the old closed request stops asking for action.
+ */
+export function toReplace(event: Pick<EventItem, 'id' | 'bookingIds'>, bookings: Booking[]): Booking[] {
+  const linked = linkedBookings(event, bookings);
+  const active = new Set(linked.filter((b) => !isClosed(b.status)).map((b) => b.type));
+  const byType = new Map<Booking['type'], Booking>();
+  linked.forEach((b) => {
+    if (isClosed(b.status) && !active.has(b.type)) byType.set(b.type, b);
+  });
+  return [...byType.values()];
 }
 
 // ---------- Availability strip ----------

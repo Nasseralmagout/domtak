@@ -7,7 +7,7 @@ import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Avatar, EmptyState, Icon, type IconName, Photo, Row, Segmented, T, TimeLeft, type Tone } from '../components/ui';
 import type { ImgKey } from '../data/images';
 import { notifications, profileById, venueById } from '../data/mock';
-import type { AppNotification, Booking, EventItem, FriendRequest, GuestInvite, IncomingRequest, SupportCase, Ticket } from '../data/types';
+import type { AppNotification, Booking, Conversation, EventItem, FriendRequest, GuestInvite, IncomingRequest, SupportCase, Ticket } from '../data/types';
 import { WORKSPACE_LABEL } from '../lib/access';
 import { bookingRef, providerOf, quoteState, reminderDue, timeLeft } from '../lib/booking';
 import { addHours, ago, dateTime, euro, nowIso, parse, sameDay, shortDate, TODAY } from '../lib/format';
@@ -33,6 +33,8 @@ interface Notice {
   deadline?: string;
   image?: ImgKey;
   label?: string;
+  /** Shown instead of the relative time when the record only has a clock time (chat messages). */
+  timeLabel?: string;
 }
 
 const TYPE_ICON: Record<AppNotification['type'], IconName> = {
@@ -178,7 +180,7 @@ function requestNotices(r: IncomingRequest): Notice[] {
   }
   if (r.status === 'expired') {
     const released = r.payment === 'released';
-    return [{ ...base, id: `rq-${r.id}`, icon: 'timer-sand-complete', tone: 'neutral', title: `Request expired · ${r.requester}`, body: `${r.title}: no response within 24 hours. ${released ? 'The customer’s payment was released.' : 'The customer’s payment is being released.'}`, at: r.deadline ?? nowIso() }];
+    return [{ ...base, id: `rq-${r.id}`, icon: 'timer-sand-complete', tone: 'neutral', title: `Request expired · ${r.requester}`, body: `${r.title}: no response within 24 hours.${released ? ' The customer’s payment was released.' : r.payment === 'release_pending' ? ' The customer’s payment is being released.' : ''}`, at: r.deadline ?? nowIso() }];
   }
   if (r.status === 'accepted' && r.payment === 'capture_pending') {
     return [{ ...base, id: `rq-${r.id}`, icon: 'credit-card-clock-outline', tone: 'brand', title: `Waiting for payment · ${r.requester}`, body: `${r.title}: you accepted. It is confirmed once the customer’s payment is verified.`, at: r.deadline ?? nowIso() }];
@@ -237,6 +239,28 @@ function friendNotice(r: FriendRequest): Notice {
   return { id: `fr-${r.id}`, essential: false, icon: 'account-plus-outline', tone: 'brand', title: `${p?.name ?? 'Someone'} sent you a friend request`, body: 'Accept or decline on their profile.', href: `/profile/${r.fromId}`, at: r.at ?? nowIso(), image: p?.avatar, label: p?.name, action: true };
 }
 
+function messageNotice(c: Conversation): Notice {
+  const p = profileById(c.withId);
+  const v = p ? undefined : venueById(c.withId);
+  const name = p?.name ?? v?.name ?? 'Someone';
+  const last = [...c.messages].reverse().find((m) => m.from === 'them');
+  const preview = last?.type === 'image' ? 'Sent a photo' : last?.type === 'voice' ? 'Sent a voice message' : (last?.text ?? 'Open the conversation to read it.');
+  return {
+    id: `msg-${c.id}`,
+    essential: false,
+    icon: 'message-text-outline',
+    tone: 'brand',
+    title: c.unread === 1 ? `New message from ${name}` : `${c.unread} new messages from ${name}`,
+    body: preview,
+    href: `/chat/${c.id}`,
+    // Chat messages only keep a clock time; unread ones are listed with today's notices.
+    at: nowIso(),
+    timeLabel: last?.time,
+    image: p?.avatar ?? v?.cover,
+    label: name,
+  };
+}
+
 function NoticeRow({ n }: { n: Notice }) {
   return (
     <Pressable
@@ -264,7 +288,7 @@ function NoticeRow({ n }: { n: Notice }) {
         <T v="small" numberOfLines={3}>{n.body}</T>
         <Row gap={8} style={{ marginTop: 2, flexWrap: 'wrap' }}>
           {n.deadline && timeLeft(n.deadline) !== 'Expired' ? <TimeLeft deadline={n.deadline} /> : null}
-          <T v="small" style={{ fontSize: 12 }}>{ago(n.at)}</T>
+          <T v="small" style={{ fontSize: 12 }}>{n.timeLabel ?? ago(n.at)}</T>
         </Row>
       </View>
       <Icon name="chevron-right" size={20} color={colors.subtle} />
@@ -282,6 +306,7 @@ export default function Notifications() {
   const cases = useApp((s) => s.supportCases);
   const friendRequests = useApp((s) => s.friendRequests);
   const blocked = useApp((s) => s.blocked);
+  const conversations = useApp((s) => s.conversations);
   const events = useAllEvents();
   const invited = useInvitedEvents();
   const [filter, setFilter] = useState<Filter>('all');
@@ -310,18 +335,22 @@ export default function Notifications() {
     friendRequests.forEach((r) => {
       if (r.status === 'pending' && r.fromId !== 'me' && !blocked.includes(r.fromId)) out.push(friendNotice(r));
     });
+    conversations.forEach((c) => {
+      if (c.unread > 0 && !blocked.includes(c.withId)) out.push(messageNotice(c));
+    });
     return out.sort((a, b) => parse(b.at).getTime() - parse(a.at).getTime());
-  }, [bookings, reviews, cases, user, requests, invited, blocked, tickets, events, friendRequests]);
+  }, [bookings, reviews, cases, user, requests, invited, blocked, tickets, events, friendRequests, conversations]);
 
   // Booking notices come from the booking records above, so the sample "booking" items would be duplicates.
-  const social = useMemo(() => notifications.filter((n) => n.type !== 'booking' && !blocked.includes(n.actorId)), [blocked]);
+  const samples = useMemo(() => notifications.filter((n) => n.type !== 'booking' && !blocked.includes(n.actorId)), [blocked]);
+  // Ticket reminders are essential; follows, comments, likes, reshares and event tips are social.
+  const sampleShown = samples.filter((n) => filter === 'all' || (filter === 'essential' ? n.type === 'ticket' : n.type !== 'ticket'));
 
   const shown = notices.filter((n) => filter === 'all' || (filter === 'essential' ? n.essential : !n.essential));
   const actions = shown.filter((n) => n.action);
   const rest = shown.filter((n) => !n.action);
-  const showSocial = filter !== 'essential';
   const sections: Section[] = ['Today', 'This week', 'Earlier'];
-  const empty = !shown.length && !(showSocial && social.length);
+  const empty = !shown.length && !sampleShown.length;
 
   return (
     <Screen header={<ScreenHeader title="Notifications" onBack={() => goBack('/(tabs)')} />}>
@@ -344,7 +373,7 @@ export default function Notifications() {
 
       {sections.map((sec) => {
         const derived = rest.filter((n) => sectionOf(n.at) === sec);
-        const list = showSocial ? social.filter((n) => n.section === sec) : [];
+        const list = sampleShown.filter((n) => n.section === sec);
         if (!derived.length && !list.length) return null;
         return (
           <View key={sec} style={{ gap: 10 }}>
@@ -386,7 +415,7 @@ export default function Notifications() {
         <EmptyState
           icon="bell-outline"
           title="No notifications"
-          body={filter === 'social' ? 'Follows, comments and friend requests appear here.' : 'Booking updates, payments, tickets, invitations and support replies appear here.'}
+          body={filter === 'social' ? 'Follows, comments, messages and friend requests appear here.' : 'Booking updates, payments, tickets, invitations and support replies appear here.'}
         />
       ) : actions.length ? null : (
         <Row justify="center" gap={6}>

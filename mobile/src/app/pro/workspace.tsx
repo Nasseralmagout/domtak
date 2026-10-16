@@ -11,7 +11,7 @@ import { attendees, eventDiscussion, gardenLine, parkingLine, profileById, venue
 import type { Booking, EventItem, EventState, IncomingRequest, ProfessionalRole, Venue } from '../../data/types';
 import { PRO_ROLE_PITCH, PRO_ROLE_TITLE, WORKSPACE_ICON, WORKSPACE_LABEL } from '../../lib/access';
 import { CHARGE_LABEL, isClosed, isOutstanding, PAYMENT_PROVIDER_LABEL, providerOf, quoteState, reminderDue, requestConflict, timeLeft, type Tone } from '../../lib/booking';
-import { availabilityStrip, byDay, earningsSummary, eventDay, requestGross } from '../../lib/dashboards';
+import { availabilityStrip, byDay, earningsSummary, eventDay, requestDay, requestGross, toReplace } from '../../lib/dashboards';
 import { DEMO_ORGANIZERS, hostsEvent, readinessLine } from '../../lib/eventHost';
 import { budget, EVENT_STATE_TONE, eventState, eventStateLabel, guestSummary, type Readiness, readiness } from '../../lib/events';
 import { addHours, ago, dateTime, euro, hoursUntil, isoDay, parse, plural, shortDate, time, TODAY } from '../../lib/format';
@@ -123,17 +123,30 @@ function priceLabel(r: IncomingRequest) {
   return euro(r.offer);
 }
 
+/** The request's event day for display: "Thu 24 Dec", or its original label when it has no readable date. */
+function dayLabel(r: IncomingRequest) {
+  const day = requestDay(r);
+  return day ? shortDate(day) : r.date;
+}
+
+/** Upcoming (or undated) accepted work, soonest first. Undated requests go last instead of pretending to be today. */
+function upcomingAccepted(list: IncomingRequest[]) {
+  return list
+    .filter((r) => r.status === 'accepted' && (requestDay(r) ?? todayIso) >= todayIso)
+    .sort((a, b) => (requestDay(a) ?? '9999').localeCompare(requestDay(b) ?? '9999'));
+}
+
 /** A request waiting for a response: host, date, size, requirements and time remaining. */
 function RequestDueRow({ r, all, venue }: { r: IncomingRequest; all: IncomingRequest[]; venue?: Venue }) {
   const kind = r.kind ?? 'performance';
   const conflict = requestConflict(r, all);
   const overCapacity = venue && r.guests > venue.capacity;
   const security = venue && securityRequired(venue, r.guests);
-  const requirements = [r.equipment, r.message].filter(Boolean).join(' · ');
+  const note = r.message.trim();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${r.requester}, ${r.title}, ${r.isoDate ? shortDate(r.isoDate) : r.date}, ${plural(r.guests, 'guest')}, ${priceLabel(r)}, ${timeLeft(r.deadline) || 'no deadline'}. Open request`}
+      accessibilityLabel={`${r.requester}, ${r.title}, ${dayLabel(r)}, ${plural(r.guests, 'guest')}, ${priceLabel(r)}, ${timeLeft(r.deadline) || 'no deadline'}. Open request`}
       onPress={() => router.push(`/pro/request/${r.id}`)}
       style={({ pressed }) => ({ gap: 8, padding: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.85 : 1 })}
     >
@@ -146,8 +159,9 @@ function RequestDueRow({ r, all, venue }: { r: IncomingRequest; all: IncomingReq
         <TimeLeft deadline={r.deadline} />
       </Row>
       <T v="title" numberOfLines={1}>{r.title}</T>
-      <T v="small">{r.isoDate ? shortDate(r.isoDate) : r.date} · {r.time} · {KIND_LABEL[kind]}{kind !== 'venue' ? ` · ${r.hours} h` : ''} · {plural(r.guests, 'guest')}</T>
-      {requirements ? <T v="small" numberOfLines={2} color={colors.inkSoft}>Requirements: {requirements}</T> : null}
+      <T v="small">{dayLabel(r)} · {r.time} · {KIND_LABEL[kind]}{kind !== 'venue' ? ` · ${r.hours} h` : ''} · {plural(r.guests, 'guest')}</T>
+      {r.equipment ? <T v="small" numberOfLines={2} color={colors.inkSoft}>Requirements: {r.equipment}</T> : null}
+      {note ? <T v="small" numberOfLines={2} style={{ fontStyle: 'italic' }}>“{note}”</T> : null}
       <Row gap={6} style={{ flexWrap: 'wrap' }}>
         <Pill label={priceLabel(r)} tone={r.pricing === 'quote' ? 'warning' : 'neutral'} icon={r.pricing === 'quote' ? 'file-document-outline' : 'cash'} />
         {reminderDue(r) ? <Pill label="Reminder sent" tone="warning" icon="bell-ring-outline" /> : null}
@@ -165,18 +179,26 @@ function ConfirmedRow({ r, setup }: { r: IncomingRequest; setup?: boolean }) {
   const charges = r.charges
     ? (['travel', 'equipment', 'catering', 'security'] as const).filter((k) => r.charges?.[k]).map((k) => `${CHARGE_LABEL[k]} ${euro(r.charges?.[k] ?? 0)}`)
     : [];
+  const day = requestDay(r);
+  const setupLine = [plural(r.guests, 'guest'), r.equipment].filter(Boolean).join(' · ');
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${r.title}, ${r.isoDate ? shortDate(r.isoDate) : r.date}, ${r.time}, ${r.requester}, ${euro(requestGross(r))}${r.payment ? `, ${PAYMENT_PROVIDER_LABEL[r.payment]}` : ''}. Open booking`}
+      accessibilityLabel={`${r.title}, ${dayLabel(r)}, ${r.time}, ${r.requester}, ${euro(requestGross(r))}${r.payment ? `, ${PAYMENT_PROVIDER_LABEL[r.payment]}` : ''}. Open booking`}
       onPress={() => router.push(`/pro/request/${r.id}`)}
       style={({ pressed }) => ({ flexDirection: 'row', gap: 12, paddingVertical: 8, opacity: pressed ? 0.8 : 1 })}
     >
-      <DateBadge iso={r.isoDate ?? todayIso} size={52} />
+      {day ? (
+        <DateBadge iso={day} size={52} />
+      ) : (
+        <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="calendar-question" size={24} color={colors.brand} />
+        </View>
+      )}
       <View style={{ flex: 1, gap: 4 }}>
         <T v="bodyBold" numberOfLines={1}>{r.title}</T>
-        <T v="small" numberOfLines={1}>{r.time} · {r.location.split(',')[0]} · {r.requester}</T>
-        {setup ? <T v="small" numberOfLines={2} color={colors.inkSoft}>Setup: {plural(r.guests, 'guest')} · {r.equipment}</T> : null}
+        <T v="small" numberOfLines={1}>{day ? '' : `${r.date} · `}{r.time} · {r.location.split(',')[0]} · {r.requester}</T>
+        {setup ? <T v="small" numberOfLines={2} color={colors.inkSoft}>Setup: {setupLine}</T> : null}
         <T v="small" color={colors.inkSoft}>Agreed {euro(requestGross(r))}{charges.length ? ` · incl. ${charges.join(', ')}` : ''}</T>
         <Row gap={6} style={{ flexWrap: 'wrap' }}>
           <PaymentPill state={r.payment} provider />
@@ -239,8 +261,8 @@ function ArtistDashboard() {
 
   const mine = useMemo(() => requests.filter((r) => r.kind !== 'venue'), [requests]);
   const due = useMemo(() => mine.filter((r) => r.status === 'new').sort((a, b) => deadlineMs(a) - deadlineMs(b)), [mine]);
-  const confirmed = useMemo(() => mine.filter((r) => r.status === 'accepted' && (r.isoDate ?? todayIso) >= todayIso).sort((a, b) => (a.isoDate ?? '').localeCompare(b.isoDate ?? '')), [mine]);
-  const strip = useMemo(() => availabilityStrip(availability, byDay(confirmed, (r) => r.isoDate, (r) => r.title)), [availability, confirmed]);
+  const confirmed = useMemo(() => upcomingAccepted(mine), [mine]);
+  const strip = useMemo(() => availabilityStrip(availability, byDay(confirmed, requestDay, (r) => r.title)), [availability, confirmed]);
 
   const checklist = useMemo<ChecklistItem[]>(() => {
     const toServices = () => router.push('/pro/services');
@@ -265,7 +287,7 @@ function ArtistDashboard() {
           icon="timer-sand"
           tone={hoursUntil(next.deadline ?? addHours(TODAY, 48)) < 12 ? 'warning' : 'brand'}
           title={`Respond to ${next.requester}`}
-          sub={`${next.title} · ${next.isoDate ? shortDate(next.isoDate) : next.date} · ${timeLeft(next.deadline) || 'no deadline'}. Unanswered requests expire after 24 hours and the customer’s payment is released.`}
+          sub={`${next.title} · ${dayLabel(next)} · ${timeLeft(next.deadline) || 'no deadline'}. Unanswered requests expire after 24 hours, and the customer’s payment is then released or refunded.`}
           cta="Open request"
           onPress={() => router.push(`/pro/request/${next.id}`)}
         />
@@ -298,7 +320,7 @@ function ArtistDashboard() {
         )}
       </Panel>
 
-      <Panel title="Calendar" icon="calendar-month-outline" action="Update availability" onAction={() => router.push('/pro/availability')} note={`Next 2 weeks: ${plural(confirmed.filter((r) => strip.some((d) => d.iso === r.isoDate)).length, 'commitment')}, ${plural(openDays, 'open day')}. Open days never confirm a booking by themselves.`}>
+      <Panel title="Calendar" icon="calendar-month-outline" action="Update availability" onAction={() => router.push('/pro/availability')} note={`Next 2 weeks: ${plural(confirmed.filter((r) => strip.some((d) => d.iso === requestDay(r))).length, 'commitment')}, ${plural(openDays, 'open day')}. Open days never confirm a booking by themselves.`}>
         <DayStrip days={strip} />
       </Panel>
 
@@ -344,14 +366,14 @@ function VenueDashboard() {
   const venue = useVenue(OWN_VENUE_ID);
   const rating = useRating(OWN_VENUE_ID);
   const allEvents = useAllEvents();
-  const [guests, setGuests] = useState(Math.min(150, listing.capacity));
+  const [guests, setGuests] = useState(Math.max(10, Math.min(150, listing.capacity)));
 
   const mine = useMemo(() => requests.filter((r) => r.kind === 'venue'), [requests]);
   const due = useMemo(() => mine.filter((r) => r.status === 'new').sort((a, b) => deadlineMs(a) - deadlineMs(b)), [mine]);
-  const confirmed = useMemo(() => mine.filter((r) => r.status === 'accepted' && (r.isoDate ?? todayIso) >= todayIso).sort((a, b) => (a.isoDate ?? '').localeCompare(b.isoDate ?? '')), [mine]);
+  const confirmed = useMemo(() => upcomingAccepted(mine), [mine]);
   const hereEvents = useMemo(() => allEvents.filter((e) => e.venueId === OWN_VENUE_ID && upcomingEvent(e) && isDiscoverable(e)).sort((a, b) => a.start.localeCompare(b.start)), [allEvents]);
   const strip = useMemo(
-    () => availabilityStrip(availability, byDay(confirmed, (r) => r.isoDate, (r) => r.title), byDay(hereEvents, (e) => eventDay(e.start), (e) => e.title)),
+    () => availabilityStrip(availability, byDay(confirmed, requestDay, (r) => r.title), byDay(hereEvents, (e) => eventDay(e.start), (e) => e.title)),
     [availability, confirmed, hereEvents],
   );
 
@@ -381,7 +403,7 @@ function VenueDashboard() {
           icon="timer-sand"
           tone={hoursUntil(next.deadline ?? addHours(TODAY, 48)) < 12 ? 'warning' : 'brand'}
           title={`Review ${next.requester}’s request`}
-          sub={`${next.title} · ${next.isoDate ? shortDate(next.isoDate) : next.date} · ${plural(next.guests, 'guest')} · ${timeLeft(next.deadline) || 'no deadline'}`}
+          sub={`${next.title} · ${dayLabel(next)} · ${plural(next.guests, 'guest')} · ${timeLeft(next.deadline) || 'no deadline'}`}
           cta="Inspect request"
           onPress={() => router.push(`/pro/request/${next.id}`)}
         />
@@ -535,9 +557,10 @@ function OrganizerDashboard() {
   const eventOf = useMemo(() => new Map(managed.map((m) => [m.e.id, m])), [managed]);
   const unresolved = useMemo(() => {
     const open = bookings.filter((b) => b.type !== 'lesson' && (isOutstanding(b.status) || (b.pendingCancellation && !isClosed(b.status) && b.status !== 'completed')));
-    const toReplace = upcoming.flatMap((m) => m.r.closed);
+    // Closed requests stay here only until another provider of that type is booked for the event.
+    const replace = upcoming.filter((m) => m.state !== 'cancelled').flatMap((m) => toReplace(m.e, bookings));
     const rank = (b: Booking) => (needsAction(b) ? 0 : isClosed(b.status) ? 2 : 1);
-    return [...open, ...toReplace.filter((b) => !open.includes(b))].sort((a, b) => rank(a) - rank(b) || (a.deadline ?? a.date).localeCompare(b.deadline ?? b.date));
+    return [...open, ...replace.filter((b) => !open.includes(b))].sort((a, b) => rank(a) - rank(b) || (a.deadline ?? a.date).localeCompare(b.deadline ?? b.date));
   }, [bookings, upcoming]);
 
   const budgetRow = upcoming.find((m) => m.e.id === budgetId) ?? upcoming.find((m) => m.r.total > 0 || m.r.closed.length > 0) ?? upcoming[0];
@@ -732,7 +755,7 @@ function OrganizerDashboard() {
                 icon="forum-outline"
                 tone="neutral"
                 title={`${m.e.title} · ${plural(list.length, 'message')}`}
-                sub={last ? `${profileById(last.authorId)?.name ?? 'Guest'}: ${last.text}` : 'No messages in this event’s discussion yet'}
+                sub={last ? `${last.authorId === 'me' ? 'You' : profileById(last.authorId)?.name ?? 'Guest'}: ${last.text || 'Photo'}` : 'No messages in this event’s discussion yet'}
                 onPress={() => router.push(`/event-comments/${m.e.id}`)}
               />
             );

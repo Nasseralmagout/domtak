@@ -236,7 +236,7 @@ export default function Scanner() {
               {hosted.length > 1 ? <Icon name="chevron-down" size={16} color={colors.lilac} /> : null}
             </Row>
           </Pressable>
-          <View accessibilityLabel={`${count} checked in${sold ? ` of ${sold} tickets` : ''}`} style={{ backgroundColor: 'rgba(255,255,255,0.14)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, marginRight: 8 }}>
+          <View accessible accessibilityLabel={`${count} checked in${sold ? ` of ${sold} tickets` : ''}`} style={{ backgroundColor: 'rgba(255,255,255,0.14)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, marginRight: 8 }}>
             <Text style={{ color: colors.white, fontFamily: fonts.bodyBold, fontSize: 13 }}>{count}{sold ? `/${sold}` : ''} in</Text>
           </View>
         </Row>

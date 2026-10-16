@@ -233,7 +233,7 @@ export default function AdminApplications() {
         </Banner>
       )}
 
-      <Button title="Back to the queue" variant="ghost" size="md" onPress={() => router.replace('/admin/applications')} />
+      <Button title="Back to the queue" variant="ghost" size="md" onPress={() => goBack('/admin/applications')} />
 
       <ActionSheet
         visible={sheet === 'approve'}

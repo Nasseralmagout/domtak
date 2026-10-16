@@ -52,7 +52,7 @@ export default function ETicket() {
         </Row>
         <View style={{ padding: 24, gap: 12 }}>
           <T v="h2" color={colors.white}>Ticket not found</T>
-          <T v="body" color={colors.lilacLight}>It may have been refunded or moved to another account.</T>
+          <T v="body" color={colors.lilacLight}>This ticket isn’t in your wallet. It may belong to another account. Refunded and cancelled tickets stay in your wallet with their status.</T>
           <Button title="Your tickets" variant="outlineLight" onPress={() => router.replace('/my-bookings?tab=tickets')} />
         </View>
       </SafeAreaView>

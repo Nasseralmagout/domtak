@@ -10,6 +10,7 @@ import { eventDiscussion, profileById } from '../data/mock';
 import type { Booking, EventItem, EventState, GuestInvite, Ticket } from '../data/types';
 import { WORKSPACE_LABEL } from '../lib/access';
 import { isClosed, isConfirmed, isOutstanding, providerOf, quoteState, type Tone } from '../lib/booking';
+import { toReplace } from '../lib/dashboards';
 import { guestInviteLabel, readinessLine } from '../lib/eventHost';
 import { draftIssues, EVENT_STATE_TONE, eventState, eventStateLabel, guestSummary, type Readiness, readiness } from '../lib/events';
 import { euro, parse, plural, shortDate, time, TODAY } from '../lib/format';
@@ -29,6 +30,8 @@ interface UpcomingRow {
   role: Role;
   state: EventState;
   r: Readiness;
+  /** Closed provider bookings with no active replacement yet. */
+  replace: Booking[];
   ticket?: Ticket;
   invite?: GuestInvite;
 }
@@ -61,7 +64,7 @@ function openTasks(row: UpcomingRow): string[] {
       tasks.push(issues.length ? `Draft · ${plural(issues.length, 'detail')} missing` : 'Draft · ready to save as an event');
     }
     if (r.outstanding.length) tasks.push(`${plural(r.outstanding.length, 'provider booking')} outstanding`);
-    if (r.closed.length) tasks.push(`${plural(r.closed.length, 'provider')} to replace`);
+    if (row.replace.length) tasks.push(`${plural(row.replace.length, 'provider')} to replace`);
     if (event.isPrivate) {
       const g = guestSummary(event);
       if (!g.invited) tasks.push('No guests invited yet');
@@ -73,6 +76,9 @@ function openTasks(row: UpcomingRow): string[] {
   if (role === 'guest' && row.invite && !row.invite.ticketId && row.invite.contribution) return [`Pay your ${euro(row.invite.contribution)} contribution to get your ticket`];
   return [];
 }
+
+/** Comment author as shown in a discussion preview: your own comments read "You". */
+const authorName = (id: string) => (id === 'me' ? 'You' : profileById(id)?.name ?? 'Guest');
 
 function roleLine(row: UpcomingRow) {
   if (row.role === 'host') return 'You’re hosting';
@@ -90,6 +96,7 @@ export default function Dashboard() {
   const blocked = useApp((s) => s.blocked);
   const extraComments = useApp((s) => s.extraComments);
   const removed = useApp((s) => s.removedContent);
+  const requests = useApp((s) => s.requests);
   const allEvents = useAllEvents();
   const invited = useInvitedEvents();
   const queue = useActionQueue();
@@ -110,7 +117,7 @@ export default function Dashboard() {
       if (!upcoming(event)) return;
       const prev = out.get(event.id);
       if (prev && ROLE_RANK[prev.role] <= ROLE_RANK[role]) return;
-      out.set(event.id, { event, role, state: eventState(event, bookings), r: readiness(event, bookings), ...extra });
+      out.set(event.id, { event, role, state: eventState(event, bookings), r: readiness(event, bookings), replace: toReplace(event, bookings), ...extra });
     };
     myEvents.filter(isHost).forEach((e) => add(e, 'host'));
     invited.forEach(({ invite, event }) => {
@@ -121,9 +128,10 @@ export default function Dashboard() {
       const e = eventById.get(t.eventId);
       if (e && (t.status === 'valid' || t.status === 'used')) add(e, 'ticket', { ticket: t });
     });
+    // respondInvite('declined') stores going[id] = false: only true entries mean "going".
     Object.keys(going).forEach((id) => {
       const e = eventById.get(id);
-      if (e) add(e, 'going');
+      if (e && going[id]) add(e, 'going');
     });
     return [...out.values()].sort((a, b) => Number(a.state === 'cancelled') - Number(b.state === 'cancelled') || a.event.start.localeCompare(b.event.start));
   }, [myEvents, invited, tickets, going, eventById, bookings, blocked]);
@@ -132,7 +140,7 @@ export default function Dashboard() {
   const items = useMemo<ActionItem[]>(() => {
     const extra: ActionItem[] = [];
     rows.forEach((row) => {
-      const { event, role, state, r } = row;
+      const { event, role, state } = row;
       if (state === 'cancelled' && role !== 'host') {
         extra.push({
           id: `cx_${event.id}`,
@@ -145,7 +153,7 @@ export default function Dashboard() {
         });
       }
       if (role === 'host' && state !== 'cancelled') {
-        r.closed.forEach((b) =>
+        row.replace.forEach((b) =>
           extra.push({ id: `rp_${b.id}`, kind: 'booking', icon: 'account-switch-outline', title: `Replace ${providerOf(b).name} for ${event.title}`, sub: 'The request closed without a booking. Other bookings are unchanged.', href: `/event-workspace/${event.id}`, tone: 'warning' }),
         );
         if (state === 'draft') {
@@ -154,11 +162,21 @@ export default function Dashboard() {
         }
       }
     });
+    // RSVP and payment for an invitation live on the invitation screen; a cancelled event's
+    // invitation needs no reply or payment (its cancellation item above covers it).
+    const cancelledInvites = new Set(invited.filter(({ event }) => eventState(event, bookings) === 'cancelled').map(({ invite }) => invite.id));
     // Provider requests belong to the professional workspace, not to the member dashboard.
-    const own = queue.filter((q) => q.kind !== 'request');
+    const own = queue
+      .filter((q) => q.kind !== 'request' && !((q.kind === 'invite' || q.kind === 'contribution') && cancelledInvites.has(q.id)))
+      .map((q) => (q.kind === 'invite' || q.kind === 'contribution' ? { ...q, href: `/invitation/${q.id}` } : q));
     return [...own, ...extra.filter((x) => !own.some((q) => q.id === x.id))];
-  }, [queue, rows]);
-  const providerRequests = queue.filter((q) => q.kind === 'request').length;
+  }, [queue, rows, invited, bookings]);
+  // Same count as the workspace's "Requests due": only requests the active provider workspace can answer.
+  const providerRequests = useMemo(() => {
+    if (workspace !== 'musician' && workspace !== 'venue') return 0;
+    const ids = new Set(requests.filter((r) => r.status === 'new' && (workspace === 'venue' ? r.kind === 'venue' : r.kind !== 'venue')).map((r) => r.id));
+    return queue.filter((q) => q.kind === 'request' && ids.has(q.id)).length;
+  }, [queue, requests, workspace]);
 
   const bookingList = useMemo(
     () =>
@@ -419,7 +437,7 @@ export default function Dashboard() {
             icon="forum-outline"
             tone="neutral"
             title={`${event.title} · ${plural(count, 'message')}`}
-            sub={last ? `Event discussion · ${profileById(last.authorId)?.name ?? 'Guest'}: ${last.text}` : 'Event discussion'}
+            sub={last ? `Event discussion · ${authorName(last.authorId)}: ${last.text || 'Photo'}` : 'Event discussion'}
             onPress={() => router.push(`/event-comments/${event.id}`)}
           />
         ))}

@@ -7,8 +7,8 @@ import { goBack, Screen, ScreenHeader } from '../../components/layout';
 import { Avatar, Banner, Button, Card, Divider, EmptyState, Field, LineItems, PaymentPill, Pill, Row, Segmented, StatusPill, T, TimeLeft } from '../../components/ui';
 import type { Booking, IncomingRequest } from '../../data/types';
 import { bookingExceptions, EXCEPTION_ICON, EXCEPTION_LABEL, EXCEPTION_TONE, exceptionsOf, FINANCE_NOTE, matchesBooking, requestAmount, requestRef } from '../../lib/admin';
-import { bookingRef, chargeItems, isOverdue, PAYMENT_PROVIDER_LABEL, PAYMENT_TONE, providerOf, REQUEST_STATUS_LABEL, STATUS_LABEL, STATUS_NEXT_OWNER } from '../../lib/booking';
-import { dateTime, euro, shortDate } from '../../lib/format';
+import { bookingRef, chargeItems, isOverdue, PAYMENT_PROVIDER_LABEL, PAYMENT_TONE, providerOf, QUOTE_STATUS_LABEL, quoteState, REQUEST_STATUS_LABEL, requestConflict, STATUS_LABEL, STATUS_NEXT_OWNER } from '../../lib/booking';
+import { dateTime, euro, plural, shortDate } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp } from '../../store/useApp';
 import { colors, shadow } from '../../theme';
@@ -16,6 +16,10 @@ import { colors, shadow } from '../../theme';
 type Tab = 'exceptions' | 'bookings' | 'requests';
 
 const FINANCE_STATES = ['capture_pending', 'release_pending', 'refund_pending', 'payout_pending', 'disputed'];
+
+const REQUEST_KIND_LABEL: Record<NonNullable<IncomingRequest['kind']>, string> = { performance: 'Performance', venue: 'Venue hire', lesson: 'Lesson' };
+
+const requestTone = (r: IncomingRequest) => (r.status === 'new' ? 'warning' : r.status === 'expired' || r.status === 'declined' ? 'neutral' : 'success');
 
 function BookingRow({ b, onPress }: { b: Booking; onPress: () => void }) {
   const p = providerOf(b);
@@ -41,11 +45,11 @@ function BookingRow({ b, onPress }: { b: Booking; onPress: () => void }) {
 
 function RequestRow({ r }: { r: IncomingRequest }) {
   return (
-    <Card onPress={() => router.push(`/pro/request/${r.id}`)} accessibilityLabel={`Request ${requestRef(r)} from ${r.requester}, ${REQUEST_STATUS_LABEL[r.status]}`} style={{ gap: 6 }}>
+    <Card onPress={() => router.push(`/admin/bookings?request=${r.id}`)} accessibilityLabel={`Request ${requestRef(r)} from ${r.requester}, ${REQUEST_STATUS_LABEL[r.status]}`} style={{ gap: 6 }}>
       <T v="bodyBold" numberOfLines={1}>{requestRef(r)} · {r.requester} · {r.title}</T>
       <T v="small">{r.date} · {euro(requestAmount(r))} · {r.requesterRole}</T>
       <Row gap={6} style={{ flexWrap: 'wrap' }}>
-        <Pill label={REQUEST_STATUS_LABEL[r.status]} tone={r.status === 'new' ? 'warning' : r.status === 'expired' || r.status === 'declined' ? 'neutral' : 'success'} />
+        <Pill label={REQUEST_STATUS_LABEL[r.status]} tone={requestTone(r)} />
         {r.payment ? <Pill label={PAYMENT_PROVIDER_LABEL[r.payment]} tone={PAYMENT_TONE[r.payment]} icon="credit-card-outline" /> : null}
         {r.status === 'new' ? <TimeLeft deadline={r.deadline} /> : null}
       </Row>
@@ -54,7 +58,7 @@ function RequestRow({ r }: { r: IncomingRequest }) {
 }
 
 export default function AdminBookings() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, request } = useLocalSearchParams<{ id?: string; request?: string }>();
   const adminMode = useApp((s) => s.adminMode);
   const user = useApp((s) => s.user);
   const bookings = useApp((s) => s.bookings);
@@ -72,8 +76,97 @@ export default function AdminBookings() {
   const overdue = bookings.filter((b) => isOverdue(b)).length + requests.filter((r) => isOverdue(r)).length;
   const expireNow = () => {
     const n = expireOverdue();
-    toast(n ? `${n} overdue ${n === 1 ? 'request' : 'requests'} expired · release started` : 'Nothing is past its deadline');
+    toast(n ? `${n} overdue ${n === 1 ? 'request' : 'requests'} expired · any release is tracked in the finance queue` : 'Nothing is past its deadline');
   };
+
+  // ---------- Provider request detail (read-only; answering stays with the provider) ----------
+  if (request) {
+    const r = requests.find((x) => x.id === request);
+    if (!r) {
+      return (
+        <Screen header={<ScreenHeader title="Request" onBack={() => goBack('/admin/bookings')} />}>
+          <EmptyState icon="inbox-remove-outline" title="Request not found" body="It may have been removed by the provider account." action="All requests" onAction={() => router.replace('/admin/bookings')} />
+        </Screen>
+      );
+    }
+    const kinds = exceptions.filter((x) => x.requestId === r.id);
+    const conflict = r.status === 'new' ? requestConflict(r, requests) : undefined;
+    const q = r.quote && r.quote.version > 0 ? r.quote : undefined;
+    const reqOverdue = isOverdue(r);
+    return (
+      <Screen header={<ScreenHeader title={`Request ${requestRef(r)}`} subtitle="Investigation · admin demo" onBack={() => goBack('/admin/bookings')} />}>
+        <Card style={{ gap: 10 }}>
+          <T v="h3">{r.title}</T>
+          <T v="small">{`${r.date}, ${r.time} · ${plural(r.hours, 'hour')} · ${plural(r.guests, 'guest')}`}</T>
+          <T v="small" numberOfLines={2}>{r.location}</T>
+          <Row gap={6} style={{ flexWrap: 'wrap' }}>
+            <Pill label={REQUEST_STATUS_LABEL[r.status]} tone={requestTone(r)} />
+            {r.payment ? <Pill label={PAYMENT_PROVIDER_LABEL[r.payment]} tone={PAYMENT_TONE[r.payment]} icon="credit-card-outline" /> : null}
+            {r.status === 'new' ? <TimeLeft deadline={r.deadline} /> : null}
+          </Row>
+          {kinds.length ? (
+            <Row gap={6} style={{ flexWrap: 'wrap' }}>
+              {kinds.map((k) => <Pill key={k.id} label={EXCEPTION_LABEL[k.kind]} tone={EXCEPTION_TONE[k.kind]} icon={EXCEPTION_ICON[k.kind]} />)}
+            </Row>
+          ) : null}
+        </Card>
+
+        <Card style={{ gap: 8 }}>
+          <T v="title" accessibilityRole="header">Participants</T>
+          <RecordRow icon="account-outline" title={`Customer · ${r.requester}`} sub={r.requesterRole} />
+          <Divider />
+          <RecordRow icon="account-music-outline" title={`Provider · ${user.name}`} sub={`${REQUEST_KIND_LABEL[r.kind ?? 'performance']} · provider account in this app`} />
+          <Divider />
+          <Row justify="space-between" gap={12} style={{ paddingTop: 4 }}>
+            <T v="small">Next action</T>
+            <T v="bodyBold" style={{ flexShrink: 1, textAlign: 'right' }}>{r.status === 'new' ? (r.pricing === 'quote' && !q ? 'Provider sends a quote' : 'Provider accepts or declines') : r.status === 'accepted' && r.payment === 'capture_pending' ? 'Payment provider verifies the payment' : 'No one'}</T>
+          </Row>
+          {r.deadline && r.status === 'new' ? (
+            <Row justify="space-between" gap={12}>
+              <T v="small">Provider deadline</T>
+              <T v="bodyBold">{dateTime(r.deadline)}</T>
+            </Row>
+          ) : null}
+          {r.reminderAt && r.status === 'new' ? (
+            <Row justify="space-between" gap={12}>
+              <T v="small">12-hour reminder</T>
+              <T v="bodyBold">{dateTime(r.reminderAt)}</T>
+            </Row>
+          ) : null}
+        </Card>
+
+        <Card style={{ gap: 10 }}>
+          <T v="title" accessibilityRole="header">{q ? `Quote v${q.version} · ${QUOTE_STATUS_LABEL[quoteState(q)]}` : r.pricing === 'quote' ? 'Quote requested' : 'Offered terms'}</T>
+          {q ? (
+            <LineItems items={q.items} total={q.total} />
+          ) : r.pricing === 'quote' ? (
+            <T v="small">The customer asked for an itemised quote. No price has been sent yet.</T>
+          ) : (
+            <LineItems items={[{ label: 'Customer offer', amount: r.offer }]} total={false} />
+          )}
+          {r.counterOffer ? <T v="small">{`Provider counter offer: ${euro(r.counterOffer)}${r.counterNote ? ` · ${r.counterNote}` : ''}`}</T> : null}
+          <Banner icon="lock-outline">Support can’t change offered or agreed prices. Only the provider and customer can agree a different price.</Banner>
+        </Card>
+
+        {conflict ? (
+          <Banner icon="calendar-alert" tone="danger">{`Same date as the accepted request ${requestRef(conflict)} (${conflict.requester} · ${conflict.title}). The provider must decline one of them or confirm they can do both.`}</Banner>
+        ) : null}
+
+        {r.message ? (
+          <Card style={{ gap: 6 }}>
+            <T v="title" accessibilityRole="header">Customer message</T>
+            <T v="body" color={colors.inkSoft}>{r.message}</T>
+            {r.equipment ? <T v="small">{`Equipment: ${r.equipment}`}</T> : null}
+          </Card>
+        ) : null}
+
+        {reqOverdue ? <Button title="Expire overdue requests now" icon="timer-sand-complete" variant="secondary" onPress={expireNow} /> : null}
+        {r.payment && FINANCE_STATES.includes(r.payment) ? <Button title="Open finance queue" icon="bank-transfer" variant="secondary" onPress={() => router.push('/admin/finance')} /> : null}
+        <Button title="Open in the provider workspace" icon="open-in-new" variant="secondary" onPress={() => router.push(`/pro/request/${r.id}`)} />
+        <T v="small" center>The provider workspace needs an approved artist or venue account.</T>
+      </Screen>
+    );
+  }
 
   // ---------- Investigation detail ----------
   if (id) {
@@ -97,7 +190,7 @@ export default function AdminBookings() {
             <Avatar src={p.image} size={52} label={p.name} />
             <View style={{ flex: 1 }}>
               <T v="h3" numberOfLines={1}>{b.eventTitle}</T>
-              <T v="small">{shortDate(b.date)}, {b.startTime} – {b.endTime} · {b.guests} guests</T>
+              <T v="small">{`${shortDate(b.date)}, ${b.startTime} – ${b.endTime} · ${plural(b.guests, 'guest')}`}</T>
               <T v="small" numberOfLines={1}>{b.location}</T>
             </View>
           </Row>
@@ -185,6 +278,9 @@ export default function AdminBookings() {
           ) : (
             <T v="small">No support case is linked. The customer can open one from the booking or from Help.</T>
           )}
+          {linked.some((c) => c.status !== 'resolved') ? null : (
+            <Button title="Open a case linked to this booking" variant="light" size="sm" icon="lifebuoy" onPress={() => router.push(`/support/new?kind=booking&id=${b.id}`)} style={{ alignSelf: 'flex-start' }} />
+          )}
         </Card>
 
         {kinds.includes('overdue') ? <Button title="Expire overdue requests now" icon="timer-sand-complete" variant="secondary" onPress={expireNow} /> : null}
@@ -228,7 +324,7 @@ export default function AdminBookings() {
                     sub={x.sub}
                     pill={EXCEPTION_LABEL[x.kind]}
                     tone={EXCEPTION_TONE[x.kind]}
-                    onPress={() => router.push(x.bookingId ? `/admin/bookings?id=${x.bookingId}` : `/pro/request/${x.requestId}`)}
+                    onPress={() => router.push(x.bookingId ? `/admin/bookings?id=${x.bookingId}` : `/admin/bookings?request=${x.requestId}`)}
                   />
                 </View>
               ))}

@@ -6,8 +6,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateBadge, EventRow } from '../../components/cards';
 import { Avatar, Button, Icon, IconButton, Pill, Row, Segmented, StatusPill, T, TimeLeft, type Tone } from '../../components/ui';
 import { venueById } from '../../data/mock';
-import type { Booking, BookingStatus, EventItem, GuestInvite, IncomingRequest } from '../../data/types';
+import type { Booking, BookingStatus, EventItem, GuestInvite, IncomingRequest, Role } from '../../data/types';
 import { bookingLabel, providerOf } from '../../lib/booking';
+import { requestDay } from '../../lib/dashboards';
 import { eventState } from '../../lib/events';
 import { isoDay, MONTHS_LONG, parse, plural, sameDay, shortDate, TODAY } from '../../lib/format';
 import { isDiscoverable } from '../../store/filters';
@@ -30,13 +31,8 @@ function monthGrid(year: number, month: number) {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
-/** Older incoming requests only carry a label like "Thu 24 Dec 2026"; returns its ISO day. */
-function requestDay(label: string) {
-  const [, d, mon, y] = label.split(' ');
-  const m = mon ? MONTHS_LONG.findIndex((x) => x.startsWith(mon)) : -1;
-  if (m < 0 || !Number(d) || !Number(y)) return undefined;
-  return isoDay(noon(Number(y), m, Number(d)));
-}
+/** Requests that belong to a provider workspace: venue hire for a venue, everything else for an artist. */
+const forWorkspace = (r: IncomingRequest, workspace: Role) => (workspace === 'venue' ? r.kind === 'venue' : r.kind !== 'venue');
 
 const TONE_FG: Record<Tone, string> = { success: colors.success, warning: colors.warningStrong, danger: colors.danger, brand: colors.brand, neutral: colors.label };
 const TONE_BG: Record<Tone, string> = { success: colors.successBg, warning: colors.warningBg, danger: colors.dangerBg, brand: colors.brandSoft, neutral: colors.chipIdle };
@@ -77,6 +73,8 @@ export default function CalendarTab() {
   const queue = useActionQueue();
   const workspace = activeWorkspace(user);
   const pro = workspace !== 'fan';
+  // Only artist and venue workspaces take provider bookings; an organizer books providers instead.
+  const provider = workspace === 'musician' || workspace === 'venue';
   const [view, setView] = useState<View3>('month');
   const [selected, setSelected] = useState(TODAY);
   const [cursor, setCursor] = useState(noon(TODAY.getFullYear(), TODAY.getMonth(), 1));
@@ -111,7 +109,8 @@ export default function CalendarTab() {
   const myEventIds = useMemo(
     () =>
       new Set([
-        ...Object.keys(going),
+        // respondInvite('declined') stores going[id] = false, so only count the true entries.
+        ...Object.keys(going).filter((id) => going[id]),
         ...tickets.filter((t) => t.status === 'valid' || t.status === 'used').map((t) => t.eventId),
         ...allEvents.filter((e) => e.organizerId === 'me' || e.hostId === 'me').map((e) => e.id),
         ...inviteByEvent.keys(),
@@ -141,12 +140,12 @@ export default function CalendarTab() {
   // Professionals also see the work they accepted from booking requests (venue hire in the venue workspace).
   const gigs = useMemo(
     () =>
-      (pro ? requests : [])
-        .filter((r) => r.status === 'accepted' && (workspace === 'venue' ? r.kind === 'venue' : r.kind !== 'venue'))
-        .map((r) => ({ r, day: r.isoDate ?? requestDay(r.date) }))
+      (provider ? requests : [])
+        .filter((r) => r.status === 'accepted' && forWorkspace(r, workspace))
+        .map((r) => ({ r, day: requestDay(r) }))
         .filter((g): g is { r: IncomingRequest; day: string } => !!g.day)
         .sort((a, b) => a.day.localeCompare(b.day)),
-    [pro, requests, workspace],
+    [provider, requests, workspace],
   );
   const gigsByDay = useMemo(() => {
     const m = new Map<string, IncomingRequest[]>();
@@ -190,9 +189,12 @@ export default function CalendarTab() {
   const upcomingGigs = gigs.filter((g) => parse(g.day) >= addDays(TODAY, -1));
 
   // Overview starts with what needs doing: provider requests first in a provider workspace, then your own records.
-  const actions = useMemo(() => [...queue.filter((q) => q.kind === 'request'), ...queue.filter((q) => q.kind !== 'request')], [queue]);
+  // The shared queue lists every new request; keep only the ones the active workspace can answer.
+  const actions = useMemo(() => {
+    const own = new Set(requests.filter((r) => provider && forWorkspace(r, workspace)).map((r) => r.id));
+    return [...queue.filter((q) => q.kind === 'request' && own.has(q.id)), ...queue.filter((q) => q.kind !== 'request')];
+  }, [queue, requests, provider, workspace]);
   const awaitingReply = upcomingBookings.filter((b) => b.status === 'pending' || (b.status === 'requested' && b.pricing === 'quote' && (!b.quote || b.quote.version === 0)));
-  const dashboardHref = pro ? '/pro/workspace' : '/dashboard';
 
   const changeView = (v: View3) => {
     setView(v);
@@ -234,13 +236,17 @@ export default function CalendarTab() {
           <>
             <T v="h1">Your event overview</T>
             {actions.length ? (
-              <NextActionCard item={actions[0]} more={actions.length - 1} onMore={() => router.push(dashboardHref as never)} />
+              <NextActionCard item={actions[0]} more={actions.length - 1} onMore={() => router.push('/dashboard')} />
             ) : (
               <Row gap={10} style={{ padding: 12, borderRadius: radius.md, backgroundColor: colors.successBg }}>
                 <Icon name="check-circle-outline" size={22} color={colors.success} />
                 <T v="small" color={colors.success} style={{ flex: 1 }}>Nothing needs your action right now.</T>
               </Row>
             )}
+            <Row gap={8} style={{ flexWrap: 'wrap' }}>
+              <Button title="Your dashboard" icon="view-dashboard-outline" size="sm" variant="light" onPress={() => router.push('/dashboard')} />
+              {pro ? <Button title="Pro workspace" icon="briefcase-outline" size="sm" variant="light" onPress={() => router.push('/pro/workspace')} /> : null}
+            </Row>
             {awaitingReply.map((b) => (
               <Pressable
                 key={`wait-${b.id}`}

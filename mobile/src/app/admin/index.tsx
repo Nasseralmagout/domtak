@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { AdminGate, QueuePanel, RecordRow } from '../../components/admin';
@@ -10,12 +10,13 @@ import { adminMetrics, applicationEntries, bookingExceptions, EXCEPTION_ICON, EX
 import { PAYMENT_TONE, REMINDER_HOURS, RESPONSE_HOURS } from '../../lib/booking';
 import { ago, dateTime, euro } from '../../lib/format';
 import { PLATFORM_COMMISSION_RATE, SERVICE_FEE_RATE } from '../../lib/pricing';
-import { byLastUpdate, CASE_QUEUE_LABEL, CASE_STATUS_TONE, lastUpdate } from '../../lib/support';
+import { byLastUpdate, CASE_QUEUE_LABEL, CASE_STATUS_TONE, lastUpdate, LINK_KIND_LABEL, pendingMoney } from '../../lib/support';
 import { toast } from '../../store/toast';
 import { APPLICATION_STATUS_LABEL, APPLICATION_STATUS_TONE, ROLE_LABEL, useApp } from '../../store/useApp';
 import { colors } from '../../theme';
 
 const PREVIEW = 3;
+const AUDIT_PREVIEW = 8;
 
 export default function AdminDashboard() {
   const adminMode = useApp((s) => s.adminMode);
@@ -28,6 +29,7 @@ export default function AdminDashboard() {
   const cases = useApp((s) => s.supportCases);
   const reports = useApp((s) => s.reports);
   const auditLog = useApp((s) => s.auditLog);
+  const [allAudit, setAllAudit] = useState(false);
 
   const entries = useMemo(() => applicationEntries(user, queue), [user, queue]);
   const exceptions = useMemo(() => bookingExceptions(bookings, requests), [bookings, requests]);
@@ -103,7 +105,7 @@ export default function AdminDashboard() {
             sub={x.sub}
             pill={EXCEPTION_LABEL[x.kind]}
             tone={EXCEPTION_TONE[x.kind]}
-            onPress={() => router.push(x.bookingId ? `/admin/bookings?id=${x.bookingId}` : `/pro/request/${x.requestId}`)}
+            onPress={() => router.push(x.bookingId ? `/admin/bookings?id=${x.bookingId}` : `/admin/bookings?request=${x.requestId}`)}
           />
         ))}
       </QueuePanel>
@@ -156,9 +158,21 @@ export default function AdminDashboard() {
         action="All support cases"
         onAction={() => router.push('/support')}
       >
-        {openCases.slice(0, PREVIEW).map((c) => (
-          <RecordRow key={c.id} icon="file-document-outline" title={`${c.ref} · ${c.topic}`} sub={`Updated ${ago(lastUpdate(c))}`} pill={CASE_QUEUE_LABEL[c.status]} tone={CASE_STATUS_TONE[c.status]} onPress={() => router.push(`/support/${c.id}`)} />
-        ))}
+        {openCases.slice(0, PREVIEW).map((c) => {
+          const money = pendingMoney(c, bookings);
+          const linked = !c.linked ? 'No record linked' : c.linked.kind === 'account' ? 'Account linked' : `${LINK_KIND_LABEL[c.linked.kind]} linked`;
+          return (
+            <RecordRow
+              key={c.id}
+              icon="file-document-outline"
+              title={`${c.ref} · ${c.topic}`}
+              sub={`${linked}${money ? ` · ${money.payment === 'refund_pending' ? 'refund' : 'release'} pending` : ''} · updated ${ago(lastUpdate(c))}`}
+              pill={CASE_QUEUE_LABEL[c.status]}
+              tone={CASE_STATUS_TONE[c.status]}
+              onPress={() => router.push(`/support/${c.id}`)}
+            />
+          );
+        })}
       </QueuePanel>
 
       <View style={{ gap: 10 }}>
@@ -200,7 +214,7 @@ export default function AdminDashboard() {
       <Card style={{ gap: 8 }}>
         <T v="title" accessibilityRole="header">Audit history</T>
         {auditLog.length ? (
-          auditLog.slice(0, 8).map((a, i) => (
+          (allAudit ? auditLog : auditLog.slice(0, AUDIT_PREVIEW)).map((a, i) => (
             <View key={a.id} style={{ gap: 2 }}>
               {i ? <Divider style={{ marginBottom: 8 }} /> : null}
               <T v="bodyBold">{a.action}</T>
@@ -212,6 +226,9 @@ export default function AdminDashboard() {
         ) : (
           <T v="small">No decisions recorded yet. Every decision in this console appears here with who made it and when.</T>
         )}
+        {auditLog.length > AUDIT_PREVIEW ? (
+          <Button title={allAudit ? 'Show the latest only' : `Show all ${auditLog.length}`} variant="ghost" size="sm" onPress={() => setAllAudit(!allAudit)} style={{ alignSelf: 'flex-start' }} />
+        ) : null}
       </Card>
     </Screen>
   );

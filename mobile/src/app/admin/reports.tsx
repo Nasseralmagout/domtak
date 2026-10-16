@@ -25,7 +25,7 @@ const DECISIONS: { status: Decision; label: string; icon: IconName; variant: 'se
     icon: 'check',
     variant: 'secondary',
     title: 'Dismiss the report',
-    body: 'The content stays as it is. The decision and reason are recorded.',
+    body: 'The content stays as it is. The decision and reason are written to the audit log.',
     reasons: ['No breach of the community rules', 'Not enough context to act', 'Duplicate of an earlier report'],
     confirm: 'Dismiss report',
   },
@@ -35,7 +35,7 @@ const DECISIONS: { status: Decision; label: string; icon: IconName; variant: 'se
     icon: 'eye-off-outline',
     variant: 'light',
     title: 'Restrict the content',
-    body: 'Limits the content or account while it stays on record. The account is told why and how to appeal.',
+    body: 'Marks the report as restricted and writes the reason to the audit log. The content stays visible and on record, and the account can appeal through support.',
     reasons: ['Borderline content, limited while it is reviewed', 'Misleading information that needs correcting', 'First warning for this account'],
     confirm: 'Restrict',
   },
@@ -45,11 +45,20 @@ const DECISIONS: { status: Decision; label: string; icon: IconName; variant: 'se
     icon: 'delete-outline',
     variant: 'danger',
     title: 'Remove the content',
-    body: 'Removes it from feeds, discussions and search for everyone. The account is told why and how to appeal.',
+    body: 'Writes the removal and its reason to the audit log. The account can appeal through support.',
     reasons: ['Harassment or bullying', 'Hate or violence', 'Spam or scam', 'Misleading information', 'Other breach of the community rules'],
     confirm: 'Remove content',
   },
 ];
+
+/** What a removal changes in this app, by content type. Posts and comments are hidden everywhere; other types are recorded. */
+const REMOVAL_EFFECT: Record<Report['kind'], string> = {
+  post: 'Hides the post from feeds and profiles for everyone.',
+  comment: 'Hides the comment from posts and event discussions for everyone.',
+  event: 'Records the removal decision for this event. The host and any linked bookings are followed up through support.',
+  profile: 'Records the removal decision for this profile. Existing bookings keep their record history.',
+  message: 'Records the decision for this conversation. The message stays available to the case.',
+};
 
 interface Content {
   label: string;
@@ -123,6 +132,8 @@ export default function AdminReports() {
   const decided = sorted.filter((r) => r.status !== 'open');
   const list = tab === 'open' ? open : decided;
   const sheet = deciding ? DECISIONS.find((d) => d.status === deciding.status) : undefined;
+  const decidingKind = deciding ? reports.find((r) => r.id === deciding.id)?.kind : undefined;
+  const sheetBody = sheet?.status === 'removed' && decidingKind ? `${REMOVAL_EFFECT[decidingKind]} ${sheet.body}` : sheet?.body;
 
   return (
     <Screen header={<ScreenHeader title="Reports" subtitle="Moderation · admin demo" onBack={() => goBack('/admin')} />}>
@@ -187,7 +198,8 @@ export default function AdminReports() {
                     <T v="smallBold">{REPORT_STATUS_LABEL[r.status]}{r.decision ? ` · ${dateTime(r.decision.at)}` : ''}</T>
                   </Row>
                   {r.decision?.note ? <T v="small">{r.decision.note}</T> : null}
-                  {r.status !== 'dismissed' ? <T v="small">The account was told the reason and can appeal through Help › Support case.</T> : null}
+                  {r.status === 'removed' && (r.kind === 'post' || r.kind === 'comment') ? <T v="small">Hidden from everyone in this app.</T> : null}
+                  {r.status !== 'dismissed' ? <T v="small">The account can appeal through Help › New support case › Safety, a report or an appeal.</T> : null}
                 </View>
               )}
             </Card>
@@ -204,7 +216,7 @@ export default function AdminReports() {
       <ReasonSheet
         visible={!!sheet}
         title={sheet?.title ?? ''}
-        body={sheet?.body}
+        body={sheetBody}
         reasons={sheet?.reasons ?? []}
         confirmLabel={sheet?.confirm ?? 'Confirm'}
         destructive={sheet?.status === 'removed'}
@@ -212,7 +224,7 @@ export default function AdminReports() {
         onSubmit={(reason, note) => {
           if (!deciding) return;
           moderateReport(deciding.id, deciding.status, note ? `${reason}. ${note}` : reason);
-          toast(deciding.status === 'dismissed' ? 'Report dismissed · decision recorded' : 'Decision recorded · the account is notified and can appeal');
+          toast(deciding.status === 'dismissed' ? 'Report dismissed · written to the audit log' : `Report ${deciding.status} · written to the audit log`);
         }}
         onClose={() => setDeciding(undefined)}
       />

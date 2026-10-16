@@ -88,7 +88,9 @@ export default function NewSupportCase() {
 
   const list = kind === 'none' ? [] : options[kind];
   const pickedOption = kind === 'none' ? undefined : list.find((o) => o.id === picked);
-  const visible = showAll ? list : list.slice(0, PREVIEW);
+  // A record picked from a deep link stays visible even when it is beyond the first few.
+  const pickedIndex = pickedOption ? list.indexOf(pickedOption) : -1;
+  const visible = showAll ? list : pickedOption && pickedIndex >= PREVIEW ? [pickedOption, ...list.slice(0, PREVIEW - 1)] : list.slice(0, PREVIEW);
 
   const chooseTopic = (key: string) => {
     const next = topicByKey(key);
@@ -198,6 +200,9 @@ export default function NewSupportCase() {
       {topic ? (
         <View style={{ gap: 10 }}>
           <T v="h3" accessibilityRole="header">2. Link the record</T>
+          {topic.key === 'safety' ? (
+            <Banner icon="alert-octagon-outline" tone="danger">Someone in danger right now? Call 112 first and tell the venue or organizer on site. A support case is for follow-up.</Banner>
+          ) : null}
           {topic.account ? (
             <Banner icon="account-circle-outline">This case is linked to your account. Support sees your account details, not your private messages.</Banner>
           ) : kinds.length > 1 ? (
