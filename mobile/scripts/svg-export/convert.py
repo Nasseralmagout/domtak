@@ -18,7 +18,7 @@ SECTIONS = {
     '02': 'Home & social',
     '03': 'Events & tickets',
     '04': 'Artists & venues',
-    '05': 'Booking (escrow)',
+    '05': 'Booking & payments',
     '06': 'Calendar & messages',
     '07': 'Account',
     '08': 'Pro tools',
