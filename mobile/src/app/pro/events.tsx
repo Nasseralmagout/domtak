@@ -3,16 +3,15 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { goBack, Screen, ScreenHeader } from '../../components/layout';
+import { goBack, PermissionNotice, Screen, ScreenHeader } from '../../components/layout';
 import { Button, Card, EmptyState, Icon, IconButton, Photo, Pill, Row, Segmented, T } from '../../components/ui';
-import type { EventItem } from '../../data/types';
+import type { EventItem, EventState } from '../../data/types';
+import { DEMO_ORGANIZERS, readinessLine } from '../../lib/eventHost';
+import { EVENT_STATE_TONE, eventState, eventStateLabel, type Readiness, readiness } from '../../lib/events';
 import { euro, eventWhen, isoDay, parse, shortDate, TODAY } from '../../lib/format';
 import { DAY_MS, doorsOpenAt, type PromotionState, promotionState } from '../../lib/promotions';
-import { useAllEvents, useApp, useVenue } from '../../store/useApp';
+import { activeWorkspace, useAllEvents, useApp, useVenue } from '../../store/useApp';
 import { colors, fonts, radius } from '../../theme';
-
-/** For the demo, these seed organizers count as "you". */
-const DEMO_ORGANIZERS = ['mobolosa', 'og'];
 
 function stats(e: EventItem) {
   const sold = e.ticketTypes.reduce((n, t) => n + t.sold, 0);
@@ -28,31 +27,31 @@ function daysUntil(iso: string) {
   return `In ${d} days`;
 }
 
-function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: PromotionState; past: boolean; mine: boolean }) {
+function ManageCard({ event, promo, past, state, r }: { event: EventItem; promo: PromotionState; past: boolean; state: EventState; r: Readiness }) {
   // Includes the owner's saved listing edits, like the public venue page.
   const venue = useVenue(event.venueId);
   const { sold, capacity, revenue, pct } = stats(event);
   const soldOut = capacity > 0 && sold >= capacity;
   const promoted = promo.kind !== 'none';
-  // Boosts run until doors open; private events are invite-only.
-  const canPromote = !past && !event.isPrivate && doorsOpenAt(event) > TODAY;
+  // Boosts run until doors open, only for live public events (never drafts, cancelled or private events).
+  const canPromote = !past && !event.isPrivate && state !== 'draft' && state !== 'cancelled' && doorsOpenAt(event) > TODAY;
   const until = promo.kind === 'none' ? '' : shortDate(isoDay(promo.until));
   return (
     <Card padded={false} style={{ overflow: 'hidden' }}>
       <View style={{ height: 136 }}>
         <Photo src={event.cover} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} accessibilityLabel={`${event.title} cover`} />
         <LinearGradient colors={['transparent', 'rgba(20,10,40,0.85)']} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 96 }} />
-        <Row gap={6} style={{ position: 'absolute', top: 12, left: 12, right: 60, flexWrap: 'wrap' }}>
+        <Row gap={6} style={{ position: 'absolute', top: 12, left: 12, right: 108, flexWrap: 'wrap' }}>
           {promoted ? <Pill label={`Promoted until ${until}`} icon="rocket-launch" tone="brand" /> : null}
+          <Pill label={eventStateLabel(state, event.isPrivate)} tone={EVENT_STATE_TONE[state]} />
           {event.isPrivate ? <Pill label="Private" icon="lock-outline" tone="neutral" /> : null}
-          {mine ? <Pill label="New" tone="success" /> : null}
-          {past ? <Pill label="Ended" tone="neutral" /> : null}
         </Row>
-        {!past ? (
-          <View style={{ position: 'absolute', top: 4, right: 4 }}>
+        <Row gap={4} style={{ position: 'absolute', top: 4, right: 4 }}>
+          <IconButton name="eye-outline" label={`View ${event.title}`} color={colors.white} bg="rgba(0,0,0,0.35)" onPress={() => router.push(`/event/${event.id}`)} />
+          {!past && state !== 'cancelled' ? (
             <IconButton name="pencil-outline" label={`Edit ${event.title}`} color={colors.white} bg="rgba(0,0,0,0.35)" onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} />
-          </View>
-        ) : null}
+          ) : null}
+        </Row>
         <View style={{ position: 'absolute', left: 14, right: 14, bottom: 12 }}>
           <Text numberOfLines={1} style={{ fontFamily: fonts.display, fontSize: 20, color: colors.white }}>{event.title}</Text>
           <Text numberOfLines={1} style={{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.lilacLight }}>
@@ -68,6 +67,11 @@ function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: Pro
             <T v="small" color={colors.inkSoft} numberOfLines={1} style={{ flex: 1 }}>{venue ? `${venue.name}, ${venue.area}` : 'Venue to be announced'}</T>
           </Row>
           <T v="smallBold" color={past ? colors.subtle : colors.brand}>{past ? 'Finished' : daysUntil(event.start)}</T>
+        </Row>
+
+        <Row gap={8} align="flex-start">
+          <Icon name="account-music-outline" size={16} color={r.ready ? colors.success : colors.brand} />
+          <T v="small" color={r.ready ? colors.success : colors.inkSoft} style={{ flex: 1 }}>{readinessLine(r)}</T>
         </Row>
 
         <View style={{ gap: 6 }} accessible accessibilityLabel={`${sold} of ${capacity} tickets sold`}>
@@ -95,7 +99,7 @@ function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: Pro
         </Row>
 
         <Row gap={8}>
-          <Button title="Manage" size="md" variant="primary" style={{ flex: 1, paddingHorizontal: 8 }} accessibilityLabel={`Manage ${event.title}`} onPress={() => router.push(`/pro/attendees/${event.id}`)} />
+          <Button title="Manage" size="md" variant="primary" style={{ flex: 1, paddingHorizontal: 8 }} accessibilityLabel={`Open the workspace for ${event.title}`} onPress={() => router.push(`/event-workspace/${event.id}`)} />
           {canPromote ? (
             <Button
               title={promo.kind === 'covered' ? 'Promoted' : promo.kind === 'running' ? 'Extend' : 'Promote'}
@@ -112,7 +116,7 @@ function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: Pro
               onPress={() => router.push(`/pro/promote/${event.id}`)}
             />
           ) : null}
-          <Button title="View" size="md" variant="secondary" style={{ flex: 1, paddingHorizontal: 8 }} accessibilityLabel={`View ${event.title}`} onPress={() => router.push(`/event/${event.id}`)} />
+          <Button title="Guests" size="md" variant="secondary" style={{ flex: 1, paddingHorizontal: 8 }} accessibilityLabel={`Guests and tickets for ${event.title}`} onPress={() => router.push(`/pro/attendees/${event.id}`)} />
         </Row>
       </View>
     </Card>
@@ -120,7 +124,8 @@ function ManageCard({ event, promo, past, mine }: { event: EventItem; promo: Pro
 }
 
 export default function ProEvents() {
-  const myEvents = useApp((s) => s.myEvents);
+  const user = useApp((s) => s.user);
+  const bookings = useApp((s) => s.bookings);
   // Includes saved edits to the demo organizer's sample events.
   const allEvents = useAllEvents();
   const promotions = useApp((s) => s.promotions);
@@ -134,7 +139,8 @@ export default function ProEvents() {
     };
   }, [allEvents]);
 
-  const myIds = useMemo(() => new Set(myEvents.map((e) => e.id)), [myEvents]);
+  // Live state and provider readiness per event (each provider booking stays independent).
+  const live = useMemo(() => new Map([...upcoming, ...past].map((e) => [e.id, { state: eventState(e, bookings), r: readiness(e, bookings) }])), [upcoming, past, bookings]);
   // Boost state per upcoming event, on the demo clock (boosts are stamped with TODAY).
   const promos = useMemo(() => new Map(upcoming.map((e) => [e.id, promotionState(promotions, e, TODAY)])), [upcoming, promotions]);
   const promoOf = (e: EventItem): PromotionState => promos.get(e.id) ?? { kind: 'none' };
@@ -148,13 +154,24 @@ export default function ProEvents() {
     { sold: 0, revenue: 0 },
   );
   const promotedCount = upcoming.filter((e) => promoOf(e).kind !== 'none').length;
+  const drafts = upcoming.filter((e) => live.get(e.id)?.state === 'draft').length;
+
+  // Public events, ticket sales and promotions are for approved organizers; members manage their events in My events.
+  if (activeWorkspace(user) !== 'organizer') {
+    return (
+      <Screen header={<ScreenHeader title="Organizer events" onBack={() => goBack('/(tabs)')} />}>
+        <PermissionNotice role="organizer" action="publish public events and manage ticket sales" />
+        <Button title="Open My events" icon="calendar-account-outline" variant="secondary" onPress={() => router.replace('/my-events')} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen
       header={
         <ScreenHeader
           title="My events"
-          subtitle={`${upcoming.length} upcoming · ${promotedCount} promoted`}
+          subtitle={`${upcoming.length} upcoming · ${drafts} draft${drafts === 1 ? '' : 's'} · ${promotedCount} promoted`}
           onBack={() => goBack('/pro/workspace')}
           right={<Button title="New event" icon="plus" size="sm" hitSlop={6} style={{ marginRight: 12 }} onPress={() => router.push('/create-event')} />}
         />
@@ -191,7 +208,10 @@ export default function ProEvents() {
           <EmptyState icon="history" title="No past events yet" body="Once an event has ended, its final ticket sales and revenue show up here." />
         )
       ) : (
-        list.map((e) => <ManageCard key={e.id} event={e} promo={tab === 'upcoming' ? promoOf(e) : { kind: 'none' }} past={tab === 'past'} mine={myIds.has(e.id)} />)
+        list.map((e) => {
+          const info = live.get(e.id) ?? { state: 'published' as EventState, r: readiness(e, bookings) };
+          return <ManageCard key={e.id} event={e} promo={tab === 'upcoming' ? promoOf(e) : { kind: 'none' }} past={tab === 'past'} state={info.state} r={info.r} />;
+        })
       )}
     </Screen>
   );

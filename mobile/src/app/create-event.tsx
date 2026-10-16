@@ -107,7 +107,13 @@ export default function CreateEvent() {
   const [startTime, setStartTime] = useState(editTime ?? (startPrivate ? '20:00' : '22:00'));
   const [customTime, setCustomTime] = useState(editTime && !START_TIMES.includes(editTime) ? editTime : '');
   const [hours, setHours] = useState(editing ? Math.min(24, Math.max(1, Math.round((parse(editing.end).getTime() - parse(editing.start).getTime()) / 3_600_000))) : 6);
-  const [expected, setExpected] = useState(String(editing?.expectedGuests ?? (startPrivate ? 30 : 200)));
+  // Older events have no expected-guest count: start from their capacity so the draft check doesn't flag them.
+  const [expected, setExpected] = useState(() => {
+    if (!editing) return String(startPrivate ? 30 : 200);
+    if (editing.expectedGuests) return String(editing.expectedGuests);
+    const cap = editing.ticketTypes.reduce((n, t) => n + t.capacity, 0);
+    return String(Math.min(cap, venueList.find((v) => v.id === editing.venueId)?.capacity ?? cap));
+  });
   const [oneTime, setOneTime] = useState(true);
   const [weeks, setWeeks] = useState(4);
   const [library, setLibrary] = useState(false);

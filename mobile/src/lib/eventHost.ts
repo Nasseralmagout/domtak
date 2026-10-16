@@ -26,6 +26,12 @@ const WAITING_ON: Partial<Record<Booking['status'], string>> = {
   change_requested: 'change requested',
 };
 
+const CLOSED_AS: Partial<Record<Booking['status'], string>> = {
+  declined: 'declined',
+  expired: 'didn’t reply in time',
+  cancelled: 'cancelled',
+};
+
 /** What an outstanding booking is waiting for, in lower case: "awaiting reply", "quote received"… */
 export function waitingOn(b: Booking) {
   if (b.pricing === 'quote' && b.status === 'requested') return bookingLabel(b).toLowerCase();
@@ -41,7 +47,7 @@ export function readinessLine(r: Readiness) {
   const parts: string[] = [];
   if (r.total > 0) parts.push(`${r.confirmed} of ${r.total} provider${r.total === 1 ? '' : 's'} confirmed`);
   if (r.outstanding.length) parts.push(r.outstanding.map((b) => `${providerOf(b).name} ${waitingOn(b)}`).join(', '));
-  if (r.closed.length) parts.push(`${r.closed.map((b) => providerOf(b).name).join(', ')} ${r.closed.length === 1 ? 'needs' : 'need'} replacing`);
+  if (r.closed.length) parts.push(r.closed.map((b) => `${providerOf(b).name} ${CLOSED_AS[b.status] ?? 'closed'}`).join(', '));
   return parts.join('; ');
 }
 

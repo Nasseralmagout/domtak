@@ -5,6 +5,8 @@ import { Pressable, View } from 'react-native';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/layout';
 import { Banner, Button, Card, Chip, Divider, EmptyState, Icon, type IconName, KeyValue, Photo, Pill, Radio, Row, T } from '../../../components/ui';
 import { GENRES } from '../../../data/mock';
+import { hostsEvent } from '../../../lib/eventHost';
+import { eventState } from '../../../lib/events';
 import { compact, euro, isoDay, parse, shortDate, time, TODAY } from '../../../lib/format';
 import { activePromotion, DAY_MS, doorsOpenAt, isPromoted, type PromotionChain, promotionChain, promotionEnd } from '../../../lib/promotions';
 import { type Promotion, useApp, useEvent, useVenue } from '../../../store/useApp';
@@ -52,6 +54,8 @@ export default function PromoteEvent() {
   const promoteEvent = useApp((s) => s.promoteEvent);
   const methods = useApp((s) => s.paymentMethods);
   const selectedPayment = useApp((s) => s.selectedPayment);
+  const user = useApp((s) => s.user);
+  const bookings = useApp((s) => s.bookings);
 
   // An extension starts from the settings of the running boost, else the latest one for this event (newest come first).
   const last = (event ? activePromotion(promotions, event) : null) ?? promotions.find((p) => p.eventId === eventId);
@@ -76,6 +80,22 @@ export default function PromoteEvent() {
     );
   }
 
+  // Promotion is for live public events you organise: never a draft, a cancelled or a private event.
+  const state = eventState(event, bookings);
+  if (!hostsEvent(event, user) || state === 'draft' || state === 'cancelled') {
+    const own = hostsEvent(event, user);
+    return (
+      <Screen header={<ScreenHeader title="Promote event" onBack={() => goBack(own ? `/event-workspace/${event.id}` : `/event/${event.id}`)} />}>
+        {!own ? (
+          <EmptyState icon="account-lock-outline" title="Only the organizer can promote this event" body="Featured listings are bought by the organizer of a public event." action="View event" onAction={() => router.replace(`/event/${event.id}`)} />
+        ) : state === 'draft' ? (
+          <EmptyState icon="file-document-edit-outline" title="Publish the event first" body="Drafts are only visible to you, so there is nothing to promote yet. Finish and publish it from the event workspace." action="Open event workspace" onAction={() => router.replace(`/event-workspace/${event.id}`)} />
+        ) : (
+          <EmptyState icon="calendar-remove-outline" title="This event is cancelled" body="Cancelled events can’t be promoted." action="Open event workspace" onAction={() => router.replace(`/event-workspace/${event.id}`)} />
+        )}
+      </Screen>
+    );
+  }
   const ended = parse(event.end) < TODAY;
   const doorsAt = doorsOpenAt(event).getTime();
   const doorsOpen = doorsAt <= now;

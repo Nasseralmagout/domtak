@@ -2,10 +2,13 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
+import { PersonRow } from '../../../components/cards';
 import { BottomBar, goBack, Screen, ScreenHeader } from '../../../components/layout';
-import { Avatar, Button, Card, Chip, EmptyState, Field, Pill, Row, T } from '../../../components/ui';
-import { attendees as seedAttendees } from '../../../data/mock';
+import { Avatar, Banner, Button, Card, Chip, EmptyState, Field, Icon, Pill, Row, T } from '../../../components/ui';
+import { attendees as seedAttendees, profileById } from '../../../data/mock';
 import type { Attendee } from '../../../data/types';
+import { hostsEvent, invitationLabel } from '../../../lib/eventHost';
+import { EVENT_STATE_TONE, eventState, eventStateLabel, guestSummary } from '../../../lib/events';
 import { euro, isoDay, shortDate, time, TODAY } from '../../../lib/format';
 import { doorsOpenAt, promotionState } from '../../../lib/promotions';
 import { useApp, useEvent } from '../../../store/useApp';
@@ -17,6 +20,8 @@ export default function Attendees() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const event = useEvent(eventId);
   const promotions = useApp((s) => s.promotions);
+  const user = useApp((s) => s.user);
+  const bookings = useApp((s) => s.bookings);
   // Codes scanned at the door (shared with /pro/scan).
   const scanned = useApp((s) => s.checkIns[eventId ?? '']);
   const tickets = useApp((s) => s.tickets);
@@ -46,11 +51,24 @@ export default function Attendees() {
   );
   if (!event) {
     return (
-      <Screen header={<ScreenHeader title="Attendees" onBack={() => goBack('/pro/events')} />}>
-        <EmptyState icon="calendar-remove-outline" title="Event not found" body="This event may have been removed. Pick another one from your events." action="Back to my events" onAction={() => router.replace('/pro/events')} />
+      <Screen header={<ScreenHeader title="Attendees" onBack={() => goBack('/my-events')} />}>
+        <EmptyState icon="calendar-remove-outline" title="Event not found" body="This event may have been removed. Pick another one from your events." action="Back to my events" onAction={() => router.replace('/my-events')} />
       </Screen>
     );
   }
+  // Guest lists and entry are for the person who runs the event.
+  if (!hostsEvent(event, user)) {
+    return (
+      <Screen header={<ScreenHeader title="Attendees" onBack={() => goBack(`/event/${event.id}`)} />}>
+        <EmptyState icon="account-lock-outline" title="Only the host can see guests" body="Guest lists, tickets and entry are visible to the person who runs the event." action="View event" onAction={() => router.replace(`/event/${event.id}`)} />
+      </Screen>
+    );
+  }
+  const workspace = `/event-workspace/${event.id}`;
+  const state = eventState(event, bookings);
+  const invitations = event.invitations ?? [];
+  const g = guestSummary(event);
+  const cs = event.costSharing?.enabled ? event.costSharing : undefined;
   const cap = event.ticketTypes.reduce((n, t) => n + t.capacity, 0);
   const revenue = event.ticketTypes.reduce((n, t) => n + t.sold * t.price, 0);
   // Same count as /pro/scan: guests already inside plus every ticket scanned at the door.
@@ -60,7 +78,8 @@ export default function Attendees() {
   const promo = promotionState(promotions, event, TODAY);
   const promoted = promo.kind !== 'none';
   const covered = promo.kind === 'covered';
-  const canPromote = !event.isPrivate && doorsOpenAt(event) > TODAY;
+  // Only a live public event can be promoted (never a draft, a cancelled or a private event).
+  const canPromote = !event.isPrivate && state !== 'draft' && state !== 'cancelled' && state !== 'completed' && doorsOpenAt(event) > TODAY;
   const until = promo.kind === 'none' ? '' : shortDate(isoDay(promo.until));
 
   return (
@@ -68,8 +87,8 @@ export default function Attendees() {
       header={
         <ScreenHeader
           title={event.title}
-          subtitle={`${shortDate(event.start)} · ${time(event.start)}`}
-          onBack={() => goBack('/pro/events')}
+          subtitle={`${shortDate(event.start)} · ${time(event.start)} · ${eventStateLabel(state, event.isPrivate)}`}
+          onBack={() => goBack(workspace)}
           right={
             canPromote ? (
               <Button
@@ -88,7 +107,7 @@ export default function Attendees() {
                 }
                 onPress={() => router.push(`/pro/promote/${event.id}`)}
               />
-            ) : event.isPrivate ? (
+            ) : event.isPrivate && state !== 'cancelled' && state !== 'completed' ? (
               <Button
                 title="Invite"
                 icon="account-plus-outline"
@@ -105,6 +124,16 @@ export default function Attendees() {
       }
       footer={<BottomBar><Button title="Scan tickets at the door" icon="qrcode-scan" onPress={() => router.push({ pathname: '/pro/scan', params: { eventId: event.id } })} /></BottomBar>}
     >
+      <Card onPress={() => router.push(workspace as never)} accessibilityLabel="Open the event workspace: providers, budget and invitations" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
+        <Icon name="view-dashboard-outline" size={22} color={colors.brand} />
+        <View style={{ flex: 1 }}>
+          <T v="bodyBold">Event workspace</T>
+          <T v="small">Providers, budget and invitations</T>
+        </View>
+        <Pill label={eventStateLabel(state, event.isPrivate)} tone={EVENT_STATE_TONE[state]} />
+        <Icon name="chevron-right" size={20} color={colors.subtle} />
+      </Card>
+      {state === 'cancelled' ? <Banner icon="calendar-remove-outline" tone="danger">{`This event is cancelled${event.cancelReason ? `: ${event.cancelReason}` : ''}. Tickets are no longer valid for entry.`}</Banner> : null}
       <Row gap={8}>
         <Card style={{ flex: 1, backgroundColor: colors.brandDeep, padding: 12 }}>
           <T v="small" color={colors.lilacLight}>Sold</T>
@@ -129,13 +158,26 @@ export default function Attendees() {
           </View>
         ))}
       </Card>
+      {event.isPrivate && invitations.length ? (
+        <Card style={{ gap: 6 }}>
+          <Row justify="space-between">
+            <T v="title">Invited guests</T>
+            <T v="small">{`${g.accepted} accepted · ${g.waiting} no answer${cs ? ` · ${g.paid} paid` : ''}`}</T>
+          </Row>
+          {invitations.map((inv) => {
+            const st = invitationLabel(inv, cs);
+            return <PersonRow key={inv.profileId} id={inv.profileId} subtitle={profileById(inv.profileId)?.handle} right={<Pill label={st.label} tone={st.tone} />} />;
+          })}
+        </Card>
+      ) : null}
       {sold === 0 && guests.length === 0 ? (
+        event.isPrivate && invitations.length ? null : (
         <EmptyState
           icon="ticket-outline"
           title={event.isPrivate ? 'No guests yet' : 'No tickets sold yet'}
           body={
             event.isPrivate
-              ? 'Guests show up here once they register with your invite link.'
+              ? 'Guests show up here once you invite them and they answer.'
               : promoted
                 ? `Guests show up here as soon as they get a ticket. Your boost runs until ${covered ? 'doors open on ' : ''}${until}.`
                 : canPromote
@@ -145,6 +187,7 @@ export default function Attendees() {
           action={event.isPrivate ? 'Invite guests' : canPromote && !covered ? (promoted ? 'Extend promotion' : 'Promote event') : undefined}
           onAction={() => router.push(event.isPrivate ? `/invite?event=${event.id}` : `/pro/promote/${event.id}`)}
         />
+        )
       ) : (
         <>
           <Field placeholder="Search name or ticket ID" value={q} onChangeText={setQ} icon="magnify" />

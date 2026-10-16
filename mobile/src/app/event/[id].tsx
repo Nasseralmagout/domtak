@@ -1,14 +1,17 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ArtistTile, BackOverlay, FollowButton, GoingFaces, HeartToggle } from '../../components/cards';
 import { BottomBar, goBack } from '../../components/layout';
-import { Avatar, Button, Card, EmptyState, Icon, type IconName, Photo, RatingBadge, Row, SectionTitle, Stars, T } from '../../components/ui';
+import { Avatar, Banner, Button, Card, EmptyState, Icon, type IconName, Photo, Pill, RatingBadge, Row, SectionTitle, Stars, T } from '../../components/ui';
 import { eventDiscussion, profileById } from '../../data/mock';
-import { compact, eventWhen, isoDay, parse, priceRange } from '../../lib/format';
+import { isClosed, isConfirmed } from '../../lib/booking';
+import { hostsEvent, readinessLine, waitingOn } from '../../lib/eventHost';
+import { EVENT_STATE_TONE, eventState, eventStateLabel, guestSummary, linkedBookings, readiness } from '../../lib/events';
+import { compact, euro, eventWhen, isoDay, parse, priceRange, shortDate as shortDateLabel } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { useApp, useEvent, useVenue } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
@@ -64,7 +67,12 @@ export default function EventDetail() {
   // The venue as its public page shows it, including the owner's listing edits.
   const venue = useVenue(event?.venueId);
   const [more, setMore] = useState(false);
-  const role = useApp((s) => s.user.role);
+  const user = useApp((s) => s.user);
+  const bookings = useApp((s) => s.bookings);
+  const guestInvites = useApp((s) => s.guestInvites);
+  // Your invitation to this event, if you were invited as a guest (F20).
+  const invite = useMemo(() => (id ? guestInvites.find((g) => g.eventId === id) : undefined), [guestInvites, id]);
+  const linked = useMemo(() => (event ? linkedBookings(event, bookings) : []), [event, bookings]);
 
   if (!event) {
     return (
@@ -76,6 +84,30 @@ export default function EventDetail() {
       </SafeAreaView>
     );
   }
+  // Your own events, and the demo organizer's sample events in an approved organizer workspace, can be managed.
+  const hosts = hostsEvent(event, user);
+  // Private events are visible only to the host and invited guests (explicit invitations, blueprint F11).
+  if (event.isPrivate && !hosts && !invite) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={{ paddingHorizontal: 12, paddingTop: 4 }}>
+          <BackOverlay onPress={() => goBack('/(tabs)/events')} />
+        </View>
+        <EmptyState icon="lock-outline" title="Private event" body="Only people the host invited can see this event. Ask the host for an invitation." action="Browse events" onAction={() => router.replace('/(tabs)/events')} />
+      </SafeAreaView>
+    );
+  }
+  const state = eventState(event, bookings);
+  const cancelled = state === 'cancelled';
+  // Drafts and cancelled events take no RSVPs or ticket sales.
+  const closedToGuests = cancelled || state === 'draft';
+  const r = readiness(event, bookings);
+  const g = guestSummary(event);
+  const cs = event.costSharing?.enabled && event.costSharing.perGuest > 0 ? event.costSharing : undefined;
+  const inviter = invite ? profileById(invite.fromId) : undefined;
+  const inviterName = inviter?.name ?? 'The host';
+  const contribution = invite?.contribution ?? 0;
+  const inviteNeedsPayment = !!invite && invite.status === 'accepted' && contribution > 0 && !invite.ticketId;
   const organizer = event.organizerId === 'me' ? undefined : profileById(event.organizerId);
   const lineup = event.lineup.map((l) => profileById(l)).filter((p): p is NonNullable<typeof p> => !!p);
   const prices = event.ticketTypes.map((t) => t.price);
@@ -87,8 +119,26 @@ export default function EventDetail() {
   // Same rule as the calendar tab: going, holding a valid ticket, or organizing it yourself.
   const inCalendar = going || hasTicket || event.organizerId === 'me';
   const longDescription = event.description.length > 160;
-  // Your own events, and the demo organizer's sample events when signed in as an organizer, can be edited.
-  const organizes = event.organizerId === 'me' || (role === 'organizer' && ['mobolosa', 'og'].includes(event.organizerId));
+  // Line-up artists the host has not confirmed yet: never shown as confirmed while a booking is pending (F12).
+  const unconfirmed = hosts
+    ? lineup
+        .map((a) => ({ a, b: linked.find((x) => x.targetId === a.id && x.type === 'musician' && !isClosed(x.status)) }))
+        .filter(({ b }) => !b || !isConfirmed(b.status))
+        .map(({ a, b }) => `${a.name} (${b ? waitingOn(b) : 'no request sent'})`)
+    : [];
+  const openInvitation = () => (invite ? router.push(invite.ticketId ? `/ticket/${invite.ticketId}` : `/invitation/${invite.id}`) : undefined);
+  const inviteTitle = !invite
+    ? ''
+    : invite.status === 'invited'
+      ? `${inviterName} invited you`
+      : invite.status === 'declined'
+        ? 'You declined this invitation'
+        : invite.ticketId
+          ? 'You’re going · ticket ready'
+          : invite.payment === 'failed'
+            ? 'Payment failed · no ticket yet'
+            : `Pay your ${euro(contribution)} contribution`;
+  const inviteCta = !invite ? '' : invite.ticketId ? 'Show my ticket' : invite.status === 'invited' ? 'Open invitation' : inviteNeedsPayment ? `Pay ${euro(contribution)}` : 'View invitation';
   const reviewTags = myReview?.tags ?? [];
   const reviewText = myReview ? myReview.text || (reviewTags.length ? `Loved the ${reviewTags.join(', ').toLowerCase()}.` : '') : '';
   const openTicket = () => (myTicket ? router.push(`/ticket/${myTicket.id}`) : router.push(`/tickets/${event.id}`));
@@ -153,19 +203,59 @@ export default function EventDetail() {
             <Stat icon="account-outline" value={compact(goingCount)} label={`${goingCount} going`} />
             <Stat icon="share-variant-outline" label="Share event" onPress={share} />
           </Row>
-          <Row gap={12}>
-            <Button
-              title="Going"
-              icon={going ? 'check' : 'account-plus-outline'}
-              variant={going ? 'secondary' : 'primary'}
-              size="md"
-              style={{ flex: 1 }}
-              accessibilityState={{ selected: going }}
-              accessibilityLabel={going ? 'Going, tap to undo' : 'Mark as going'}
-              onPress={toggleGoingWithToast}
-            />
-            <Button title={hasTicket ? 'My ticket' : 'Tickets'} icon={hasTicket ? 'qrcode' : 'ticket-confirmation-outline'} size="md" style={{ flex: 1 }} onPress={openTicket} />
-          </Row>
+          {cancelled ? (
+            <Banner icon="calendar-remove-outline" tone="danger">{`This event was cancelled${event.cancelReason ? `: ${event.cancelReason}` : ''}.${hasTicket ? ' Your ticket is no longer valid for entry; refunds follow the event’s policy.' : ''}`}</Banner>
+          ) : null}
+
+          {hosts ? (
+            <Card style={{ gap: 10 }}>
+              <Row justify="space-between" gap={8}>
+                <T v="title" style={{ flex: 1 }}>{event.isPrivate ? 'You’re hosting' : 'You organise this event'}</T>
+                <Pill label={eventStateLabel(state, event.isPrivate)} tone={EVENT_STATE_TONE[state]} />
+              </Row>
+              <Row gap={8} align="flex-start">
+                <Icon name="account-music-outline" size={18} color={r.ready ? colors.success : colors.brand} />
+                <T v="small" color={r.ready ? colors.success : colors.inkSoft} style={{ flex: 1 }}>{readinessLine(r)}</T>
+              </Row>
+              {event.isPrivate ? (
+                <Row gap={8} align="flex-start">
+                  <Icon name="account-group-outline" size={18} color={colors.brand} />
+                  <T v="small" color={colors.inkSoft} style={{ flex: 1 }}>{g.invited ? `${g.accepted} accepted · ${g.waiting} no answer${cs ? ` · ${g.paid} paid` : ''}` : 'No guests invited yet'}</T>
+                </Row>
+              ) : null}
+              {state === 'draft' ? <T v="small">Draft: only you can see this event.</T> : null}
+              <Button title="Open event workspace" icon="view-dashboard-outline" size="md" onPress={() => router.push(`/event-workspace/${event.id}`)} />
+            </Card>
+          ) : null}
+
+          {invite && !hosts ? (
+            <Card style={{ gap: 10, borderWidth: 1, borderColor: colors.lilacLight }}>
+              <Row gap={12}>
+                <Avatar src={inviter?.avatar} size={44} label={inviterName} />
+                <View style={{ flex: 1 }}>
+                  <T v="bodyBold">{inviteTitle}</T>
+                  <T v="small">{contribution > 0 ? `Cost sharing ${euro(contribution)} per guest` : 'Free invitation'}</T>
+                </View>
+              </Row>
+              <Button title={inviteCta} icon={invite.ticketId ? 'qrcode' : 'email-open-outline'} size="md" onPress={openInvitation} />
+            </Card>
+          ) : null}
+
+          {!event.isPrivate && !closedToGuests ? (
+            <Row gap={12}>
+              <Button
+                title="Going"
+                icon={going ? 'check' : 'account-plus-outline'}
+                variant={going ? 'secondary' : 'primary'}
+                size="md"
+                style={{ flex: 1 }}
+                accessibilityState={{ selected: going }}
+                accessibilityLabel={going ? 'Going, tap to undo' : 'Mark as going'}
+                onPress={toggleGoingWithToast}
+              />
+              <Button title={hasTicket ? 'My ticket' : 'Tickets'} icon={hasTicket ? 'qrcode' : 'ticket-confirmation-outline'} size="md" style={{ flex: 1 }} onPress={openTicket} />
+            </Row>
+          ) : null}
           <GoingFaces count={goingCount} />
 
           {myReview ? (
@@ -199,7 +289,17 @@ export default function EventDetail() {
             onAction={addToCalendar}
           />
           <InfoCard icon="map-marker-outline" title={venue ? `${venue.city}, ${venue.area}` : 'Location to be announced'} sub={venue?.name ?? 'Check back closer to the date'} action="Map" onAction={() => router.push(`/map?focus=${event.id}`)} />
-          <InfoCard icon="ticket-confirmation-outline" title={priceRange(prices)} sub={`Ticket price includes tax · ${event.refundPolicy}`} action={hasTicket ? 'View' : 'Buy'} onAction={openTicket} />
+          {event.isPrivate ? (
+            <InfoCard
+              icon="cash-multiple"
+              title={cs ? `${euro(cs.perGuest)} per guest` : 'Free for guests'}
+              sub={cs ? `Cost sharing · paid after accepting${cs.deadline ? ` · by ${shortDateLabel(cs.deadline)}` : ''}` : 'Invitation only'}
+              action={hosts ? 'Guests' : invite ? (invite.ticketId ? 'Ticket' : 'Invitation') : undefined}
+              onAction={hosts ? () => router.push(`/invite?event=${event.id}`) : openInvitation}
+            />
+          ) : (
+            <InfoCard icon="ticket-confirmation-outline" title={priceRange(prices)} sub={`Ticket price includes tax · ${event.refundPolicy}`} action={closedToGuests && !hasTicket ? undefined : hasTicket ? 'View' : 'Buy'} onAction={openTicket} />
+          )}
 
           {organizer ? (
             <Row gap={12} style={{ backgroundColor: colors.surface, padding: 14, borderRadius: radius.lg, ...shadow(1) }}>
@@ -207,7 +307,7 @@ export default function EventDetail() {
                 <Avatar src={organizer.avatar} size={52} verified={organizer.verified} />
                 <View style={{ flex: 1 }}>
                   <T v="title" numberOfLines={1}>{organizer.name}</T>
-                  <T v="small">Organizer</T>
+                  <T v="small">{event.isPrivate ? 'Host' : 'Organizer'}</T>
                 </View>
               </Pressable>
               <FollowButton id={organizer.id} />
@@ -230,6 +330,12 @@ export default function EventDetail() {
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>
                 {lineup.map((a) => <ArtistTile key={a.id} artist={a} />)}
               </ScrollView>
+              {unconfirmed.length ? (
+                <Row gap={8} align="flex-start" style={{ marginTop: 8 }}>
+                  <Icon name="timer-sand" size={16} color={colors.warning} />
+                  <T v="small" color={colors.warning} style={{ flex: 1 }}>{`Not confirmed yet: ${unconfirmed.join(', ')}. Only you see this.`}</T>
+                </Row>
+              ) : null}
             </View>
           ) : null}
 
@@ -250,14 +356,18 @@ export default function EventDetail() {
       <BottomBar>
         <Row gap={14}>
           <View>
-            <T v="small">From</T>
-            <T v="h3">{priceRange(prices.length ? [Math.min(...prices)] : [])}</T>
+            <T v="small">{event.isPrivate ? 'Per guest' : 'From'}</T>
+            <T v="h3">{event.isPrivate ? (cs ? euro(cs.perGuest) : 'Free') : priceRange(prices.length ? [Math.min(...prices)] : [])}</T>
           </View>
-          {organizes ? (
+          {hosts ? (
             <>
-              <Button title="Edit" icon="pencil-outline" variant="secondary" size="md" accessibilityLabel={`Edit ${event.title}`} style={{ flex: 1 }} onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} />
-              <Button title="Manage" icon="account-group-outline" size="md" accessibilityLabel={`Manage ${event.title}`} style={{ flex: 1 }} onPress={() => router.push(`/pro/attendees/${event.id}`)} />
+              {!cancelled ? <Button title="Edit" icon="pencil-outline" variant="secondary" size="md" accessibilityLabel={`Edit ${event.title}`} style={{ flex: 1 }} onPress={() => router.push({ pathname: '/create-event', params: { edit: event.id } })} /> : null}
+              <Button title="Manage" icon="view-dashboard-outline" size="md" accessibilityLabel={`Manage ${event.title}`} style={{ flex: 1 }} onPress={() => router.push(`/event-workspace/${event.id}`)} />
             </>
+          ) : invite ? (
+            <Button title={inviteCta} style={{ flex: 1 }} onPress={openInvitation} />
+          ) : cancelled ? (
+            <Button title="Browse other events" variant="secondary" style={{ flex: 1 }} onPress={() => router.replace('/(tabs)/events')} />
           ) : (
             <Button title={hasTicket ? 'View my ticket' : 'Get tickets'} style={{ flex: 1 }} onPress={openTicket} />
           )}
