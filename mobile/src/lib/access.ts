@@ -61,6 +61,8 @@ export interface ApplyField {
   options?: string[];
   /** Minimum characters for text answers. */
   min?: number;
+  /** Shown before a number answer and stored with it, e.g. '€' for a fee. */
+  prefix?: string;
   /** Photos offered by the media picker (the device gallery in the installed app). */
   gallery?: ImgKey[];
 }
@@ -84,7 +86,7 @@ export const APPLY_FIELDS: Record<ProfessionalRole, ApplyField[]> = {
     { label: 'Genres', kind: 'genres', step: 'details', required: true, hint: 'Pick the styles you perform' },
     { label: 'Music links', kind: 'link', step: 'details', required: true, placeholder: 'SoundCloud, Spotify, YouTube or Bandcamp link', min: 6 },
     { label: 'Press photos', kind: 'media', step: 'details', required: true, hint: 'At least one photo of you or your act', gallery: ['m_sara', 'm_live_singer', 'band_stage', 'dj_red', 'm_sax', 'band_jam'] },
-    { label: 'Fee per hour', kind: 'number', step: 'details', placeholder: 'e.g. 150', hint: 'Leave empty if you prefer to send quotes' },
+    { label: 'Fee per hour', kind: 'number', step: 'details', placeholder: 'e.g. 150', hint: 'In euro. Leave empty if you prefer to send quotes', prefix: '€' },
     { label: 'About the act', kind: 'multiline', step: 'support', required: true, placeholder: 'What you play, line-up, what a booking includes', min: 20 },
     { label: 'Recent performances', kind: 'multiline', step: 'support', required: true, placeholder: 'Venues, events or dates from the last 12 months', min: 6 },
     { label: 'Travel and equipment', kind: 'text', step: 'support', placeholder: 'e.g. travel within Berlin, own controller' },

@@ -3,12 +3,12 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { ActionSheet } from '../components/ActionSheet';
-import { Screen, ScreenHeader } from '../components/layout';
-import { Button, Icon, Row, Segmented, T, Toggle } from '../components/ui';
+import { DemoBar, Screen, ScreenHeader } from '../components/layout';
+import { Button, Icon, Pill, Row, Segmented, T, Toggle } from '../components/ui';
 import { profileById, venueById } from '../data/mock';
-import type { Role } from '../data/types';
+import { SAMPLE_APPLICATION, WORKSPACE_ICON, WORKSPACE_LABEL } from '../lib/access';
 import { toast } from '../store/toast';
-import { ROLE_LABEL, useApp } from '../store/useApp';
+import { activeWorkspace, APPLICATION_STATUS_LABEL, APPLICATION_STATUS_TONE, isApproved, PROFESSIONAL_ROLES, useApp } from '../store/useApp';
 import { colors, radius } from '../theme';
 
 function LinkRow({ label, value, onPress, first }: { label: string; value?: string; onPress: () => void; first?: boolean }) {
@@ -43,7 +43,8 @@ export default function Settings() {
   const user = useApp((s) => s.user);
   const prefs = useApp((s) => s.prefs);
   const setPref = useApp((s) => s.setPref);
-  const update = useApp((s) => s.updateUser);
+  const switchWorkspace = useApp((s) => s.switchWorkspace);
+  const submitApplication = useApp((s) => s.submitApplication);
   const methods = useApp((s) => s.paymentMethods);
   const selected = useApp((s) => s.selectedPayment);
   const signOut = useApp((s) => s.signOut);
@@ -54,6 +55,9 @@ export default function Settings() {
   const planLabel = plan === 'free' ? 'Standard (free)' : plan === 'monthly' ? 'Pro · monthly' : 'Pro · yearly';
   // Same rule as the Blocked users screen: only ids that still resolve to an account.
   const blockedCount = blocked.filter((id) => profileById(id) || venueById(id)).length;
+  const workspace = activeWorkspace(user);
+  const app = user.application;
+  const workspaceCount = user.approvedRoles.length;
 
   const startOver = (message: string) => {
     resetDemo();
@@ -63,19 +67,36 @@ export default function Settings() {
 
   return (
     <Screen header={<ScreenHeader title="Settings" />}>
-      <Pressable accessibilityRole="button" onPress={() => router.push('/pro-verification')} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: radius.xl, backgroundColor: colors.brandDeep }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Active workspace: ${WORKSPACE_LABEL[workspace]}. Switch workspace`} onPress={() => router.push('/workspace')} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: radius.xl, backgroundColor: colors.brandDeep }}>
         <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="star" size={22} color={colors.brandDark} />
+          <Icon name={WORKSPACE_ICON[workspace]} size={22} color={colors.brandDark} />
         </View>
         <View style={{ flex: 1 }}>
-          <T v="bodyBold" color={colors.white}>{user.pro === 'verified' ? 'Verified Pro account' : user.pro === 'review' ? 'Pro verification in review' : 'Get verified as Pro'}</T>
-          <T v="small" color={colors.lilacLight}>Badge, bookings & payouts</T>
+          <T v="small" color={colors.lilacLight}>Active workspace</T>
+          <T v="bodyBold" color={colors.white}>{WORKSPACE_LABEL[workspace]}</T>
+          <T v="small" color={colors.lilacLight}>{workspaceCount > 1 ? `${workspaceCount} workspaces on this account · Switch` : 'Switch or add a professional workspace'}</T>
         </View>
-        <Icon name="chevron-right" size={22} color={colors.white} />
+        <Icon name="swap-horizontal" size={22} color={colors.white} />
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={app ? `Professional application: ${APPLICATION_STATUS_LABEL[app.status]}` : 'Apply for a professional account'}
+        onPress={() => router.push(app ? '/application' : '/apply')}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingHorizontal: 16, borderRadius: radius.lg, backgroundColor: colors.surface }}
+      >
+        <Icon name={app ? 'file-document-outline' : 'check-decagram'} size={22} color={colors.brand} />
+        <View style={{ flex: 1, paddingVertical: 10 }}>
+          <T v="bodyBold">{app ? 'Professional application' : 'Apply as a professional'}</T>
+          <T v="small">{app ? `${WORKSPACE_LABEL[app.role]} · ${APPLICATION_STATUS_LABEL[app.status]}` : 'Artist, band, DJ, venue or organizer: reviewed within 24 hours (target)'}</T>
+        </View>
+        {app ? <Pill label={APPLICATION_STATUS_LABEL[app.status]} tone={APPLICATION_STATUS_TONE[app.status]} /> : null}
+        <Icon name="chevron-right" size={20} color={colors.subtle} />
       </Pressable>
 
       <Group title="Account">
         <LinkRow first label="Edit profile" onPress={() => router.push('/profile-setup?mode=edit')} />
+        <LinkRow label="Workspace" value={WORKSPACE_LABEL[workspace]} onPress={() => router.push('/workspace')} />
         <LinkRow label="Account & security" value={user.email} onPress={() => router.push('/account-security')} />
         <LinkRow label="Payment methods" value={methods.find((m) => m.id === selected)?.label} onPress={() => router.push('/payment-methods')} />
         <LinkRow label="Subscription" value={planLabel} onPress={() => router.push('/subscription')} />
@@ -97,15 +118,54 @@ export default function Settings() {
         <Segmented options={[{ key: 'English', label: 'English' }, { key: 'Deutsch', label: 'Deutsch' }]} value={prefs.language} onChange={(v) => setPref('language', v)} />
       </View>
 
-      <View style={{ gap: 8, padding: 14, borderRadius: radius.lg, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong }}>
-        <T v="bodyBold">Demo: account role</T>
-        <T v="small">In production the role is chosen once at registration. Switch here to explore every user type.</T>
+      <DemoBar
+        title="Demo: professional roles"
+        note="Professional workspaces need an approved application. Send a complete sample application here, then simulate the review on its status screen."
+      >
         <Row gap={6} style={{ flexWrap: 'wrap' }}>
-          {(['fan', 'musician', 'venue', 'organizer'] as Role[]).map((r) => (
-            <Button key={r} title={ROLE_LABEL[r]} size="sm" variant={user.role === r ? 'primary' : 'secondary'} onPress={() => update({ role: r })} />
-          ))}
+          {PROFESSIONAL_ROLES.map((r) => {
+            if (isApproved(user, r)) {
+              const on = workspace === r;
+              return (
+                <Button
+                  key={r}
+                  title={on ? `${WORKSPACE_LABEL[r]} · active` : `Switch to ${WORKSPACE_LABEL[r]}`}
+                  size="sm"
+                  variant={on ? 'primary' : 'secondary'}
+                  onPress={() => {
+                    if (on) return router.push('/workspace');
+                    if (switchWorkspace(r)) toast(`Switched to your ${WORKSPACE_LABEL[r]} workspace`);
+                  }}
+                />
+              );
+            }
+            if (app?.role === r && app.status !== 'approved') {
+              return <Button key={r} title={`${WORKSPACE_LABEL[r]}: ${APPLICATION_STATUS_LABEL[app.status].toLowerCase()}`} size="sm" variant="light" onPress={() => router.push('/application')} />;
+            }
+            return (
+              <Button
+                key={r}
+                title={`Sample ${WORKSPACE_LABEL[r].toLowerCase()} application`}
+                size="sm"
+                variant="secondary"
+                onPress={() => {
+                  // One application is reviewed at a time: open the pending one instead of replacing it.
+                  if (app?.status === 'pending') {
+                    toast('Your current application is still in review');
+                    return router.push('/application');
+                  }
+                  submitApplication(r, SAMPLE_APPLICATION[r]);
+                  toast(`Demo: sample ${WORKSPACE_LABEL[r].toLowerCase()} application sent`);
+                  router.push('/application');
+                }}
+              />
+            );
+          })}
+          {workspace !== 'fan' ? (
+            <Button title="Back to Member" size="sm" variant="secondary" onPress={() => { if (switchWorkspace('fan')) toast('Switched to your Member workspace'); }} />
+          ) : null}
         </Row>
-      </View>
+      </DemoBar>
 
       <Group title="Support">
         <LinkRow first label="Help & FAQ" onPress={() => router.push('/help')} />

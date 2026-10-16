@@ -4,6 +4,7 @@ import { Pressable, TextInput, View } from 'react-native';
 
 import { goBack, Screen, ScreenHeader } from '../components/layout';
 import { Button, Icon, Segmented, T } from '../components/ui';
+import { safeNext } from '../lib/access';
 import { toast } from '../store/toast';
 import { useApp } from '../store/useApp';
 import { colors, fonts } from '../theme';
@@ -20,7 +21,7 @@ function maskPhone(p: string) {
 }
 
 export default function Verify() {
-  const params = useLocalSearchParams<{ email?: string; phone?: string }>();
+  const params = useLocalSearchParams<{ email?: string; phone?: string; next?: string }>();
   const user = useApp((s) => s.user);
   const [by, setBy] = useState<'email' | 'phone'>('email');
   const [code, setCode] = useState('');
@@ -42,7 +43,9 @@ export default function Verify() {
     if (code.length !== 6) return setError('Enter all 6 digits');
     setError(undefined);
     toast(by === 'email' ? 'Email verified' : 'Phone number verified');
-    router.replace('/role');
+    // Next: city and music interests, then the profile. A sign-in destination travels along.
+    const next = safeNext(params.next);
+    router.replace({ pathname: '/role', params: next ? { next } : {} });
   };
   const resend = () => {
     setSeconds(42);

@@ -6,7 +6,7 @@ import { ActionSheet, type SheetAction } from '../components/ActionSheet';
 import { BottomBar, Screen, ScreenHeader } from '../components/layout';
 import { Banner, Button, Card, Divider, Icon, type IconName, Pill, Row, Segmented, T } from '../components/ui';
 import { euro, MONTHS_LONG, TODAY } from '../lib/format';
-import { useApp } from '../store/useApp';
+import { canPostToFeed, useApp } from '../store/useApp';
 import { toast } from '../store/toast';
 import { colors, radius, shadow } from '../theme';
 
@@ -19,13 +19,14 @@ const SAVING_PCT = Math.round((SAVING / (MONTHLY * 12)) * 100);
 
 const FEATURES: { label: string; icon: IconName; standard: boolean }[] = [
   { label: 'Like & comment', icon: 'thumb-up-outline', standard: true },
+  { label: 'Photos in comments and event discussions', icon: 'image-outline', standard: true },
   { label: 'Create private events', icon: 'lock-outline', standard: true },
   { label: 'Invite friends', icon: 'account-multiple-plus-outline', standard: true },
   { label: 'Chat', icon: 'message-text-outline', standard: true },
   { label: 'Buy tickets', icon: 'ticket-outline', standard: true },
   { label: 'Book musicians & venues', icon: 'calendar-check-outline', standard: true },
   { label: 'Wishlist', icon: 'heart-outline', standard: true },
-  { label: 'Upload videos, photos & stories', icon: 'image-multiple-outline', standard: false },
+  { label: 'Feed posts, videos & stories', icon: 'image-multiple-outline', standard: false },
   { label: 'Receive bookings & payments in-app', icon: 'cash-check', standard: false },
   { label: 'Verified badge', icon: 'check-decagram', standard: false },
   { label: 'Booking fee & availability management', icon: 'calendar-clock', standard: false },
@@ -54,7 +55,11 @@ function Mark({ on, label }: { on: boolean; label: string }) {
 export default function Subscription() {
   const plan = useApp((s) => s.plan);
   const setPlan = useApp((s) => s.setPlan);
-  const pro = useApp((s) => s.user.pro);
+  const user = useApp((s) => s.user);
+  // Pro tools need an approved professional workspace that is in use; the plan alone never unlocks them.
+  const proActive = canPostToFeed(user);
+  const hasProRole = user.approvedRoles.some((r) => r !== 'fan');
+  const app = user.application;
   const methods = useApp((s) => s.paymentMethods);
   const selectedPayment = useApp((s) => s.selectedPayment);
   const [billing, setBilling] = useState<Billing>(plan === 'yearly' ? 'yearly' : 'monthly');
@@ -105,10 +110,14 @@ export default function Subscription() {
     </BottomBar>
   ) : (
     <BottomBar>
-      {pro === 'verified' ? (
+      {proActive ? (
         <Button title="Open Pro workspace" icon="view-grid-outline" onPress={() => router.push('/pro/workspace')} />
+      ) : hasProRole ? (
+        <Button title="Switch to your professional workspace" icon="swap-horizontal" onPress={() => router.push('/workspace')} />
+      ) : app ? (
+        <Button title="Check application status" icon="file-document-outline" onPress={() => router.push('/application')} />
       ) : (
-        <Button title={pro === 'review' ? 'Check verification status' : 'Get verified as Pro'} icon="check-decagram" onPress={() => router.push('/pro-verification')} />
+        <Button title="Apply for a professional account" icon="check-decagram" onPress={() => router.push('/apply')} />
       )}
     </BottomBar>
   );
@@ -194,11 +203,15 @@ export default function Subscription() {
         </Card>
       ) : null}
 
-      {subscribed && pro !== 'verified' ? (
+      {!proActive ? (
         <Banner icon="check-decagram">
-          {pro === 'review'
-            ? 'Your Pro verification is in review. The badge and in-app payouts unlock as soon as it’s approved.'
-            : 'Complete Pro verification to get the purple badge and receive bookings and payouts in-app.'}
+          {hasProRole
+            ? 'Switch to your professional workspace to use Pro tools.'
+            : app?.status === 'pending'
+              ? 'Your professional application is in review. Pro tools unlock once it’s approved.'
+              : app?.status === 'info'
+                ? 'Your professional application needs more information. Pro tools unlock once it’s approved.'
+                : 'Pro tools are for approved artists, venues and organizers. The plan adds tools; access itself needs an approved professional application.'}
         </Banner>
       ) : null}
 

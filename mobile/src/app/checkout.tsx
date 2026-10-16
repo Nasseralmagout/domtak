@@ -3,8 +3,9 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
-import { Banner, Button, Card, Divider, Field, Icon, KeyValue, Photo, Radio, Row, T } from '../components/ui';
-import { profileById, venueById } from '../data/mock';
+import { Banner, Button, Card, Divider, Field, Icon, KeyValue, PaymentPill, Photo, Radio, Row, StatusPill, T } from '../components/ui';
+import { venueById } from '../data/mock';
+import { bookingRef, chargeItems, providerOf } from '../lib/booking';
 import { euro, eventWhen, shortDate } from '../lib/format';
 import { applyPromo, findPromo } from '../lib/promos';
 import { toast } from '../store/toast';
@@ -22,6 +23,8 @@ export default function Checkout() {
   const selected = useApp((s) => s.selectedPayment);
   const setSelected = useApp((s) => s.setSelectedPayment);
   const complete = useApp((s) => s.completeCheckout);
+  const failPayment = useApp((s) => s.failPayment);
+  const retryPayment = useApp((s) => s.retryPayment);
   const venueListing = useApp((s) => s.venueListing);
   const event = useEvent(draft?.kind === 'ticket' ? draft.eventId : undefined);
   const booking = draft?.kind === 'booking' ? bookings.find((b) => b.id === draft.bookingId) : undefined;
@@ -55,6 +58,33 @@ export default function Checkout() {
     );
   }
 
+  if (booking && (booking.payment === 'paid' || booking.status === 'confirmed' || booking.status === 'completed' || booking.status === 'paid')) {
+    // Opening checkout again (back button, lost connection, a repeated tap) never charges a second time.
+    return (
+      <Screen header={<ScreenHeader title="Payment" onBack={() => goBack(`/booking/${booking.id}`)} />} contentStyle={{ alignItems: 'center', paddingHorizontal: 24, gap: 12, paddingTop: 48 }}>
+        <Icon name="check-decagram" size={56} color={colors.success} />
+        <T v="h2" center>Already paid</T>
+        <T v="body" color={colors.muted} center>{`The payment for booking ${bookingRef(booking)} is verified, so there is nothing to pay again.`}</T>
+        <Button title="View booking" full onPress={() => router.replace(`/booking/${booking.id}`)} style={{ marginTop: 12 }} />
+      </Screen>
+    );
+  }
+  if (booking && step !== 'failed' && booking.status !== 'accepted' && booking.status !== 'payment_failed') {
+    return (
+      <Screen header={<ScreenHeader title="Payment" onBack={() => goBack(`/booking/${booking.id}`)} />} contentStyle={{ alignItems: 'center', paddingHorizontal: 24, gap: 12, paddingTop: 48 }}>
+        <Icon name="credit-card-clock-outline" size={56} color={colors.brand} />
+        <T v="h2" center>Not ready for payment</T>
+        <StatusPill booking={booking} />
+        <T v="body" color={colors.muted} center>
+          {booking.status === 'pending' || booking.status === 'requested'
+            ? 'The payment step opens once the provider accepts (or once you accept their quote). Your payment details stay pending their decision.'
+            : 'This booking is closed, so there is nothing to pay.'}
+        </T>
+        <Button title="View booking" full onPress={() => router.replace(`/booking/${booking.id}`)} style={{ marginTop: 12 }} />
+      </Screen>
+    );
+  }
+
   let title = '';
   let sub = '';
   let image = event?.cover ?? 'ev_dance_world';
@@ -67,12 +97,13 @@ export default function Checkout() {
     lines = [{ k: `${draft.qty}× ${type.name}`, v: type.price * draft.qty }, ...(type.price > 0 ? [{ k: 'Service fee', v: 1.5 * draft.qty }] : [])];
   } else if (booking) {
     // A venue shows as its public page does, including the owner's listing edits.
-    const venue = booking.type === 'musician' ? undefined : overlayVenue(venueById(booking.targetId), venueListing);
-    const artist = booking.type === 'musician' ? profileById(booking.targetId) : undefined;
-    title = (artist ?? venue)?.name ?? 'Booking';
-    image = artist?.avatar ?? venue?.cover ?? image;
+    const venue = booking.type === 'venue' ? overlayVenue(venueById(booking.targetId), venueListing) : undefined;
+    const provider = providerOf(booking);
+    title = venue?.name ?? provider.name;
+    image = venue?.cover ?? provider.image ?? image;
     sub = `${booking.eventTitle} · ${shortDate(booking.date)} · ${booking.startTime}–${booking.endTime}`;
-    lines = [{ k: booking.type === 'musician' ? `${booking.hours} hours` : '1 night', v: booking.amount }, { k: 'Escrow protection', v: 0 }];
+    // The agreed charges, each on its own line (quote items for quote bookings).
+    lines = chargeItems(booking).map((i) => ({ k: i.label, v: i.amount }));
   }
   const subtotal = lines.reduce((n, l) => n + l.v, 0);
   // Promo codes apply to the tickets themselves, not the service fee.
@@ -93,15 +124,25 @@ export default function Checkout() {
   };
 
   const confirm = () => {
+    if (loading) return;
     if (code === DECLINE_CODE) {
       setCode('');
+      // The booking is kept and marked "Payment failed"; nothing is charged and no second booking is created.
+      if (booking) failPayment(booking.id);
       setStep('failed');
       return;
     }
     finish();
   };
 
+  /** Starts another attempt on the SAME booking (never a new booking or a second charge). */
+  const retry = (next: 'verify' | 'review') => {
+    if (booking?.payment === 'failed') retryPayment(booking.id);
+    setStep(next);
+  };
+
   const finish = () => {
+    if (loading) return;
     setLoading(true);
     setTimeout(() => {
       const res = complete();
@@ -122,9 +163,10 @@ export default function Checkout() {
           </View>
           <T v="h2" center>Verify this payment</T>
           <T v="body" color={colors.muted} center>Your bank sent a code to the phone ending {user.phone.slice(-4)} to approve {euro(total, true)}{method ? ` with ${method.label}` : ''}.</T>
+          {booking ? <T v="small" center>The booking is confirmed only once your bank verifies the payment.</T> : null}
         </View>
         <Field label="Bank verification code" value={code} onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" placeholder="6-digit code" onSubmitEditing={() => code.length >= 4 && confirm()} />
-        <Button title="Confirm payment" loading={loading} disabled={code.length < 4} onPress={confirm} />
+        <Button title={loading ? 'Checking with your bank…' : 'Confirm payment'} loading={loading} disabled={code.length < 4} onPress={confirm} />
         <T v="small" center>Demo: any 4–6 digits approve the payment; {DECLINE_CODE} is declined by the bank.</T>
       </Screen>
     );
@@ -132,15 +174,21 @@ export default function Checkout() {
 
   if (step === 'failed') {
     return (
-      <Screen header={<ScreenHeader title="Payment" onBack={() => setStep('review')} />} contentStyle={{ alignItems: 'center', paddingHorizontal: 24, gap: 14, paddingTop: 40 }}>
+      <Screen header={<ScreenHeader title="Payment" onBack={() => (booking ? router.replace(`/booking/${booking.id}`) : setStep('review'))} />} contentStyle={{ alignItems: 'center', paddingHorizontal: 24, gap: 14, paddingTop: 40 }}>
         <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: colors.dangerBg, alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="close" size={44} color={colors.danger} />
         </View>
         <T v="h2" center>Payment didn’t go through</T>
-        <T v="body" color={colors.muted} center>Your card was declined by the bank. You haven’t been charged{draft.kind === 'ticket' ? ' and your tickets are held for 10 minutes' : ''}.</T>
-        <Button title="Try another method" full onPress={() => setStep('review')} style={{ marginTop: 16 }} />
-        <Button title="Try again" variant="secondary" full onPress={() => setStep('verify')} />
-        <Button title="Contact support" variant="ghost" full onPress={() => router.push('/help?section=refunds')} />
+        <T v="body" color={colors.muted} center>
+          {booking
+            ? `Your bank declined the payment and nothing was charged. Your booking with ${title} is kept as “Payment failed”, so you can retry safely on the same booking.`
+            : `Your card was declined by the bank. You haven’t been charged and your tickets are held for 10 minutes.`}
+        </T>
+        {booking ? <PaymentPill state={booking.payment} /> : null}
+        <Button title={method ? `Retry with ${method.label}` : 'Try again'} full onPress={() => retry('verify')} style={{ marginTop: 16 }} />
+        <Button title="Use another method" variant="secondary" full onPress={() => retry('review')} />
+        {booking ? <Button title="View booking" variant="ghost" full onPress={() => router.replace(`/booking/${booking.id}`)} /> : null}
+        <Button title="Contact support" variant="ghost" full onPress={() => router.push('/help')} />
       </Screen>
     );
   }
@@ -155,7 +203,7 @@ export default function Checkout() {
             title={free ? 'Confirm registration' : total === 0 ? 'Confirm order' : `Pay ${euro(total, true)}`}
             loading={loading}
             disabled={!free && total > 0 && !method}
-            onPress={() => (free || total === 0 ? finish() : setStep('verify'))}
+            onPress={() => (free || total === 0 ? finish() : retry('verify'))}
           />
         </BottomBar>
       }
@@ -183,7 +231,7 @@ export default function Checkout() {
       ) : null}
 
       <Card style={{ gap: 6 }}>
-        {lines.map((l) => <KeyValue key={l.k} k={l.k} v={l.v === 0 && l.k.startsWith('Escrow') ? 'Included' : euro(l.v, true)} />)}
+        {lines.map((l, i) => <KeyValue key={`${l.k}-${i}`} k={l.k} v={euro(l.v, true)} />)}
         {discount > 0 && promo ? <KeyValue k={`Promo ${promo}`} v={`−${euro(discount, true)}`} color={colors.success} /> : null}
         <KeyValue k="incl. VAT (19%)" v={euro(vat, true)} />
         <Divider style={{ marginVertical: 6 }} />
@@ -234,9 +282,9 @@ export default function Checkout() {
         </>
       ) : null}
 
-      <Banner icon="shield-check-outline">
+      <Banner icon={draft.kind === 'booking' ? 'credit-card-check-outline' : 'shield-check-outline'}>
         {draft.kind === 'booking'
-          ? 'Protected by Domtak escrow: your payment is held until the booking is confirmed, then released to the provider.'
+          ? 'The booking is confirmed only once the payment is verified. If it fails, nothing is charged and the booking stays open for a safe retry. Cancellations and refunds follow the agreed policy.'
           : 'Tickets are delivered instantly as QR codes in “Your tickets”.'}
       </Banner>
     </Screen>

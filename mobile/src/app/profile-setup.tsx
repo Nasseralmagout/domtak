@@ -3,11 +3,12 @@ import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { BottomBar, goBack, Screen, ScreenHeader } from '../components/layout';
-import { Avatar, Button, Chip, Field, Icon, Row, T, Toggle } from '../components/ui';
+import { Avatar, Banner, Button, Chip, Field, Icon, Row, T, Toggle } from '../components/ui';
 import type { ImgKey } from '../data/images';
 import { GENRES } from '../data/mock';
+import { safeNext, WORKSPACE_LABEL } from '../lib/access';
 import { toast } from '../store/toast';
-import { isPro, ROLE_LABEL, useApp } from '../store/useApp';
+import { activeWorkspace, isPro, useApp } from '../store/useApp';
 import { colors } from '../theme';
 
 const AVATARS: ImgKey[] = ['av_leyla', 'av_clara', 'av_finn', 'av_zoe', 'av_tom', 'av_emma'];
@@ -15,9 +16,13 @@ const AVATARS: ImgKey[] = ['av_leyla', 'av_clara', 'av_finn', 'av_zoe', 'av_tom'
 const CAMERA_ROLL: ImgKey[] = ['av_greta', 'av_jule', 'av_maya', 'av_nina'];
 
 export default function ProfileSetup() {
-  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const { mode, next } = useLocalSearchParams<{ mode?: string; next?: string }>();
   const editing = mode === 'edit';
+  const dest = safeNext(next);
+  const applying = !editing && dest === '/apply';
   const user = useApp((s) => s.user);
+  // Professional details only for an approved workspace that is in use (never for an unapproved role).
+  const workspace = activeWorkspace(user);
   const update = useApp((s) => s.updateUser);
   const signIn = useApp((s) => s.signIn);
   const nearby = useApp((s) => s.prefs.nearby);
@@ -46,7 +51,7 @@ export default function ProfileSetup() {
       goBack('/profile/me');
     } else {
       signIn(user.email);
-      router.replace('/(tabs)');
+      router.replace((dest ?? '/(tabs)') as never);
     }
   };
 
@@ -54,13 +59,13 @@ export default function ProfileSetup() {
     const e: Record<string, string> = {};
     if (name.trim().length < 2) e.name = 'Enter at least 2 characters';
     if (cleanHandle.length < 3) e.handle = 'Pick a username with letters or numbers';
-    if (user.role === 'musician' && !(Number(fee) > 0)) e.fee = 'Enter your hourly fee in euro';
-    if (user.role === 'venue' && venue.trim().length < 2) e.venue = 'Enter your venue’s name';
+    if (workspace === 'musician' && !(Number(fee) > 0)) e.fee = 'Enter your hourly fee in euro';
+    if (workspace === 'venue' && venue.trim().length < 2) e.venue = 'Enter your venue’s name';
     setErrors(e);
     if (Object.keys(e).length) return;
     update({ name: name.trim(), handle: cleanHandle, bio: bio.trim(), city: city.trim() || user.city, avatar, genres });
-    if (user.role === 'musician') setAvailability({ feePerHour: Number(fee) });
-    if (user.role === 'venue') updateVenueListing({ name: venue.trim() });
+    if (workspace === 'musician') setAvailability({ feePerHour: Number(fee) });
+    if (workspace === 'venue') updateVenueListing({ name: venue.trim() });
     finish();
   };
 
@@ -85,9 +90,9 @@ export default function ProfileSetup() {
       footer={
         <BottomBar>
           {Object.keys(errors).length ? <T v="small" color={colors.danger} style={{ marginBottom: 8 }}>{Object.values(errors)[0]}</T> : null}
-          <Button title={editing ? 'Save changes' : 'Finish & explore'} onPress={save} />
+          <Button title={editing ? 'Save changes' : applying ? 'Save & continue to application' : 'Finish & explore'} onPress={save} />
           {!editing ? (
-            <Pressable accessibilityRole="button" accessibilityHint="Keeps your current details and opens the app" onPress={finish} style={{ alignItems: 'center', justifyContent: 'center', marginTop: 4, minHeight: 44 }}>
+            <Pressable accessibilityRole="button" accessibilityHint={applying ? 'Keeps your current details and opens the professional application' : 'Keeps your current details and opens the app'} onPress={finish} style={{ alignItems: 'center', justifyContent: 'center', marginTop: 4, minHeight: 44 }}>
               <T v="smallBold" color={colors.brand}>Skip for now</T>
             </Pressable>
           ) : null}
@@ -95,6 +100,7 @@ export default function ProfileSetup() {
       }
     >
       {!editing ? <T v="h1">Set up your profile</T> : null}
+      {applying ? <Banner icon="briefcase-outline">Next: your professional application. This member profile is what people see while it is in review.</Banner> : null}
       <Row gap={16}>
         <Avatar src={avatar} size={84} label={name} />
         <View style={{ flex: 1, gap: 4 }}>
@@ -130,21 +136,21 @@ export default function ProfileSetup() {
         </Row>
       </View>
 
-      {isPro(user.role) ? (
+      {isPro(workspace) ? (
         <View style={{ gap: 12, padding: 16, borderRadius: 18, backgroundColor: colors.brandTint }}>
-          <T v="title">Professional details · {ROLE_LABEL[user.role]}</T>
-          {user.role === 'musician' ? <Field label="Booking fee per hour (€)" value={fee} onChangeText={(t) => setFee(t.replace(/\D/g, '').slice(0, 5))} keyboardType="number-pad" error={errors.fee} /> : null}
-          {user.role === 'venue' ? <Field label="Venue name" value={venue} onChangeText={setVenue} placeholder="e.g. Moon Club" error={errors.venue} /> : null}
-          {user.role === 'organizer' ? <T v="small">Your display name is shown as the organizer on your events.</T> : null}
-          <T v="small">You can complete Pro verification later from Settings to get the purple badge and payouts.</T>
+          <T v="title">Professional details · {WORKSPACE_LABEL[workspace]}</T>
+          {workspace === 'musician' ? <Field label="Booking fee per hour (€)" value={fee} onChangeText={(t) => setFee(t.replace(/\D/g, '').slice(0, 5))} keyboardType="number-pad" error={errors.fee} /> : null}
+          {workspace === 'venue' ? <Field label="Venue name" value={venue} onChangeText={setVenue} placeholder="e.g. Moon Club" error={errors.venue} /> : null}
+          {workspace === 'organizer' ? <T v="small">Your display name is shown as the organizer on your events.</T> : null}
+          <T v="small">These details belong to your approved {WORKSPACE_LABEL[workspace].toLowerCase()} workspace. Switch workspaces from the menu.</T>
           {editing ? (
             <Button
-              title={user.role === 'musician' ? 'Availability & fees' : user.role === 'venue' ? 'Edit venue listing' : 'Your events'}
+              title={workspace === 'musician' ? 'Availability & fees' : workspace === 'venue' ? 'Edit venue listing' : 'Your events'}
               variant="light"
               size="sm"
               icon="arrow-right"
               style={{ alignSelf: 'flex-start' }}
-              onPress={() => router.push(user.role === 'musician' ? '/pro/availability' : user.role === 'venue' ? '/pro/venue-listing' : '/pro/events')}
+              onPress={() => router.push(workspace === 'musician' ? '/pro/availability' : workspace === 'venue' ? '/pro/venue-listing' : '/pro/events')}
             />
           ) : null}
         </View>
