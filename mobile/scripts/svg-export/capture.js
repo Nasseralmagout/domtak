@@ -161,6 +161,16 @@ const ACTIONS = {
         await setRole(page, role);
         currentRole = role;
       }
+      if (loggedIn && shot.patch) {
+        // Demo state a screen needs (e.g. admin console switch, a submitted application).
+        await page.evaluate((patch) => {
+          const raw = localStorage.getItem('domtak-app');
+          if (!raw) return;
+          const data = JSON.parse(raw);
+          for (const [k, v] of Object.entries(patch)) data.state[k] = k === 'user' ? { ...data.state.user, ...v } : v;
+          localStorage.setItem('domtak-app', JSON.stringify(data));
+        }, shot.patch);
+      }
       await page.setViewportSize({ width: W, height: H });
       await page.goto(base + shot.path);
       await settle(page, 1200);

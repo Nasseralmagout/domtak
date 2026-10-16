@@ -22,6 +22,7 @@ SECTIONS = {
     '06': 'Calendar & messages',
     '07': 'Account',
     '08': 'Pro tools',
+    '09': 'Admin console (demo)',
 }
 
 for sub in ('phone', 'full-length', 'figma-editable'):
