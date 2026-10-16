@@ -21,6 +21,9 @@ const matches = (p: Profile, q: string) => {
   return !needle || [p.name, p.handle, p.title].some((v) => v.toLowerCase().includes(needle));
 };
 
+/** Artists open their artist page (with booking), everyone else their profile, as elsewhere in the app. */
+const hrefFor = (p: Profile) => (p.kind === 'fan' || p.kind === 'organizer' ? `/profile/${p.id}` : `/artist/${p.id}`);
+
 /** A person row: avatar and name open the profile; actions go on the right. */
 function PersonLine({ p, sub, right }: { p: Profile; sub: string; right?: ReactNode }) {
   return (
@@ -28,7 +31,7 @@ function PersonLine({ p, sub, right }: { p: Profile; sub: string; right?: ReactN
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${p.name}, ${sub}. Open profile`}
-        onPress={() => router.push(`/profile/${p.id}`)}
+        onPress={() => router.push(hrefFor(p) as never)}
         style={{ flexDirection: 'row', flex: 1, alignItems: 'center', gap: 12, minHeight: 48 }}
       >
         <Avatar src={p.avatar} size={48} label={p.name} verified={p.verified} />
@@ -257,7 +260,7 @@ export default function Friends() {
         actions={
           menuFor
             ? [
-                { label: 'View profile', icon: 'account-outline', onPress: () => router.push(`/profile/${menuFor.id}`) },
+                { label: 'View profile', icon: 'account-outline', onPress: () => router.push(hrefFor(menuFor) as never) },
                 { label: `Message ${menuFor.name}`, icon: 'message-text-outline', onPress: () => message(menuFor) },
                 {
                   label: 'Remove friend',

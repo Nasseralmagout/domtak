@@ -106,7 +106,7 @@ export default function ApplicationStatusScreen() {
               : `We aim to decide by ${dateTime(target)}. You’ll be notified of the outcome.`}
           </T>
           <T v="small" color={colors.label}>The review target is separate from the 24-hour response deadline on bookings.</T>
-          {overdue ? <Button title="Contact support" variant="light" size="md" icon="lifebuoy" onPress={() => router.push('/help')} /> : null}
+          {overdue ? <Button title="Contact support" variant="light" size="md" icon="lifebuoy" onPress={() => router.push('/support/new?topic=account')} /> : null}
         </Card>
       ) : null}
 
@@ -152,7 +152,7 @@ export default function ApplicationStatusScreen() {
           <T v="title" style={{ marginTop: 4 }}>How to apply again</T>
           <T v="small">Update the details the reason mentions and submit again; it goes back into review. You can also apply for a different role, or ask support about the decision.</T>
           <Button title="Update and resubmit" icon="file-document-edit-outline" onPress={() => router.push('/apply')} />
-          <Button title="Contact support" variant="light" size="md" icon="lifebuoy" onPress={() => router.push('/help')} />
+          <Button title="Ask support about the decision" variant="light" size="md" icon="lifebuoy" onPress={() => router.push('/support/new?topic=account')} />
         </Card>
       ) : null}
 
@@ -162,7 +162,14 @@ export default function ApplicationStatusScreen() {
 
       <Card style={{ gap: 12 }}>
         <T v="title">Progress</T>
-        <Steps steps={steps} current={current} failed={app.status === 'info' || app.status === 'rejected'} />
+        {current >= steps.length ? (
+          // Every step is done: read that out instead of a step number past the end.
+          <View accessible accessibilityLabel="All steps done. Your workspace is activated and in use.">
+            <Steps steps={steps} current={current} />
+          </View>
+        ) : (
+          <Steps steps={steps} current={current} failed={app.status === 'info' || app.status === 'rejected'} />
+        )}
       </Card>
 
       {history.length ? (

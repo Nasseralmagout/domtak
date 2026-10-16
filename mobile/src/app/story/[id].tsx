@@ -140,9 +140,7 @@ export default function StoryViewer() {
               <View style={{ backgroundColor: LIVE_RED, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
                 <Text style={{ color: colors.white, fontFamily: fonts.bodyBold, fontSize: 11 }}>LIVE</Text>
               </View>
-            ) : (
-              <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: fonts.body, fontSize: 13 }}>2h</Text>
-            )}
+            ) : null}
           </Pressable>
           <IconButton name={locked ? 'play' : 'pause'} label={locked ? 'Resume story' : 'Pause story'} selected={locked} color={colors.white} onPress={togglePause} />
           <IconButton name="close" label="Close story" color={colors.white} onPress={close} />

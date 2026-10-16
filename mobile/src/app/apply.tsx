@@ -172,11 +172,10 @@ export default function Apply() {
   const app = user.application;
   const resubmitting = app?.status === 'info' || app?.status === 'rejected' ? app : undefined;
 
-  const [role, setRole] = useState<ProfessionalRole | undefined>(() => {
-    if (isRole(params.role) && !isApproved(user, params.role)) return params.role;
-    return resubmitting?.role;
-  });
-  const [answers, setAnswers] = useState<Answers>(() => (resubmitting ? fromApplication(resubmitting) : EMPTY));
+  const initialRole = isRole(params.role) && !isApproved(user, params.role) ? params.role : resubmitting?.role;
+  const [role, setRole] = useState<ProfessionalRole | undefined>(initialRole);
+  // Earlier answers only prefill the form for the same role (a link may open the form for another role).
+  const [answers, setAnswers] = useState<Answers>(() => (resubmitting && resubmitting.role === initialRole ? fromApplication(resubmitting) : EMPTY));
   // A "more information" request opens on the details, with the requested items marked.
   const [step, setStep] = useState(() => (app?.status === 'info' && (!isRole(params.role) || params.role === app.role) ? 1 : 0));
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -197,7 +196,7 @@ export default function Apply() {
         </View>
         <T v="h2" center>Your application is in review</T>
         <T v="body" color={colors.muted} center>
-          You applied as {PRO_ROLE_TITLE[app.role].toLowerCase()} on {dateTime(app.submittedAt)}. Our team aims to decide within 24 hours. You can apply for another role once this review is finished.
+          You applied for the {PRO_ROLE_TITLE[app.role]} workspace on {dateTime(app.submittedAt)}. Our team aims to decide within 24 hours. You can apply for another role once this review is finished.
         </T>
         <Button title="View application status" icon="file-document-outline" onPress={() => router.replace('/application')} full style={{ alignSelf: 'stretch' }} />
       </Screen>
@@ -213,6 +212,8 @@ export default function Apply() {
     if (r === role) return;
     setRole(r);
     setErrors({});
+    // The declaration names the role, so it is confirmed again for the new one.
+    setConfirmed(false);
     // Answers belong to one role; a resubmission keeps them only for its own role.
     setAnswers(resubmitting?.role === r ? fromApplication(resubmitting) : EMPTY);
   };
@@ -280,7 +281,7 @@ export default function Apply() {
       ) : null}
       {resubmitting?.status === 'rejected' && step === 0 ? (
         <Banner icon="information-outline" tone="danger">
-          {`Your ${PRO_ROLE_TITLE[resubmitting.role].toLowerCase()} application was not approved${resubmitting.reason ? `: ${resubmitting.reason}` : '.'} Update your answers and submit again, or apply for a different role.`}
+          {`Your application for the ${PRO_ROLE_TITLE[resubmitting.role]} workspace was not approved${resubmitting.reason ? `: ${resubmitting.reason}` : '.'} Update your answers and submit again, or apply for a different role.`}
         </Banner>
       ) : null}
 
@@ -297,10 +298,10 @@ export default function Apply() {
               return (
                 <Pressable
                   key={r}
-                  accessibilityRole="radio"
+                  accessibilityRole={approved ? 'button' : 'radio'}
                   accessibilityLabel={`${PRO_ROLE_TITLE[r]}. ${PRO_ROLE_PITCH[r]}${approved ? ' Already approved.' : ''}`}
                   accessibilityHint={approved ? 'Opens your workspaces' : undefined}
-                  accessibilityState={{ checked: on }}
+                  accessibilityState={approved ? undefined : { checked: on }}
                   onPress={() => (approved ? router.push('/workspace') : pickRole(r))}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: radius.lg, borderWidth: on ? 2 : 1, borderColor: on ? colors.brand : colors.border, backgroundColor: on ? colors.brandTint : colors.surface }}
                 >

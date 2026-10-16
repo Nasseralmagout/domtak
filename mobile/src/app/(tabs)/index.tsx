@@ -24,7 +24,8 @@ type Item =
   | { kind: 'artists' }
   | { kind: 'events' }
   | { kind: 'communities' }
-  | { kind: 'sponsored' };
+  | { kind: 'sponsored' }
+  | { kind: 'empty'; tab: FeedTab };
 
 function StoriesRow() {
   const user = useApp((s) => s.user);
@@ -92,7 +93,7 @@ function CommunitiesStrip() {
     <View style={{ backgroundColor: colors.surface, paddingVertical: 14, marginBottom: 10 }}>
       <Row justify="space-between" style={{ paddingHorizontal: 14, marginBottom: 10 }}>
         <T v="h3">Music communities</T>
-        <Pressable accessibilityRole="button" accessibilityLabel="See all communities" onPress={() => router.push('/communities')} hitSlop={12}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="See all communities" onPress={() => router.push('/communities')} hitSlop={12} style={{ minHeight: 44, justifyContent: 'center' }}><T v="smallBold" color={colors.brand}>See all</T></Pressable>
       </Row>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, gap: 12, paddingBottom: 4 }}>
         {list.map((c) => {
@@ -119,6 +120,23 @@ function CommunitiesStrip() {
           );
         })}
       </ScrollView>
+    </View>
+  );
+}
+
+/** Shown in place of posts when a feed tab has none, so the page never looks broken. */
+function EmptyFeed({ tab }: { tab: FeedTab }) {
+  const following = tab === 'following';
+  return (
+    <View style={{ backgroundColor: colors.surface, marginBottom: 10, padding: 20, alignItems: 'center', gap: 8 }}>
+      <Icon name={following ? 'account-heart-outline' : 'image-off-outline'} size={36} color={colors.brand} />
+      <T v="title" center>{following ? 'No posts from people you follow' : 'No posts here yet'}</T>
+      <T v="small" center>
+        {following
+          ? 'Follow artists, venues and organizers to see their posts here.'
+          : 'Posts from verified artists, venues and organizers will show up here.'}
+      </T>
+      <Chip label={following ? 'Find artists to follow' : 'Browse communities'} icon={following ? 'account-search-outline' : 'account-group-outline'} onPress={() => router.push(following ? '/(tabs)/artists' : '/communities')} />
     </View>
   );
 }
@@ -228,7 +246,7 @@ export default function Home() {
     // Posts from accounts you blocked are left out, as in communities, comments and stories.
     let posts = allPosts.filter((p) => p.feed.includes(tab) && !blocked.includes(p.authorId));
     if (tab === 'following') posts = posts.filter((p) => p.authorId === 'me' || following[p.authorId]);
-    const out: Item[] = [];
+    const out: Item[] = posts.length ? [] : [{ kind: 'empty', tab }];
     posts.forEach((p, i) => {
       out.push({ kind: 'post', post: p });
       if (i === 0) out.push({ kind: 'artists' });
@@ -267,9 +285,9 @@ export default function Home() {
           if (item.kind === 'artists') return <NextGigs />;
           if (item.kind === 'events') return <UpcomingEvents />;
           if (item.kind === 'communities') return <CommunitiesStrip />;
+          if (item.kind === 'empty') return <EmptyFeed tab={item.tab} />;
           return <Sponsored />;
         }}
-        ListEmptyComponent={<T v="body" center style={{ padding: 32 }}>Follow artists to fill your feed.</T>}
       />
     </SafeAreaView>
   );

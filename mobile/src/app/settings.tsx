@@ -4,7 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { ActionSheet } from '../components/ActionSheet';
 import { DemoBar, Screen, ScreenHeader } from '../components/layout';
-import { Button, Icon, Pill, Row, Segmented, T, Toggle } from '../components/ui';
+import { Button, Icon, Pill, Row, T, Toggle } from '../components/ui';
 import { profileById, venueById } from '../data/mock';
 import { SAMPLE_APPLICATION, WORKSPACE_ICON, WORKSPACE_LABEL } from '../lib/access';
 import { toast } from '../store/toast';
@@ -106,6 +106,9 @@ export default function Settings() {
         <ToggleRow first label="Booking updates" value={prefs.bookings} onChange={(v) => setPref('bookings', v)} />
         <ToggleRow label="Messages" value={prefs.messages} onChange={(v) => setPref('messages', v)} />
         <ToggleRow label="Events near me" value={prefs.nearby} onChange={(v) => setPref('nearby', v)} />
+        <T v="small" style={{ paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.divider }}>
+          Essential notices are always sent: booking deadlines and decisions, payment problems, refunds, event cancellations and support replies.
+        </T>
       </Group>
 
       <Group title="Privacy">
@@ -113,10 +116,12 @@ export default function Settings() {
         <LinkRow label="Blocked users" value={String(blockedCount)} onPress={() => router.push('/blocked')} />
       </Group>
 
-      <View style={{ gap: 8 }}>
-        <T v="caption" color="#6B5F8A" style={{ marginLeft: 4 }}>LANGUAGE</T>
-        <Segmented options={[{ key: 'English', label: 'English' }, { key: 'Deutsch', label: 'Deutsch' }]} value={prefs.language} onChange={(v) => setPref('language', v)} />
-      </View>
+      <Group title="Language">
+        <Row gap={12} accessibilityLabel="App language: English" style={{ minHeight: 54, paddingHorizontal: 16 }}>
+          <T v="body" style={{ flex: 1 }}>App language</T>
+          <T v="bodyBold">English</T>
+        </Row>
+      </Group>
 
       <DemoBar
         title="Demo: professional roles"
@@ -145,7 +150,7 @@ export default function Settings() {
             return (
               <Button
                 key={r}
-                title={`Sample ${WORKSPACE_LABEL[r].toLowerCase()} application`}
+                title={`Sample application: ${WORKSPACE_LABEL[r]}`}
                 size="sm"
                 variant="secondary"
                 onPress={() => {
@@ -155,7 +160,7 @@ export default function Settings() {
                     return router.push('/application');
                   }
                   submitApplication(r, SAMPLE_APPLICATION[r]);
-                  toast(`Demo: sample ${WORKSPACE_LABEL[r].toLowerCase()} application sent`);
+                  toast(`Demo: sample application sent (${WORKSPACE_LABEL[r]})`);
                   router.push('/application');
                 }}
               />
@@ -169,6 +174,7 @@ export default function Settings() {
 
       <Group title="Support">
         <LinkRow first label="Help & FAQ" onPress={() => router.push('/help')} />
+        <LinkRow label="Your support cases" onPress={() => router.push('/support')} />
         <LinkRow label="Terms, privacy & imprint" onPress={() => router.push('/legal')} />
       </Group>
 
@@ -181,7 +187,11 @@ export default function Settings() {
 
       <ActionSheet
         visible={!!confirm}
-        title={confirm === 'delete' ? 'Delete account? This permanently removes your profile, tickets and bookings.' : 'Reset demo data? Tickets, bookings, posts and settings return to the sample data.'}
+        title={
+          confirm === 'delete'
+            ? 'Delete account? Your profile, posts, friends and saved items are removed. Booking, payment and ticket records are kept only as long as the law requires, then deleted.'
+            : 'Reset demo data? Tickets, bookings, posts and settings return to the sample data.'
+        }
         actions={[
           confirm === 'delete'
             ? { label: 'Delete my account', icon: 'delete-outline', destructive: true, onPress: () => startOver('Your account was deleted') }

@@ -83,6 +83,8 @@ export default function Chat() {
   // Links may carry the conversation id or the other party's id. (A string selector stays stable.)
   const convId = useApp((s) => (s.conversations.find((c) => c.id === id) ?? s.conversations.find((c) => c.withId === id))?.id);
   const conv = conversations.find((c) => c.id === convId);
+  // True while your report on this conversation is open (a boolean selector stays stable).
+  const reported = useApp((s) => !!convId && s.reports.some((r) => r.byMe && r.kind === 'message' && r.targetId === convId && r.status === 'open'));
   const withId = conv?.withId ?? id ?? '';
   // Venues chat too (e.g. venue bookings). Every venue also has a stand-in account in `profiles`, so resolve the
   // venue first: the header then reads "Venue · <area>" and opens the venue page. The owner's own venue shows its listing edits.
@@ -333,7 +335,9 @@ export default function Chat() {
             },
           },
           { label: isBlocked ? `Unblock ${other.name}` : `Block ${other.name}`, icon: 'block-helper', destructive: !isBlocked, onPress: () => { toggleBlock(other.id); toast(isBlocked ? `${other.name} is unblocked` : `${other.name} is blocked`); } },
-          { label: 'Report conversation', icon: 'flag-outline', destructive: true, onPress: () => setReporting(true) },
+          reported
+            ? { label: 'Reported', sub: 'Our team is reviewing this conversation', icon: 'flag-outline', disabled: true, onPress: () => {} }
+            : { label: 'Report conversation', icon: 'flag-outline', destructive: true, onPress: () => setReporting(true) },
         ]}
         onClose={() => setMenu(false)}
       />

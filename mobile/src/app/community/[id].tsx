@@ -83,7 +83,7 @@ export default function CommunityScreen() {
             <Icon name="account-group-outline" size={16} color={colors.muted} />
             <T v="small">
               {compact(total)} members
-              {friendsHere.length ? ` · ${friendsHere.length === 1 ? `${friendsHere[0].name} is here` : `${friendsHere[0].name} and ${plural(friendsHere.length - 1, 'other friend')}`}` : ''}
+              {friendsHere.length ? ` · ${friendsHere.length === 1 ? `${friendsHere[0].name} likes this music` : `${friendsHere[0].name} and ${plural(friendsHere.length - 1, 'other friend')} like this music`}` : ''}
             </T>
           </Row>
           <T v="body">{community.description}</T>
@@ -96,10 +96,10 @@ export default function CommunityScreen() {
             <Button title="Invite" icon="share-variant-outline" variant="light" size="md" accessibilityLabel={`Invite friends to ${community.name}`} onPress={share} />
           </Row>
           {members.length ? (
-            // Members preview (friends first); opens the Members tab.
+            // People who share this community's music (friends first); opens the Members tab.
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Members, including ${members.slice(0, 5).map((m) => m.name).join(', ')}. See members`}
+              accessibilityLabel={`People into this music, including ${members.slice(0, 5).map((m) => m.name).join(', ')}. See members`}
               onPress={() => setTab('members')}
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, opacity: pressed ? 0.7 : 1 })}
             >
@@ -110,7 +110,7 @@ export default function CommunityScreen() {
                   </View>
                 ))}
               </View>
-              <T v="smallBold" color={colors.brand} style={{ flex: 1 }}>{friendsHere.length ? 'Your friends and other members' : 'See who’s here'}</T>
+              <T v="smallBold" color={colors.brand} style={{ flex: 1 }}>{friendsHere.length ? 'Your friends and others into this music' : 'People into this music'}</T>
               <Icon name="chevron-right" size={20} color={colors.brand} />
             </Pressable>
           ) : null}
@@ -163,29 +163,32 @@ export default function CommunityScreen() {
             <T v="small">
               {compact(total)} members. Showing {Math.min(members.length, MEMBER_PREVIEW) + (joined ? 1 : 0)} people who share this music{friendsHere.length ? ', your friends first' : ''}. Add friends to plan nights out together.
             </T>
-            <Card style={{ paddingVertical: 8 }}>
-              {joined ? (
-                <Row gap={12} style={{ paddingVertical: 6 }}>
-                  <Avatar src={user.avatar} size={48} label={user.name} />
-                  <View style={{ flex: 1 }}>
-                    <T v="bodyBold" numberOfLines={1}>{user.name}</T>
-                    <T v="small" numberOfLines={1}>{user.handle}</T>
-                  </View>
-                  <Pill label="You" tone="brand" />
-                </Row>
-              ) : null}
-              {members.slice(0, MEMBER_PREVIEW).map((m, i) => (
-                <Fragment key={m.id}>
-                  {i > 0 || joined ? <Divider style={{ marginVertical: 4 }} /> : null}
-                  <PersonRow
-                    id={m.id}
-                    subtitle={friends.includes(m.id) ? `Friend · ${m.title}` : `${m.handle} · ${m.title}`}
-                    right={m.kind === 'fan' ? <FriendButton id={m.id} /> : <FollowButton id={m.id} />}
-                  />
-                </Fragment>
-              ))}
-            </Card>
-            {!members.length && !joined ? <T v="small" center>No members to show yet.</T> : null}
+            {joined || members.length ? (
+              <Card style={{ paddingVertical: 8 }}>
+                {joined ? (
+                  <Row gap={12} style={{ paddingVertical: 6 }}>
+                    <Avatar src={user.avatar} size={48} label={user.name} />
+                    <View style={{ flex: 1 }}>
+                      <T v="bodyBold" numberOfLines={1}>{user.name}</T>
+                      <T v="small" numberOfLines={1}>{user.handle}</T>
+                    </View>
+                    <Pill label="You" tone="brand" />
+                  </Row>
+                ) : null}
+                {members.slice(0, MEMBER_PREVIEW).map((m, i) => (
+                  <Fragment key={m.id}>
+                    {i > 0 || joined ? <Divider style={{ marginVertical: 4 }} /> : null}
+                    <PersonRow
+                      id={m.id}
+                      subtitle={friends.includes(m.id) ? `Friend · ${m.title}` : `${m.handle} · ${m.title}`}
+                      right={m.kind === 'fan' ? <FriendButton id={m.id} /> : <FollowButton id={m.id} />}
+                    />
+                  </Fragment>
+                ))}
+              </Card>
+            ) : (
+              <T v="small" center>No members to show yet.</T>
+            )}
           </View>
         ) : null}
 

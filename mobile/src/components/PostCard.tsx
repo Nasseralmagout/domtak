@@ -17,6 +17,9 @@ import { Avatar, Button, Icon, IconButton, Photo, Row, T } from './ui';
 
 const postLink = (id: string) => `https://domtak.de/p/${id}`;
 
+/** Posts you hid with "Hide post". Remembered while the app is open, so a hidden post stays hidden when the feed re-renders. */
+const hiddenPosts = new Set<string>();
+
 /** Reasons offered when reporting a post, comment, profile or conversation (F09, F25). */
 export const REPORT_REASONS = ['Spam or scam', 'Harassment or bullying', 'Hate speech or symbols', 'Nudity or sexual content', 'Violence or dangerous acts', 'Misleading information', 'Something else'];
 
@@ -82,7 +85,7 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const [slide, setSlide] = useState(0);
   const [burst, setBurst] = useState(false);
   const [menu, setMenu] = useState(false);
-  const [hidden, setHidden] = useState(false);
+  const [hidden, setHiddenState] = useState(() => hiddenPosts.has(post.id));
   const [expanded, setExpanded] = useState(false);
   const lastTap = useRef(0);
 
@@ -93,6 +96,12 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
   const commentCount = [...post.comments, ...(extra ?? [])].filter((c) => !removedContent.includes(c.id) && !blocked.includes(c.authorId)).length;
   const bookable = author.kind === 'dj' || author.kind === 'musician' || author.kind === 'band';
   const authorHref = author.id === 'me' ? '/profile/me' : bookable ? `/artist/${author.id}` : author.kind === 'venue' ? `/venue/${author.id}` : `/profile/${author.id}`;
+
+  const setHidden = (on: boolean) => {
+    if (on) hiddenPosts.add(post.id);
+    else hiddenPosts.delete(post.id);
+    setHiddenState(on);
+  };
 
   const onMediaPress = () => {
     const now = Date.now();
@@ -136,7 +145,7 @@ export const PostCard = memo(function PostCard({ post, onComment }: { post: Post
         <Icon name="eye-off-outline" size={22} color={colors.muted} />
         <View style={{ flex: 1 }}>
           <T v="bodyBold">Post hidden</T>
-          <T v="small">This post from {author.name} is hidden from your feed.</T>
+          <T v="small">This post from {author.name} stays hidden while the app is open.</T>
         </View>
         <Button title="Undo" variant="light" size="sm" accessibilityLabel="Undo hide post" onPress={() => setHidden(false)} />
       </Row>

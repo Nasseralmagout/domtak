@@ -9,6 +9,7 @@ import { Avatar, Button, EmptyState, Icon, IconButton, Photo, Pill, Row, T } fro
 import type { ImgKey } from '../../data/images';
 import { eventDiscussion, profileById, venueById } from '../../data/mock';
 import type { Comment } from '../../data/types';
+import { hostsEvent } from '../../lib/eventHost';
 import { eventWhen } from '../../lib/format';
 import { toast } from '../../store/toast';
 import { overlayVenue, useApp, useEvent, type VenueListing } from '../../store/useApp';
@@ -50,6 +51,7 @@ export default function EventComments() {
   const removed = useApp((s) => s.removedContent);
   const reports = useApp((s) => s.reports);
   const reportContent = useApp((s) => s.reportContent);
+  const guestInvites = useApp((s) => s.guestInvites);
   const [text, setText] = useState('');
   const [photos, setPhotos] = useState<ImgKey[]>([]);
   const [picker, setPicker] = useState(false);
@@ -64,6 +66,8 @@ export default function EventComments() {
     [event, extra, removed, blocked],
   );
   const reported = useMemo(() => new Set(reports.filter((r) => r.byMe && r.status === 'open').map((r) => r.targetId)), [reports]);
+  // Your invitation, when this is a private event you were invited to (F20).
+  const invite = useMemo(() => (id ? guestInvites.find((g) => g.eventId === id) : undefined), [guestInvites, id]);
 
   if (!event) {
     return (
@@ -79,8 +83,32 @@ export default function EventComments() {
     );
   }
 
+  // Private content stays with the host and invited guests (F09, F11), as on the event page.
+  const hosts = hostsEvent(event, user);
+  if (event.isPrivate && !hosts && !invite) {
+    return (
+      <Screen header={<ScreenHeader title="Discussion" onBack={() => goBack('/(tabs)/events')} />}>
+        <EmptyState
+          icon="lock-outline"
+          title="Private discussion"
+          body="Only the host and invited guests can read and join this discussion. Ask the host for an invitation."
+          action="Browse events"
+          onAction={() => router.replace('/(tabs)/events')}
+        />
+      </Screen>
+    );
+  }
+
   const count = comments.length;
   const myTicket = tickets.find((t) => t.eventId === event.id && t.status === 'valid');
+  // Private events sell no tickets: guests get theirs through the invitation, hosts manage the event.
+  const cta = myTicket
+    ? { title: 'My ticket', label: `Open my ticket for ${event.title}`, href: `/ticket/${myTicket.id}` }
+    : event.isPrivate
+      ? invite && !hosts
+        ? { title: 'Invitation', label: `Open your invitation to ${event.title}`, href: invite.ticketId ? `/ticket/${invite.ticketId}` : `/invitation/${invite.id}` }
+        : { title: 'Event', label: `Open ${event.title}`, href: `/event/${event.id}` }
+      : { title: 'Tickets', label: `Get tickets for ${event.title}`, href: `/tickets/${event.id}` };
   const canSend = !!text.trim() || photos.length > 0;
 
   const send = () => {
@@ -160,20 +188,14 @@ export default function EventComments() {
             <T v="title" numberOfLines={1}>{event.title}</T>
             <T v="small" numberOfLines={1}>{eventWhen(event.start, event.end)}</T>
           </View>
-          <Button
-            title={myTicket ? 'My ticket' : 'Tickets'}
-            size="sm"
-            variant="light"
-            accessibilityLabel={myTicket ? `Open my ticket for ${event.title}` : `Get tickets for ${event.title}`}
-            onPress={() => router.push(myTicket ? `/ticket/${myTicket.id}` : `/tickets/${event.id}`)}
-          />
+          <Button title={cta.title} size="sm" variant="light" accessibilityLabel={cta.label} onPress={() => router.push(cta.href as never)} />
         </Row>
 
         {count === 0 ? (
           <EmptyState
             icon="comment-text-multiple-outline"
             title="No comments yet"
-            body="Ask about set times, the dress code or who else is going, or share a photo. The organizer and other guests will see it."
+            body={`Ask about set times, the dress code or who else is going, or share a photo. The ${event.isPrivate ? 'host' : 'organizer'} and other guests will see it.`}
             action="Write the first comment"
             onAction={() => inputRef.current?.focus()}
           />

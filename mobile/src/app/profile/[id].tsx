@@ -9,6 +9,7 @@ import { FriendButton, REPORT_REASONS } from '../../components/PostCard';
 import { Avatar, Banner, Button, Chip, EmptyState, Icon, type IconName, IconButton, Photo, Row, Segmented, T } from '../../components/ui';
 import { followersOf, profileById, venueById } from '../../data/mock';
 import { compact, plural } from '../../lib/format';
+import { isDiscoverable } from '../../store/filters';
 import { canBefriend, communitiesFor, useFriendProfiles, useFriendRequests, useFriendStatus } from '../../store/social';
 import { toast } from '../../store/toast';
 import { activeWorkspace, canPostToFeed, ROLE_LABEL, isPro, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
@@ -107,15 +108,18 @@ export default function ProfileScreen() {
   const city = isMe ? user.city : p!.city;
   const verified = isMe ? user.pro === 'verified' : !!p!.verified;
   const authorId = isMe ? 'me' : p!.id;
-  const myPosts = posts.filter((x) => x.authorId === authorId);
-  const savedPosts = posts.filter((x) => saves[x.id]);
-  const hostEvents = events.filter((e) => e.organizerId === authorId);
+  const isBlocked = !isMe && blockedList.includes(p!.id);
+  // Posts from accounts you blocked are hidden everywhere (feed, communities, post links), so here too.
+  const authoredPosts = posts.filter((x) => x.authorId === authorId);
+  const myPosts = isBlocked ? [] : authoredPosts;
+  const savedPosts = posts.filter((x) => saves[x.id] && !blockedList.includes(x.authorId));
+  // Someone else's drafts, cancelled or private events are not shown on their profile.
+  const hostEvents = events.filter((e) => e.organizerId === authorId && (isMe || isDiscoverable(e)));
   const cell = (width - 32 - 8) / 3;
   // Platform communities that match this person's music: a place to meet them (F09).
   const sharedCommunities = p ? communitiesFor(p.genres) : [];
   const grid = tab === 'saved' ? savedPosts : myPosts;
-  const fallbackGrid = !isMe && p?.gallery ? p.gallery : [];
-  const isBlocked = !isMe && blockedList.includes(p!.id);
+  const fallbackGrid = !isMe && !isBlocked && p?.gallery ? p.gallery : [];
   const myFollowerCount = followersOf('me').filter((f) => !blockedList.includes(f.id)).length;
   const myFollowingCount = Object.keys(followingMap).filter((fid) => (profileById(fid) || venueById(fid)) && !blockedList.includes(fid)).length;
   const openConnections = (t: 'followers' | 'following') => router.push(`/connections/${isMe ? 'me' : p!.id}?tab=${t}`);
@@ -153,7 +157,7 @@ export default function ProfileScreen() {
       </Row>
 
       <Row style={{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: 10, ...shadow(1) }} gap={0}>
-        <Stat value={!isMe && p!.kind === 'organizer' ? compact(p!.eventsCount ?? hostEvents.length) : String(myPosts.length)} label={!isMe && p!.kind === 'organizer' ? 'Events' : 'Posts'} />
+        <Stat value={!isMe && p!.kind === 'organizer' ? compact(p!.eventsCount ?? hostEvents.length) : String(authoredPosts.length)} label={!isMe && p!.kind === 'organizer' ? 'Events' : 'Posts'} />
         <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
         <Stat value={isMe ? String(myFollowerCount) : compact(p!.followers + (followingMap[p!.id] ? 1 : 0))} label="Followers" onPress={() => openConnections('followers')} />
         <View style={{ width: 1, height: 32, backgroundColor: colors.divider }} />
@@ -261,11 +265,13 @@ export default function ProfileScreen() {
             <T v="body" color={colors.muted} center>
               {tab === 'saved'
                 ? 'Posts you save appear here.'
-                : !isMe
-                  ? 'No posts yet.'
-                  : canPostToFeed(user)
-                    ? 'Share your first night out.'
-                    : 'Posting photos and videos to the feed is for verified professionals. You can add photos to comments.'}
+                : isBlocked
+                  ? `You blocked ${name}, so their posts are hidden.`
+                  : !isMe
+                    ? 'No posts yet.'
+                    : canPostToFeed(user)
+                      ? 'Share your first night out.'
+                      : 'Posting photos and videos to the feed is for verified professionals. You can add photos to comments.'}
             </T>
             {tab === 'posts' && isMe ? (
               canPostToFeed(user) ? <Button title="Create post" size="md" onPress={() => router.push('/new-post')} /> : <Button title="Where to share photos" variant="light" size="md" onPress={() => router.push('/new-post')} />

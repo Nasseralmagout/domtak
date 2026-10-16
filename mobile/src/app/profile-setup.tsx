@@ -51,6 +51,8 @@ export default function ProfileSetup() {
       goBack('/profile/me');
     } else {
       signIn(user.email);
+      // Sign-up is finished: drop its screens so Back never returns into registration while signed in.
+      if (router.canDismiss()) router.dismissAll();
       router.replace((dest ?? '/(tabs)') as never);
     }
   };
@@ -71,13 +73,13 @@ export default function ProfileSetup() {
 
   const takePhoto = () => {
     // Camera capture needs the installed app; here the newest selfie from the camera roll is used.
-    const next = CAMERA_ROLL.find((k) => !uploads.includes(k));
-    if (!next) {
+    const photo = CAMERA_ROLL.find((k) => !uploads.includes(k));
+    if (!photo) {
       toast('All recent photos are already added');
       return;
     }
-    setUploads((u) => [next, ...u]);
-    setAvatar(next);
+    setUploads((u) => [photo, ...u]);
+    setAvatar(photo);
     toast('Photo added from your camera roll');
   };
 
@@ -142,7 +144,7 @@ export default function ProfileSetup() {
           {workspace === 'musician' ? <Field label="Booking fee per hour (€)" value={fee} onChangeText={(t) => setFee(t.replace(/\D/g, '').slice(0, 5))} keyboardType="number-pad" error={errors.fee} /> : null}
           {workspace === 'venue' ? <Field label="Venue name" value={venue} onChangeText={setVenue} placeholder="e.g. Moon Club" error={errors.venue} /> : null}
           {workspace === 'organizer' ? <T v="small">Your display name is shown as the organizer on your events.</T> : null}
-          <T v="small">These details belong to your approved {WORKSPACE_LABEL[workspace].toLowerCase()} workspace. Switch workspaces from the menu.</T>
+          <T v="small">These details belong to your approved {WORKSPACE_LABEL[workspace]} workspace. Switch workspaces from the menu.</T>
           {editing ? (
             <Button
               title={workspace === 'musician' ? 'Availability & fees' : workspace === 'venue' ? 'Edit venue listing' : 'Your events'}

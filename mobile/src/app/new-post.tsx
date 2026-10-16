@@ -83,12 +83,12 @@ function PostingNotAllowed({ isStory }: { isStory: boolean }) {
                   ? `It was not approved${app.reason ? `: ${app.reason}` : ''}. You can update it and apply again.`
                   : 'Approved. Switch to your professional workspace to post.'}
           </T>
-          {/* A pending application opens its status; one that needs changes opens the form again. */}
+          {/* A pending or approved application opens its status; one that needs changes opens the form again. */}
           <Button
-            title={app.status === 'pending' ? 'View application status' : 'Update application'}
+            title={app.status === 'pending' || app.status === 'approved' ? 'View application status' : 'Update application'}
             size="md"
             variant="secondary"
-            onPress={() => router.push((app.status === 'pending' ? '/pro-verification' : '/apply') as never)}
+            onPress={() => router.push((app.status === 'pending' || app.status === 'approved' ? '/application' : '/apply') as never)}
           />
         </Card>
       ) : (
@@ -216,7 +216,7 @@ function Composer({ isStory, roleLabel }: { isStory: boolean; roleLabel: string 
         ) : null}
       </View>
       <Row justify="space-between">
-        <T v="label">{isStory ? 'Pick one photo' : `Pick up to ${max} (multi-file)`}</T>
+        <T v="label">{isStory ? 'Pick one photo' : `Pick up to ${max} photos`}</T>
         {!isStory && picked.length ? <T v="smallBold" color={colors.brand}>{picked.length}/{max}</T> : null}
       </Row>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
