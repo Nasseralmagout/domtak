@@ -4,18 +4,20 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DateBadge, EventRow } from '../../components/cards';
-import { Avatar, Button, Icon, IconButton, Pill, Row, Segmented, T } from '../../components/ui';
-import { profileById, venueById } from '../../data/mock';
-import type { Booking, BookingStatus, IncomingRequest } from '../../data/types';
-import { STATUS_LABEL, STATUS_TONE } from '../../lib/booking';
-import { isoDay, MONTHS_LONG, parse, sameDay, shortDate, TODAY } from '../../lib/format';
-import { isPro, useAllEvents, useApp } from '../../store/useApp';
+import { Avatar, Button, Icon, IconButton, Pill, Row, Segmented, StatusPill, T, TimeLeft, type Tone } from '../../components/ui';
+import { venueById } from '../../data/mock';
+import type { Booking, BookingStatus, EventItem, GuestInvite, IncomingRequest } from '../../data/types';
+import { bookingLabel, providerOf } from '../../lib/booking';
+import { eventState } from '../../lib/events';
+import { isoDay, MONTHS_LONG, parse, plural, sameDay, shortDate, TODAY } from '../../lib/format';
+import { isDiscoverable } from '../../store/filters';
+import { activeWorkspace, type ActionItem, useActionQueue, useAllEvents, useApp, useInvitedEvents } from '../../store/useApp';
 import { colors, fonts, radius, shadow } from '../../theme';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const WEEKDAYS_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-/** Bookings that still hold a date in the calendar. */
-const ACTIVE: BookingStatus[] = ['requested', 'pending', 'accepted', 'paid', 'confirmed'];
+/** Bookings that still hold a date in the calendar (also while a change or a failed payment is being sorted out). */
+const ACTIVE: BookingStatus[] = ['requested', 'pending', 'accepted', 'paid', 'confirmed', 'change_requested', 'payment_failed'];
 
 type View3 = 'month' | 'week' | 'day';
 
@@ -28,7 +30,7 @@ function monthGrid(year: number, month: number) {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
-/** Incoming requests carry a label like "Thu 24 Dec 2026"; returns its ISO day. */
+/** Older incoming requests only carry a label like "Thu 24 Dec 2026"; returns its ISO day. */
 function requestDay(label: string) {
   const [, d, mon, y] = label.split(' ');
   const m = mon ? MONTHS_LONG.findIndex((x) => x.startsWith(mon)) : -1;
@@ -36,8 +38,31 @@ function requestDay(label: string) {
   return isoDay(noon(Number(y), m, Number(d)));
 }
 
-function bookingName(b: Booking) {
-  return (b.type === 'musician' ? profileById(b.targetId)?.name : venueById(b.targetId)?.name) ?? 'Booking';
+const TONE_FG: Record<Tone, string> = { success: colors.success, warning: colors.warningStrong, danger: colors.danger, brand: colors.brand, neutral: colors.label };
+const TONE_BG: Record<Tone, string> = { success: colors.successBg, warning: colors.warningBg, danger: colors.dangerBg, brand: colors.brandSoft, neutral: colors.chipIdle };
+
+/** The next action at the top of Overview, linked to the record that needs it. */
+function NextActionCard({ item, more, onMore }: { item: ActionItem; more: number; onMore: () => void }) {
+  return (
+    <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, gap: 10, borderLeftWidth: 5, borderLeftColor: TONE_FG[item.tone], ...shadow(1) }}>
+      <T v="caption">NEXT ACTION</T>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Next action: ${item.title}. ${item.sub}`} onPress={() => router.push(item.href as never)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, opacity: pressed ? 0.75 : 1 })}>
+        <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: TONE_BG[item.tone], alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={item.icon} size={20} color={TONE_FG[item.tone]} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <T v="bodyBold">{item.title}</T>
+          <T v="small" numberOfLines={2}>{item.sub}</T>
+        </View>
+        <Icon name="chevron-right" size={22} color={colors.subtle} />
+      </Pressable>
+      {more > 0 ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={`${plural(more, 'more item')} waiting. Open dashboard`} onPress={onMore} hitSlop={6} style={{ minHeight: 44, justifyContent: 'center' }}>
+          <T v="smallBold" color={colors.brand}>{plural(more, 'more item')} waiting · Open dashboard</T>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
 export default function CalendarTab() {
@@ -47,8 +72,11 @@ export default function CalendarTab() {
   const tickets = useApp((s) => s.tickets);
   const bookings = useApp((s) => s.bookings);
   const requests = useApp((s) => s.requests);
-  const events = useAllEvents();
-  const pro = isPro(user.role);
+  const allEvents = useAllEvents();
+  const invited = useInvitedEvents();
+  const queue = useActionQueue();
+  const workspace = activeWorkspace(user);
+  const pro = workspace !== 'fan';
   const [view, setView] = useState<View3>('month');
   const [selected, setSelected] = useState(TODAY);
   const [cursor, setCursor] = useState(noon(TODAY.getFullYear(), TODAY.getMonth(), 1));
@@ -72,12 +100,32 @@ export default function CalendarTab() {
     }
   }
 
+  // Invitations you haven't declined, by event (private events are not in the public list).
+  const inviteByEvent = useMemo(() => {
+    const m = new Map<string, GuestInvite>();
+    invited.forEach(({ invite }) => {
+      if (invite.status !== 'declined') m.set(invite.eventId, invite);
+    });
+    return m;
+  }, [invited]);
   const myEventIds = useMemo(
-    () => new Set([...Object.keys(going), ...tickets.filter((t) => t.status !== 'cancelled').map((t) => t.eventId), ...events.filter((e) => e.organizerId === 'me').map((e) => e.id)]),
-    [going, tickets, events],
+    () =>
+      new Set([
+        ...Object.keys(going),
+        ...tickets.filter((t) => t.status === 'valid' || t.status === 'used').map((t) => t.eventId),
+        ...allEvents.filter((e) => e.organizerId === 'me' || e.hostId === 'me').map((e) => e.id),
+        ...inviteByEvent.keys(),
+      ]),
+    [going, tickets, allEvents, inviteByEvent],
   );
+  // Public events everyone can see, plus your own and the private ones you were invited to.
+  const events = useMemo(() => {
+    const visible = allEvents.filter((e) => isDiscoverable(e) || myEventIds.has(e.id));
+    const extra = invited.map((x) => x.event).filter((e) => inviteByEvent.has(e.id) && !visible.some((v) => v.id === e.id));
+    return extra.length ? [...visible, ...extra] : visible;
+  }, [allEvents, invited, inviteByEvent, myEventIds]);
   const byDay = useMemo(() => {
-    const m = new Map<string, typeof events>();
+    const m = new Map<string, EventItem[]>();
     events.forEach((e) => {
       const k = isoDay(parse(e.start));
       m.set(k, [...(m.get(k) ?? []), e]);
@@ -90,21 +138,37 @@ export default function CalendarTab() {
     activeBookings.forEach((b) => m.set(b.date, [...(m.get(b.date) ?? []), b]));
     return m;
   }, [activeBookings]);
-  // Pros also see the gigs they accepted from booking requests.
+  // Professionals also see the work they accepted from booking requests (venue hire in the venue workspace).
   const gigs = useMemo(
     () =>
       (pro ? requests : [])
-        .filter((r) => r.status === 'accepted')
-        .map((r) => ({ r, day: requestDay(r.date) }))
+        .filter((r) => r.status === 'accepted' && (workspace === 'venue' ? r.kind === 'venue' : r.kind !== 'venue'))
+        .map((r) => ({ r, day: r.isoDate ?? requestDay(r.date) }))
         .filter((g): g is { r: IncomingRequest; day: string } => !!g.day)
         .sort((a, b) => a.day.localeCompare(b.day)),
-    [pro, requests],
+    [pro, requests, workspace],
   );
   const gigsByDay = useMemo(() => {
     const m = new Map<string, IncomingRequest[]>();
     gigs.forEach(({ r, day }) => m.set(day, [...(m.get(day) ?? []), r]));
     return m;
   }, [gigs]);
+
+  /** How an event you have plans for relates to you. */
+  const planLabel = (e: EventItem) => {
+    if (eventState(e, bookings) === 'cancelled') return 'Cancelled';
+    if (e.organizerId === 'me' || e.hostId === 'me') return 'You’re hosting';
+    const inv = inviteByEvent.get(e.id);
+    if (inv) return inv.status === 'invited' ? 'Invitation · reply' : 'Invited · going';
+    if (tickets.some((t) => t.eventId === e.id && t.status === 'valid')) return 'Ticket ready';
+    if (tickets.some((t) => t.eventId === e.id && t.status === 'used')) return 'Checked in';
+    return 'Going';
+  };
+  const openPlan = (e: EventItem) => {
+    const inv = inviteByEvent.get(e.id);
+    if (inv && inv.status === 'invited') router.push(`/invitation/${inv.id}`);
+    else router.push(`/event/${e.id}`);
+  };
 
   const weekStart = mondayOf(selected);
   const days = view === 'month' ? monthGrid(cursor.getFullYear(), cursor.getMonth()) : view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [];
@@ -124,6 +188,11 @@ export default function CalendarTab() {
   }, {});
   const upcomingBookings = activeBookings.filter((b) => parse(b.date) >= addDays(TODAY, -1));
   const upcomingGigs = gigs.filter((g) => parse(g.day) >= addDays(TODAY, -1));
+
+  // Overview starts with what needs doing: provider requests first in a provider workspace, then your own records.
+  const actions = useMemo(() => [...queue.filter((q) => q.kind === 'request'), ...queue.filter((q) => q.kind !== 'request')], [queue]);
+  const awaitingReply = upcomingBookings.filter((b) => b.status === 'pending' || (b.status === 'requested' && b.pricing === 'quote' && (!b.quote || b.quote.version === 0)));
+  const dashboardHref = pro ? '/pro/workspace' : '/dashboard';
 
   const changeView = (v: View3) => {
     setView(v);
@@ -164,9 +233,33 @@ export default function CalendarTab() {
         {overview ? (
           <>
             <T v="h1">Your event overview</T>
+            {actions.length ? (
+              <NextActionCard item={actions[0]} more={actions.length - 1} onMore={() => router.push(dashboardHref as never)} />
+            ) : (
+              <Row gap={10} style={{ padding: 12, borderRadius: radius.md, backgroundColor: colors.successBg }}>
+                <Icon name="check-circle-outline" size={22} color={colors.success} />
+                <T v="small" color={colors.success} style={{ flex: 1 }}>Nothing needs your action right now.</T>
+              </Row>
+            )}
+            {awaitingReply.map((b) => (
+              <Pressable
+                key={`wait-${b.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Waiting for ${providerOf(b).name}: ${b.eventTitle}, ${bookingLabel(b)}. Open booking`}
+                onPress={() => router.push(`/booking/${b.id}`)}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: radius.md, backgroundColor: colors.brandTint, opacity: pressed ? 0.8 : 1 })}
+              >
+                <Icon name="timer-sand" size={20} color={colors.brand} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <T v="smallBold">Waiting for {providerOf(b).name} to reply</T>
+                  <T v="small" numberOfLines={1}>{b.eventTitle} · {shortDate(b.date)}</T>
+                </View>
+                {b.status === 'pending' ? <TimeLeft deadline={b.deadline} /> : <Pill label={bookingLabel(b)} tone="brand" />}
+              </Pressable>
+            ))}
             {Object.keys(groups).length === 0 && upcomingBookings.length === 0 && upcomingGigs.length === 0 ? (
               <View style={{ gap: 10 }}>
-                <T v="body" color={colors.muted}>Tap “Going” or buy a ticket and your events show up here.</T>
+                <T v="body" color={colors.muted}>Tap “Going”, buy a ticket or accept an invitation and your events show up here.</T>
                 <Button title="Find events" variant="secondary" size="md" onPress={() => router.push('/events/all')} />
               </View>
             ) : null}
@@ -174,11 +267,11 @@ export default function CalendarTab() {
               <View key={month} style={{ gap: 2 }}>
                 <T v="h2" style={{ marginVertical: 8 }}>{month}</T>
                 {list.map((e) => (
-                  <Pressable key={e.id} accessibilityRole="button" accessibilityLabel={`${e.title}, ${shortDate(e.start)}`} onPress={() => router.push(`/event/${e.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                  <Pressable key={e.id} accessibilityRole="button" accessibilityLabel={`${e.title}, ${shortDate(e.start)}, ${planLabel(e)}`} onPress={() => openPlan(e)} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
                     <DateBadge iso={e.start} size={64} />
                     <View style={{ flex: 1 }}>
                       <T v="title">{e.title}</T>
-                      <T v="small">{venueById(e.venueId)?.name}{e.organizerId === 'me' ? ' · You’re hosting' : tickets.some((t) => t.eventId === e.id && t.status === 'valid') ? ' · Ticket ready' : ' · Going'}</T>
+                      <T v="small" color={planLabel(e) === 'Cancelled' ? colors.danger : colors.muted}>{venueById(e.venueId)?.name} · {planLabel(e)}</T>
                     </View>
                     <Icon name="chevron-right" size={22} color={colors.subtle} />
                   </Pressable>
@@ -187,24 +280,24 @@ export default function CalendarTab() {
             ))}
             {upcomingBookings.length ? <T v="h2" style={{ marginTop: 8 }}>Bookings</T> : null}
             {upcomingBookings.map((b) => (
-              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={`${b.eventTitle}, ${shortDate(b.date)}, ${STATUS_LABEL[b.status]}`} onPress={() => router.push(`/booking/${b.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={`${b.eventTitle}, ${shortDate(b.date)}, ${providerOf(b).name}, ${bookingLabel(b)}`} onPress={() => router.push(`/booking/${b.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
                 <DateBadge iso={b.date} size={64} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <T v="title">{b.eventTitle}</T>
-                  <T v="small">{bookingName(b)} · {b.startTime}–{b.endTime}</T>
-                  <Pill label={STATUS_LABEL[b.status]} tone={STATUS_TONE[b.status]} />
+                  <T v="small">{providerOf(b).name} · {b.startTime}–{b.endTime}</T>
+                  <StatusPill booking={b} />
                 </View>
                 <Icon name="chevron-right" size={22} color={colors.subtle} />
               </Pressable>
             ))}
-            {upcomingGigs.length ? <T v="h2" style={{ marginTop: 8 }}>Your gigs</T> : null}
+            {upcomingGigs.length ? <T v="h2" style={{ marginTop: 8 }}>{workspace === 'venue' ? 'Venue bookings' : 'Your gigs'}</T> : null}
             {upcomingGigs.map(({ r, day }) => (
-              <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Gig: ${r.title}, ${shortDate(day)}, ${r.time}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`${workspace === 'venue' ? 'Venue booking' : 'Gig'}: ${r.title}, ${shortDate(day)}, ${r.time}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
                 <DateBadge iso={day} size={64} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <T v="title">{r.title}</T>
                   <T v="small">{r.requester} · {r.time}</T>
-                  <Pill label="Accepted gig" tone="success" />
+                  <Pill label={workspace === 'venue' ? 'Accepted booking' : 'Accepted gig'} tone="success" />
                 </View>
                 <Icon name="chevron-right" size={22} color={colors.subtle} />
               </Pressable>
@@ -267,37 +360,58 @@ export default function CalendarTab() {
                 <Row gap={6}><View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brandDeep }} /><T v="small">Events in Berlin</T></Row>
               </Row>
             ) : null}
-            <Button title="Overview" icon="format-list-bulleted" size="md" style={{ alignSelf: 'center', paddingHorizontal: 40 }} onPress={() => setOverview(true)} />
+            <Button
+              title={actions.length ? `Overview · ${plural(actions.length, 'action')}` : 'Overview'}
+              icon="format-list-bulleted"
+              size="md"
+              accessibilityLabel={actions.length ? `Overview, ${plural(actions.length, 'item')} need your action` : 'Overview'}
+              style={{ alignSelf: 'center', paddingHorizontal: 32 }}
+              onPress={() => setOverview(true)}
+            />
 
             <T v="h3">{dayCount ? `On ${shortDate(selKey)}` : `Nothing planned on ${shortDate(selKey)}`}</T>
             {dayGigs.map((r) => (
-              <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Gig: ${r.title} for ${r.requester}, ${r.time}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.successBg, padding: 14, borderRadius: radius.lg }}>
-                <Icon name="microphone" size={24} color={colors.success} />
+              <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`${workspace === 'venue' ? 'Venue booking' : 'Gig'}: ${r.title} for ${r.requester}, ${r.time}`} onPress={() => router.push(`/pro/request/${r.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.successBg, padding: 14, borderRadius: radius.lg }}>
+                <Icon name={workspace === 'venue' ? 'storefront-outline' : 'microphone'} size={24} color={colors.success} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <T v="title">{r.title}</T>
                   <T v="small">{r.time} · {r.location.split(',')[0]} · for {r.requester}</T>
-                  <Pill label="Accepted gig" tone="success" />
+                  <Pill label={workspace === 'venue' ? 'Accepted booking' : 'Accepted gig'} tone="success" />
                 </View>
                 <Icon name="chevron-right" size={22} color={colors.subtle} />
               </Pressable>
             ))}
             {dayBookings.map((b) => (
-              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={`Booking: ${b.eventTitle} with ${bookingName(b)}, ${STATUS_LABEL[b.status]}`} onPress={() => router.push(`/booking/${b.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.brandTint, padding: 14, borderRadius: radius.lg }}>
+              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={`Booking: ${b.eventTitle} with ${providerOf(b).name}, ${bookingLabel(b)}`} onPress={() => router.push(`/booking/${b.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.brandTint, padding: 14, borderRadius: radius.lg }}>
                 <Icon name="calendar-clock" size={24} color={colors.brand} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <T v="title">{b.eventTitle}</T>
-                  <T v="small">{b.startTime}–{b.endTime} · {bookingName(b)}</T>
-                  <Pill label={STATUS_LABEL[b.status]} tone={STATUS_TONE[b.status]} />
+                  <T v="small">{b.startTime}–{b.endTime} · {providerOf(b).name}</T>
+                  <StatusPill booking={b} />
                 </View>
                 <Icon name="chevron-right" size={22} color={colors.subtle} />
               </Pressable>
             ))}
-            {dayEvents.map((e) => (
-              <View key={e.id} style={{ gap: 6 }}>
-                {myEventIds.has(e.id) ? <Pill label={e.organizerId === 'me' ? 'You’re hosting' : 'Your plans'} tone="warning" icon="star" /> : null}
-                <EventRow event={e} />
-              </View>
-            ))}
+            {dayEvents.map((e) => {
+              const plan = myEventIds.has(e.id) ? planLabel(e) : undefined;
+              return (
+                <View key={e.id} style={{ gap: 6 }}>
+                  {plan ? <Pill label={plan} tone={plan === 'Cancelled' ? 'danger' : 'warning'} icon={plan === 'Cancelled' ? 'calendar-remove-outline' : 'star'} /> : null}
+                  {e.isPrivate && inviteByEvent.has(e.id) && plan !== 'You’re hosting' ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${e.title}, private event. Open invitation`} onPress={() => openPlan(e)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, ...shadow(1) }}>
+                      <DateBadge iso={e.start} size={52} />
+                      <View style={{ flex: 1 }}>
+                        <T v="title">{e.title}</T>
+                        <T v="small">Private · {venueById(e.venueId)?.name}</T>
+                      </View>
+                      <Icon name="lock-outline" size={20} color={colors.subtle} />
+                    </Pressable>
+                  ) : (
+                    <EventRow event={e} />
+                  )}
+                </View>
+              );
+            })}
             {dayCount === 0 ? <Button title="Find events" variant="secondary" size="md" onPress={() => router.push('/events/all')} /> : null}
           </>
         )}
