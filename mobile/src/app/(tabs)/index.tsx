@@ -221,10 +221,12 @@ export default function Home() {
   }
   const [refreshing, setRefreshing] = useState(false);
   const following = useApp((s) => s.following);
+  const blocked = useApp((s) => s.blocked);
   const allPosts = useFeedPosts();
 
   const items = useMemo<Item[]>(() => {
-    let posts = allPosts.filter((p) => p.feed.includes(tab));
+    // Posts from accounts you blocked are left out, as in communities, comments and stories.
+    let posts = allPosts.filter((p) => p.feed.includes(tab) && !blocked.includes(p.authorId));
     if (tab === 'following') posts = posts.filter((p) => p.authorId === 'me' || following[p.authorId]);
     const out: Item[] = [];
     posts.forEach((p, i) => {
@@ -237,7 +239,7 @@ export default function Home() {
     if (posts.length < 3) out.push({ kind: 'events' });
     if (posts.length < 4) out.push({ kind: 'communities' });
     return out;
-  }, [allPosts, tab, following]);
+  }, [allPosts, tab, following, blocked]);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.brandDeep }}>

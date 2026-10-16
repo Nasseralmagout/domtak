@@ -83,7 +83,13 @@ function PostingNotAllowed({ isStory }: { isStory: boolean }) {
                   ? `It was not approved${app.reason ? `: ${app.reason}` : ''}. You can update it and apply again.`
                   : 'Approved. Switch to your professional workspace to post.'}
           </T>
-          <Button title={app.status === 'pending' ? 'View application' : 'Update application'} size="md" variant="secondary" onPress={() => router.push('/apply' as never)} />
+          {/* A pending application opens its status; one that needs changes opens the form again. */}
+          <Button
+            title={app.status === 'pending' ? 'View application status' : 'Update application'}
+            size="md"
+            variant="secondary"
+            onPress={() => router.push((app.status === 'pending' ? '/pro-verification' : '/apply') as never)}
+          />
         </Card>
       ) : (
         <Card style={{ gap: 10 }}>

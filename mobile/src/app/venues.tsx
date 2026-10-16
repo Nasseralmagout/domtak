@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { VenueCard } from '../components/cards';
 import { goBack } from '../components/layout';
 import { Chip, EmptyState, Icon, type IconName, IconButton, Photo, Row, T } from '../components/ui';
-import { ratingFor, venueGarden, venueParking } from '../data/mock';
+import { ratingFor, reviewCountFor, venueGarden, venueParking } from '../data/mock';
 import type { Venue } from '../data/types';
 import { useApp, useVenues } from '../store/useApp';
 import { colors, fonts } from '../theme';
@@ -33,7 +33,11 @@ export default function Venues() {
   const blocked = useApp((s) => s.blocked);
   const list = useMemo(() => {
     // Same star rating the cards and /ratings show: review average incl. your own reviews, blocked authors left out.
-    const ratingOf = (id: string) => ratingFor(id, { extra: bookings.filter((b) => b.targetId === id && reviews[b.id] && reviews[b.id].rating > 0).map((b) => reviews[b.id].rating), exclude: blocked });
+    // Venues without reviews have no rating yet, so they sort after the reviewed ones.
+    const ratingOf = (id: string) => {
+      const opts = { extra: bookings.filter((b) => b.targetId === id && reviews[b.id] && reviews[b.id].rating > 0).map((b) => reviews[b.id].rating), exclude: blocked };
+      return reviewCountFor(id, opts) ? ratingFor(id, opts) : 0;
+    };
     const l = venues.filter((v) => (type === 'All' || v.type === type) && amenities.every((a) => AMENITIES.find((x) => x.key === a)?.has(v)));
     const ratings = new Map(l.map((v) => [v.id, ratingOf(v.id)]));
     // Quote-based venues have no listed price, so they sort after the priced ones.

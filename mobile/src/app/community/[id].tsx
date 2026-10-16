@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Fragment, useMemo, useState } from 'react';
-import { ScrollView, Share, View } from 'react-native';
+import { Pressable, ScrollView, Share, View } from 'react-native';
 
 import { ActionSheet } from '../../components/ActionSheet';
 import { EventRow, FollowButton, PersonRow } from '../../components/cards';
@@ -95,14 +95,24 @@ export default function CommunityScreen() {
             )}
             <Button title="Invite" icon="share-variant-outline" variant="light" size="md" accessibilityLabel={`Invite friends to ${community.name}`} onPress={share} />
           </Row>
-          {friendsHere.length ? (
-            <View accessible accessibilityLabel={`Friends in this community: ${friendsHere.map((f) => f.name).join(', ')}`} style={{ flexDirection: 'row' }}>
-              {friendsHere.slice(0, 5).map((f, i) => (
-                <View key={f.id} style={{ marginLeft: i ? -8 : 0 }}>
-                  <Avatar src={f.avatar} size={30} label={f.name} />
-                </View>
-              ))}
-            </View>
+          {members.length ? (
+            // Members preview (friends first); opens the Members tab.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Members, including ${members.slice(0, 5).map((m) => m.name).join(', ')}. See members`}
+              onPress={() => setTab('members')}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, opacity: pressed ? 0.7 : 1 })}
+            >
+              <View style={{ flexDirection: 'row' }}>
+                {members.slice(0, 5).map((m, i) => (
+                  <View key={m.id} style={{ marginLeft: i ? -8 : 0, borderRadius: 17, borderWidth: 2, borderColor: colors.white }}>
+                    <Avatar src={m.avatar} size={30} label={m.name} />
+                  </View>
+                ))}
+              </View>
+              <T v="smallBold" color={colors.brand} style={{ flex: 1 }}>{friendsHere.length ? 'Your friends and other members' : 'See who’s here'}</T>
+              <Icon name="chevron-right" size={20} color={colors.brand} />
+            </Pressable>
           ) : null}
           <View style={{ marginTop: 6 }}>
             <Segmented

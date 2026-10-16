@@ -84,9 +84,9 @@ export default function ArtistProfile() {
   const quote = artist.pricing === 'quote' || !artist.feePerHour;
   const isOwner = activeWorkspace(user) === 'musician' && artist.id === OWN_ARTIST_ID;
 
-  // Reviews: your own (from completed bookings) first, then verified reviews from other customers, newest first.
+  // Reviews: your own (from completed bookings, the same ones the score counts) first, then verified reviews from other customers, newest first.
   const mine: ReviewRow[] = bookings
-    .filter((b) => b.targetId === artist.id && b.type !== 'venue' && myReviews[b.id] && (musician ? myReviews[b.id].recommend != null : myReviews[b.id].rating > 0))
+    .filter((b) => b.targetId === artist.id && b.type !== 'venue' && myReviews[b.id] && (musician ? b.status === 'completed' && myReviews[b.id].recommend != null : myReviews[b.id].rating > 0))
     .map((b) => {
       const r = myReviews[b.id];
       return { id: `mine-${b.id}`, authorId: 'me', rating: r.rating, recommend: r.recommend, tags: r.tags ?? [], text: r.text, date: b.date, context: b.eventTitle };

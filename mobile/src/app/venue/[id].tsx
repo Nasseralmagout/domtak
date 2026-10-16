@@ -250,7 +250,11 @@ export default function VenueDetail() {
 
           <Section icon="speaker" title="Facilities and equipment">
             <Card style={{ gap: 10 }}>
-              <InfoRow icon="speaker" label={venue.equipment} value="Equipment included with the venue" />
+              {venue.equipment === 'No equipment' ? (
+                <InfoRow icon="speaker" label="No equipment included" value="Bring your own sound and light, or ask the venue." available={false} />
+              ) : (
+                <InfoRow icon="speaker" label={venue.equipment} value="Equipment included with the venue" />
+              )}
               {facilities.length ? (
                 <Row gap={8} style={{ flexWrap: 'wrap' }}>
                   {facilities.map((f) => (

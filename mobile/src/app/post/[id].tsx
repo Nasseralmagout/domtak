@@ -66,6 +66,20 @@ export default function PostDetail() {
       </Screen>
     );
   }
+  if (blocked.includes(post.authorId)) {
+    const blockedName = authorFor(post.authorId, user, venueListing)?.name ?? 'this account';
+    return (
+      <Screen header={<ScreenHeader title="Post" onBack={() => goBack('/(tabs)')} />}>
+        <EmptyState
+          icon="block-helper"
+          title="Post hidden"
+          body={`You blocked ${blockedName}, so their posts are hidden. Unblock them from their profile to see this post.`}
+          action="Back to feed"
+          onAction={() => router.replace('/(tabs)')}
+        />
+      </Screen>
+    );
+  }
   const canSend = !!text.trim() || photos.length > 0;
   const send = () => {
     if (!canSend) return;

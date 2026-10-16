@@ -249,7 +249,8 @@ export function VenueCard({ venue: base }: { venue: Venue }) {
   // The owner's listing edits show on their own venue everywhere (overlay is a no-op for other venues).
   const listing = useApp((s) => s.venueListing);
   const venue = useMemo(() => overlayVenue(base, listing), [base, listing]);
-  const { rating } = useRating(venue.id);
+  // Stars only when real reviews back them; a venue without reviews reads "New" (same as the venue page).
+  const { rating, count: reviewCount } = useRating(venue.id);
   // The venue owner (approved and working as venue) manages their own venue instead of booking it (same as the venue page).
   const isOwner = useApp((s) => activeWorkspace(s.user) === 'venue') && venue.id === OWN_VENUE_ID;
   const wished = useApp((s) => s.wishlist.venues.includes(venue.id));
@@ -260,7 +261,7 @@ export function VenueCard({ venue: base }: { venue: Venue }) {
     venue.security?.available ? `Security ${euro(venue.security.pricePerGuard)} per guard` : '',
   ].filter(Boolean);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${venue.name}, ${venue.area}, rated ${rating.toFixed(1)} stars`} onPress={() => router.push(`/venue/${venue.id}`)} style={{ borderRadius: radius.xl, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(2) }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${venue.name}, ${venue.area}, ${reviewCount ? `rated ${rating.toFixed(1)} stars from ${reviewCount} review${reviewCount === 1 ? '' : 's'}` : 'no reviews yet'}`} onPress={() => router.push(`/venue/${venue.id}`)} style={{ borderRadius: radius.xl, backgroundColor: colors.surface, overflow: 'hidden', ...shadow(2) }}>
       <View style={{ height: 190 }}>
         <Photo src={venue.cover} style={{ position: 'absolute', inset: 0 }} />
         <LinearGradient colors={scrim} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 100 }} />
@@ -272,7 +273,7 @@ export function VenueCard({ venue: base }: { venue: Venue }) {
             <Text style={{ fontFamily: fonts.display, fontSize: 22, color: colors.white }}>{venue.name}</Text>
             <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.lilacLight }}>{venue.city}, {venue.area}</Text>
           </View>
-          <RatingBadge value={rating} />
+          {reviewCount ? <RatingBadge value={rating} /> : <Pill label="New" tone="brand" icon="star-outline" />}
         </Row>
       </View>
       <View style={{ padding: 14, gap: 10 }}>
