@@ -184,6 +184,7 @@ export default function ETicket() {
         {changed ? (
           <>
             <Button title="Refund details" icon="cash-refund" variant="outlineLight" onPress={() => router.push('/help?section=refunds')} />
+            <Button title="Get help with this ticket" icon="lifebuoy" variant="outlineLight" size="md" onPress={() => router.push(`/support/new?kind=ticket&id=${ticket.id}`)} />
             {ticket.inviteId ? <Button title="View invitation" icon="email-open-outline" variant="outlineLight" size="md" onPress={() => router.push(`/invitation/${ticket.inviteId}`)} /> : null}
           </>
         ) : over ? (

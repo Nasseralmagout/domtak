@@ -6,7 +6,7 @@ import { type Edge, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-ar
 import { conversations, notifications } from '../data/mock';
 import type { Role } from '../data/types';
 import { toast } from '../store/toast';
-import { APPLICATION_STATUS_LABEL, isApproved, ROLE_LABEL, useApp } from '../store/useApp';
+import { APPLICATION_STATUS_LABEL, isApproved, ROLE_LABEL, useActionQueue, useApp } from '../store/useApp';
 import { colors, fonts, radius } from '../theme';
 import { Button, Icon, IconButton, Row, T } from './ui';
 
@@ -106,6 +106,7 @@ export function ScreenHeader({
 
 export function DomtakHeader({ showMenu = true }: { showMenu?: boolean }) {
   const read = useApp((s) => s.readNotifications);
+  const actions = useActionQueue();
   const convs = useApp((s) => s.conversations);
   const blocked = useApp((s) => s.blocked);
   // Messages from blocked accounts never light up the inbox dot.
@@ -119,7 +120,7 @@ export function DomtakHeader({ showMenu = true }: { showMenu?: boolean }) {
         </Text>
         <IconButton name="email-outline" label="Messages" color={colors.lilac} badge={unread > 0} onPress={() => router.push('/inbox')} />
         <IconButton name="map-marker-outline" label="Map" color={colors.lilac} onPress={() => router.push('/map')} />
-        <IconButton name="bell-outline" label="Notifications" color={colors.lilac} badge={!read && notifications.length > 0} onPress={() => router.push('/notifications')} />
+        <IconButton name="bell-outline" label="Notifications" color={colors.lilac} badge={(!read && notifications.length > 0) || actions.length > 0} onPress={() => router.push('/notifications')} />
       </Row>
     </View>
   );
@@ -164,7 +165,7 @@ export function PermissionNotice({ role, action }: { role: Exclude<Role, 'fan'>;
   const what = action ?? 'use this';
   let title = `${ROLE_LABEL[role]} approval needed`;
   let body = `To ${what}, apply as ${ROLE_LABEL[role].toLowerCase()}. Our team reviews applications, usually within 24 hours. Your member account keeps working meanwhile.`;
-  let button: { label: string; onPress: () => void } = { label: 'Apply', onPress: () => router.push('/pro-verification') };
+  let button: { label: string; onPress: () => void } = { label: 'Apply', onPress: () => router.push(`/apply?role=${role}` as never) };
   if (approved) {
     title = `Switch to your ${ROLE_LABEL[role]} workspace`;
     body = `You’re approved as ${ROLE_LABEL[role].toLowerCase()}. Switch workspace to ${what}.`;
@@ -182,7 +183,7 @@ export function PermissionNotice({ role, action }: { role: Exclude<Role, 'fan'>;
         : app.status === 'info'
           ? `We need more information: ${app.missing?.join(', ') || app.reason || 'see your application'}.`
           : `Your application was not approved${app.reason ? `: ${app.reason}` : ''}. You can update it and apply again.`;
-    button = { label: app.status === 'pending' ? 'View application' : 'Update application', onPress: () => router.push('/pro-verification') };
+    button = { label: app.status === 'pending' ? 'View application' : 'Update application', onPress: () => router.push('/application') };
   }
   return (
     <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24, gap: 12 }}>

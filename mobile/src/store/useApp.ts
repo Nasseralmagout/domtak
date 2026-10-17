@@ -1341,18 +1341,18 @@ export function useActionQueue(): ActionItem[] {
   return useMemo(() => {
     const out: ActionItem[] = [];
     const app = user.application;
-    if (app?.status === 'info') out.push({ id: 'app', kind: 'application', icon: 'file-document-edit-outline', title: 'Your application needs more information', sub: app.missing?.join(', ') || app.reason || 'Open it to see what is missing', href: '/pro-verification', tone: 'warning' });
-    if (app?.status === 'approved' && user.role !== app.role) out.push({ id: 'app', kind: 'application', icon: 'check-decagram', title: `You’re approved as ${ROLE_LABEL[app.role]}`, sub: 'Switch to your professional workspace', href: '/pro-verification', tone: 'success' });
-    if (app?.status === 'rejected') out.push({ id: 'app', kind: 'application', icon: 'file-document-outline', title: 'Your application was not approved', sub: app.reason ?? 'See the reason and how to resubmit', href: '/pro-verification', tone: 'danger' });
+    if (app?.status === 'info') out.push({ id: 'app', kind: 'application', icon: 'file-document-edit-outline', title: 'Your application needs more information', sub: app.missing?.join(', ') || app.reason || 'Open it to see what is missing', href: '/application', tone: 'warning' });
+    if (app?.status === 'approved' && user.role !== app.role) out.push({ id: 'app', kind: 'application', icon: 'check-decagram', title: `You’re approved as ${ROLE_LABEL[app.role]}`, sub: 'Switch to your professional workspace', href: '/application', tone: 'success' });
+    if (app?.status === 'rejected') out.push({ id: 'app', kind: 'application', icon: 'file-document-outline', title: 'Your application was not approved', sub: app.reason ?? 'See the reason and how to resubmit', href: '/application', tone: 'danger' });
     invites.forEach((g) => {
       if (blocked.includes(g.fromId)) return;
       const from = profileById(g.fromId)?.name ?? 'A friend';
-      if (g.status === 'invited') out.push({ id: g.id, kind: 'invite', icon: 'email-open-outline', title: `${from} invited you`, sub: g.contribution ? `Cost sharing ${euro(g.contribution)} per guest` : 'Free invitation', href: `/event/${g.eventId}`, tone: 'brand' });
-      else if (g.status === 'accepted' && g.contribution && g.payment !== 'paid') out.push({ id: g.id, kind: 'contribution', icon: g.payment === 'failed' ? 'alert-circle-outline' : 'cash', title: g.payment === 'failed' ? 'Contribution payment failed' : `Pay your ${euro(g.contribution)} contribution`, sub: 'Your ticket is issued once the payment succeeds', href: `/event/${g.eventId}`, tone: g.payment === 'failed' ? 'danger' : 'warning' });
+      if (g.status === 'invited') out.push({ id: g.id, kind: 'invite', icon: 'email-open-outline', title: `${from} invited you`, sub: g.contribution ? `Cost sharing ${euro(g.contribution)} per guest` : 'Free invitation', href: `/invitation/${g.id}`, tone: 'brand' });
+      else if (g.status === 'accepted' && g.contribution && g.payment !== 'paid') out.push({ id: g.id, kind: 'contribution', icon: g.payment === 'failed' ? 'alert-circle-outline' : 'cash', title: g.payment === 'failed' ? 'Contribution payment failed' : `Pay your ${euro(g.contribution)} contribution`, sub: 'Your ticket is issued once the payment succeeds', href: `/invitation/${g.id}`, tone: g.payment === 'failed' ? 'danger' : 'warning' });
     });
     friendRequests.forEach((r) => {
       if (r.status !== 'pending' || r.fromId === 'me' || blocked.includes(r.fromId)) return;
-      out.push({ id: r.id, kind: 'friend', icon: 'account-plus-outline', title: `${profileById(r.fromId)?.name ?? 'Someone'} wants to be friends`, sub: 'Accept or decline', href: `/profile/${r.fromId}`, tone: 'brand' });
+      out.push({ id: r.id, kind: 'friend', icon: 'account-plus-outline', title: `${profileById(r.fromId)?.name ?? 'Someone'} wants to be friends`, sub: 'Accept or decline', href: '/friends?tab=requests', tone: 'brand' });
     });
     bookings.forEach((b) => {
       const name = providerOf(b).name;
@@ -1363,7 +1363,7 @@ export function useActionQueue(): ActionItem[] {
       else if (b.pendingCancellation && isOutstanding(b.status)) out.push({ id: b.id, kind: 'booking', icon: 'calendar-remove-outline', title: `Event cancelled · ${name} booking open`, sub: 'Cancel it or agree new terms with the provider', href: `/booking/${b.id}`, tone: 'warning' });
     });
     cases.forEach((c) => {
-      if (c.status === 'waiting') out.push({ id: c.id, kind: 'support', icon: 'lifebuoy', title: `Support replied · ${c.ref}`, sub: c.topic, href: '/help', tone: 'brand' });
+      if (c.status === 'waiting') out.push({ id: c.id, kind: 'support', icon: 'lifebuoy', title: `Support replied · ${c.ref}`, sub: c.topic, href: `/support/${c.id}`, tone: 'brand' });
     });
     if (canAcceptBookings(user)) {
       requests.forEach((r) => {

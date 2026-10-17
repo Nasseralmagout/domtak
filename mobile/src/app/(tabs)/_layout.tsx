@@ -1,4 +1,4 @@
-import { Redirect } from 'expo-router';
+import { Redirect, usePathname } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 
 import { TabBar } from '../../components/TabBar';
@@ -7,7 +7,9 @@ import { colors } from '../../theme';
 
 export default function TabsLayout() {
   const authed = useApp((s) => s.authed);
-  if (!authed) return <Redirect href="/login" />;
+  const path = usePathname();
+  // An expired session returns to the same tab after signing in again (login checks the path with safeNext).
+  if (!authed) return <Redirect href={path && path !== '/' ? `/login?next=${encodeURIComponent(path)}` : '/login'} />;
   return (
     <Tabs tabBar={(props) => <TabBar {...props} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.bg } }}>
       <Tabs.Screen name="index" options={{ title: 'Home' }} />

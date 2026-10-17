@@ -291,7 +291,7 @@ export default function BookingDetail() {
         body: `Nothing was charged and your booking with ${name} is kept. Retry safely on this same booking or choose another method.${b.paymentAttempts ? ` ${plural(b.paymentAttempts, 'attempt')} so far.` : ''}`,
         primary: { label: 'Retry payment', onPress: pay },
         secondary: { label: 'Change payment method', onPress: () => router.push('/payment-methods') },
-        more: [{ label: 'Get help', onPress: () => router.push('/help') }, { label: 'Cancel booking', onPress: () => setSheet('cancel') }],
+        more: [{ label: 'Get help', onPress: () => router.push(`/support/new?kind=booking&id=${b.id}`) }, { label: 'Cancel booking', onPress: () => setSheet('cancel') }],
       };
       break;
     case 'paid':
@@ -496,7 +496,7 @@ export default function BookingDetail() {
         <TextLine k="Options" v={b.extras || 'None'} />
         {b.note ? <TextLine k="Message" v={b.note} /> : null}
         {linkedEvent ? (
-          <Button title={`Event: ${linkedEvent.title}`} variant="ghost" size="md" icon="calendar-star" onPress={() => router.push(`/event/${linkedEvent.id}`)} style={{ alignSelf: 'flex-start' }} />
+          <Button title={`Part of ${linkedEvent.title}`} variant="ghost" size="md" icon="calendar-star" onPress={() => router.push(`/event-workspace/${linkedEvent.id}`)} style={{ alignSelf: 'flex-start' }} />
         ) : null}
       </Card>
 

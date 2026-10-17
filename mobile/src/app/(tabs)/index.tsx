@@ -14,7 +14,7 @@ import { compact, parse, TODAY } from '../../lib/format';
 import { isPromoted } from '../../lib/promotions';
 import { isDiscoverable } from '../../store/filters';
 import { memberCount, useCommunities, useFriendRequests } from '../../store/social';
-import { canPostToFeed, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
+import { activeWorkspace, canPostToFeed, isPro, useActionQueue, useAllEvents, useApp, useFeedPosts } from '../../store/useApp';
 import { colors, fonts, shadow } from '../../theme';
 
 type FeedTab = 'forYou' | 'following' | 'nearby';
@@ -68,12 +68,37 @@ function StoriesRow() {
   );
 }
 
-/** Quick links into the social side: platform communities (F09) and friends (F10). */
+/** Things that need a decision (payments, quotes, invitations, requests): one line into the dashboard. */
+function ActionBanner() {
+  const queue = useActionQueue();
+  const user = useApp((s) => s.user);
+  if (!queue.length) return null;
+  const pro = isPro(activeWorkspace(user));
+  const n = queue.length;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${n} thing${n === 1 ? '' : 's'} need your attention. Open ${pro ? 'your workspace' : 'your dashboard'}`}
+      onPress={() => router.push(pro ? '/pro/workspace' : '/dashboard')}
+      style={{ marginHorizontal: 12, marginTop: 12, minHeight: 48, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.brandSoft, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+    >
+      <Icon name="bell-alert-outline" size={22} color={colors.brand} />
+      <View style={{ flex: 1 }}>
+        <T v="bodyBold">{`${n} thing${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} your attention`}</T>
+        <T v="small" numberOfLines={1}>{queue[0].title}</T>
+      </View>
+      <Icon name="chevron-right" size={20} color={colors.brand} />
+    </Pressable>
+  );
+}
+
+/** Quick links: communities (F09), friends (F10), lessons (F08) and the nearby events map. */
 function SocialLinks() {
   const { incoming } = useFriendRequests();
   const n = incoming.length;
   return (
-    <Row gap={8} style={{ paddingHorizontal: 12, paddingTop: 12 }}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 12, paddingTop: 12 }}>
+      <Chip label="Near me" icon="map-marker-radius-outline" accessibilityLabel="Open the map of events near you" onPress={() => router.push('/map')} />
       <Chip label="Communities" icon="account-group-outline" accessibilityLabel="Open music communities" onPress={() => router.push('/communities')} />
       <Chip
         label={n ? `Friends (${n})` : 'Friends'}
@@ -81,7 +106,8 @@ function SocialLinks() {
         accessibilityLabel={n ? `Friends, ${n} new friend request${n === 1 ? '' : 's'}` : 'Open friends'}
         onPress={() => router.push(n ? '/friends?tab=requests' : '/friends')}
       />
-    </Row>
+      <Chip label="Lessons" icon="school-outline" accessibilityLabel="Find music lessons" onPress={() => router.push('/lessons')} />
+    </ScrollView>
   );
 }
 
@@ -273,6 +299,7 @@ export default function Home() {
               <Icon name="magnify" size={22} color={colors.muted} />
               <T v="body" color={colors.subtle}>Search events, artists, venues</T>
             </Pressable>
+            <ActionBanner />
             <SocialLinks />
             <StoriesRow />
             <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>

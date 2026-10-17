@@ -284,7 +284,7 @@ export default function EventWorkspace() {
             <T v="smallBold" color={colors.brand} style={{ flex: 1 }}>Next: {EVENT_STATE_NEXT[state]}</T>
           </Row>
           {state === 'in_progress' ? <Button title="Check in guests" icon="qrcode-scan" size="sm" onPress={() => router.push({ pathname: '/pro/scan', params: { eventId: event.id } })} /> : null}
-          {ended ? <Button title="Report a problem" icon="lifebuoy" size="sm" variant="secondary" onPress={() => router.push('/help')} /> : null}
+          {ended ? <Button title="Report a problem" icon="lifebuoy" size="sm" variant="secondary" onPress={() => router.push(`/support/new?kind=event&id=${id}`)} /> : null}
         </View>
       </Card>
 

@@ -25,6 +25,9 @@ export default function Menu() {
   const workspace = activeWorkspace(user);
   const app = user.application;
   const hasProRole = user.approvedRoles.some((r) => r !== 'fan');
+  const adminMode = useApp((s) => s.adminMode);
+  const friendRequests = useApp((s) => s.friendRequests);
+  const incoming = friendRequests.filter((r) => r.status === 'pending' && r.fromId !== 'me').length;
 
   const go = (href: string) => {
     router.back();
@@ -50,10 +53,15 @@ export default function Menu() {
 
   const items: Item[] = [
     { icon: 'account-circle-outline', label: 'Profile', href: '/profile/me' },
+    { icon: 'view-dashboard-outline', label: 'Dashboard', href: '/dashboard' },
     { icon: 'swap-horizontal', label: 'Switch workspace', href: '/workspace', sub: `Now: ${WORKSPACE_LABEL[workspace]}`, tone: 'neutral' },
     ...(isPro(workspace) ? [{ icon: 'view-grid-outline' as const, label: 'Pro workspace', href: '/pro/workspace' }] : []),
     ...roleItems,
     { icon: 'calendar-heart', label: 'My events', href: '/my-events' },
+    { icon: 'map-marker-radius-outline', label: 'Events near me', href: '/map' },
+    { icon: 'account-group-outline', label: 'Communities', href: '/communities' },
+    { icon: 'account-multiple-outline', label: 'Friends', href: incoming ? '/friends?tab=requests' : '/friends', ...(incoming ? { badge: `${incoming} new`, tone: 'brand' as const } : {}) },
+    { icon: 'school-outline', label: 'Music lessons', href: '/lessons' },
     { icon: 'basket-outline', label: 'Your bookings', href: '/my-bookings?tab=musician' },
     { icon: 'ticket-confirmation-outline', label: 'Your tickets', href: '/my-bookings?tab=tickets' },
     { icon: 'heart-outline', label: 'Wishlist', href: '/wishlist' },
@@ -63,6 +71,8 @@ export default function Menu() {
     { icon: 'crown-outline', label: 'Pro plan', href: '/subscription', badge: plan === 'free' ? '1 month free' : 'Active', tone: plan === 'free' ? 'brand' : 'success' },
     ...(applicationItem ? [applicationItem] : []),
     { icon: 'help-circle-outline', label: 'Help', href: '/help' },
+    { icon: 'lifebuoy', label: 'Support cases', href: '/support' },
+    ...(adminMode ? [{ icon: 'shield-account-outline' as const, label: 'Admin console (demo)', href: '/admin' }] : []),
     { icon: 'information-outline', label: 'About', href: '/help?section=about' },
   ];
 

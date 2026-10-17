@@ -192,7 +192,7 @@ export default function Checkout() {
         {/* Choosing another method only goes back to the summary; the retry starts when you pay. */}
         <Button title="Use another method" variant="secondary" full onPress={() => setStep('review')} />
         {booking ? <Button title="View booking" variant="ghost" full onPress={() => router.replace(`/booking/${booking.id}`)} /> : null}
-        <Button title="Contact support" variant="ghost" full onPress={() => router.push('/help')} />
+        <Button title="Contact support" variant="ghost" full onPress={() => router.push('/support/new?topic=payment')} />
       </Screen>
     );
   }

@@ -51,6 +51,8 @@ export default function Settings() {
   const resetDemo = useApp((s) => s.resetDemo);
   const blocked = useApp((s) => s.blocked);
   const plan = useApp((s) => s.plan);
+  const adminMode = useApp((s) => s.adminMode);
+  const setAdminMode = useApp((s) => s.setAdminMode);
   const [confirm, setConfirm] = useState<'reset' | 'delete'>();
   const planLabel = plan === 'free' ? 'Standard (free)' : plan === 'monthly' ? 'Pro · monthly' : 'Pro · yearly';
   // Same rule as the Blocked users screen: only ids that still resolve to an account.
@@ -170,6 +172,11 @@ export default function Settings() {
             <Button title="Back to Member" size="sm" variant="secondary" onPress={() => { if (switchWorkspace('fan')) toast('Switched to your Member workspace'); }} />
           ) : null}
         </Row>
+        <Row gap={12} style={{ minHeight: 48 }}>
+          <T v="bodyBold" style={{ flex: 1 }}>Admin console (demo)</T>
+          <Toggle label="Admin console (demo)" value={adminMode} onValueChange={setAdminMode} />
+        </Row>
+        {adminMode ? <Button title="Open admin console" size="sm" variant="secondary" style={{ alignSelf: 'flex-start' }} onPress={() => router.push('/admin')} /> : null}
       </DemoBar>
 
       <Group title="Support">
