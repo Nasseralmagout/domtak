@@ -373,12 +373,12 @@ export default function Dashboard() {
                 </Row>
                 {closed ? (
                   <Button
-                    title={p.kind === 'venue' ? 'Find another venue' : 'Find another artist'}
+                    title={b.type === 'lesson' ? 'Find another lesson' : p.kind === 'venue' ? 'Find another venue' : 'Find another artist'}
                     icon="magnify"
                     size="sm"
                     variant="light"
                     style={{ alignSelf: 'flex-start', marginLeft: 56 }}
-                    onPress={() => router.push(p.kind === 'venue' ? '/venues' : '/artists/all')}
+                    onPress={() => router.push(b.type === 'lesson' ? '/lessons' : p.kind === 'venue' ? '/venues' : '/artists/all')}
                   />
                 ) : null}
               </View>
