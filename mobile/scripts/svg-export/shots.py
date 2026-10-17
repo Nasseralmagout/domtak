@@ -148,7 +148,7 @@ add('08', 'insights', '/pro/earnings?tab=insights', 'Insights', userRole='musici
 add('08', 'requests', '/pro/requests', 'Booking requests', userRole='musician')
 add('08', 'request-detail', '/pro/request/r1', 'Booking request detail', userRole='musician')
 add('08', 'request-decline', '/pro/request/r1?decline=1', 'Decline request', userRole='musician', noFull=True)
-add('08', 'request-counter', '/pro/request/r1', 'Counter offer', userRole='musician', noFull=True, actions=[click('Counter')])
+add('08', 'request-counter', '/pro/request/r1', 'Propose changes (revised offer)', userRole='musician', noFull=True, actions=[click('Propose different terms')])
 add('08', 'create-menu-musician', '/create-menu', 'Create (+) sheet — musician', userRole='musician', noFull=True)
 add('08', 'workspace-organizer', '/pro/workspace', 'Pro workspace — organizer', userRole='organizer')
 add('08', 'my-events', '/pro/events', 'My events', userRole='organizer')
