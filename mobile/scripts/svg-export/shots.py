@@ -51,7 +51,7 @@ add('02', 'create-menu', '/create-menu', 'Create (+) sheet — fan', noFull=True
 add('02', 'side-menu', '/menu', 'Side menu', noFull=True)
 add('02', 'notifications', '/notifications', 'Notifications')
 add('02', 'search', '/search', 'Search')
-add('02', 'search-results', '/search', 'Search — results', actions=[fill('Events, musicians, venues, organizers', 'moon')])
+add('02', 'search-results', '/search', 'Search — results', actions=[fill('Events, artists, lessons, venues', 'moon')])
 add('02', 'communities', '/communities', 'Music communities')
 add('02', 'community', '/community/techno-berlin', 'Community — Techno Berlin')
 add('02', 'friends', '/friends', 'Friends and requests')
