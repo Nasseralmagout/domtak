@@ -156,7 +156,7 @@ add('08', 'event-workspace', '/event-workspace/bunker7', 'Event workspace', user
 add('08', 'promote-event', '/pro/promote/bunker7', 'Promote event', userRole='organizer')
 add('08', 'attendees', '/pro/attendees/bunker7', 'Sales & attendees', userRole='organizer')
 add('08', 'scanner', '/pro/scan?eventId=bunker7', 'QR door scanner', userRole='organizer', noFull=True)
-add('08', 'scanner-valid', '/pro/scan?eventId=bunker7', 'Scanner — valid ticket', userRole='organizer', noFull=True, actions=[click('Try demo code')])
+add('08', 'scanner-valid', '/pro/scan?eventId=bunker7', 'Scanner — valid ticket', userRole='organizer', noFull=True, actions=[click(', Valid')])
 add('08', 'create-event-details', '/create-event', 'Create event — details', userRole='organizer')
 add('08', 'create-event-location', '/create-event', 'Create event — location', userRole='organizer', actions=[fill('e.g. Bunker Floor Vol. 8', 'Rooftop Sunset Session'), click('Next', exact=True)])
 add('08', 'create-event-tickets', '/create-event', 'Create event — tickets', userRole='organizer', actions=[fill('e.g. Bunker Floor Vol. 8', 'Rooftop Sunset Session'), click('Next', exact=True), click('Next', exact=True)])
