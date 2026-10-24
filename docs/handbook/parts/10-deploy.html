@@ -1,0 +1,125 @@
+<h1>10. Environments, deployment and release</h1>
+<h2>10.1 Environments</h2>
+<table>
+  <thead><tr><th class="w15">Environment</th><th class="w25">Backend</th><th class="w30">Apps</th><th>Payments and data</th></tr></thead>
+  <tbody>
+    <tr><td>Development</td><td>Local Docker Compose (API, worker, PostgreSQL, Redis, local S3) or a shared dev API</td><td>Development builds (<code>eas build --profile development</code>) and <code>npx expo start</code>; web on localhost</td><td>Stripe test mode; seed data</td></tr>
+    <tr><td>Staging</td><td>Same setup as production, smaller</td><td>Preview builds (internal APK, TestFlight), EAS Update channel <code>preview</code>, Vercel preview URL</td><td>Stripe test mode; anonymised or seed data</td></tr>
+    <tr><td>Production</td><td>Frankfurt region, at least 2 API instances, separate worker</td><td>Store builds, EAS Update channel <code>production</code>, web on the main domain</td><td>Stripe live mode; real data</td></tr>
+  </tbody>
+</table>
+<p>The sample data in <code>mobile/src/data/mock.ts</code> can be turned into a seed script for development and staging so testers see the same scenarios as the design (bookings b1–b7, requests r1–r6, invitation gi1, support case DT-4821…).</p>
+
+<h2>10.2 Configuration</h2>
+<h3>App (build-time)</h3>
+<p>Variables prefixed <code>EXPO_PUBLIC_</code> are compiled into the app and are visible to anyone. Never put secrets in them. Convert <code>app.json</code> to <code>app.config.ts</code> so values such as the Maps keys and the API URL can differ per environment.</p>
+<table>
+  <thead><tr><th class="w40">Variable</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>EXPO_PUBLIC_API_URL</code>, <code>EXPO_PUBLIC_WS_URL</code></td><td>API and realtime endpoints</td></tr>
+    <tr><td><code>EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY</code>, <code>EXPO_PUBLIC_APPLE_MERCHANT_ID</code></td><td>Stripe client SDK</td></tr>
+    <tr><td><code>EXPO_PUBLIC_SENTRY_DSN</code></td><td>Error reporting</td></tr>
+    <tr><td><code>EXPO_PUBLIC_WEB_URL</code></td><td>Share links and deep links</td></tr>
+    <tr><td>Maps keys (in <code>app.config.ts</code>: Android and iOS native config; web variable)</td><td>Maps SDKs</td></tr>
+    <tr><td><code>EXPO_PUBLIC_ENV</code></td><td><code>development</code>, <code>staging</code> or <code>production</code> (labels, feature flags)</td></tr>
+  </tbody>
+</table>
+<h3>Backend (runtime, from the secrets manager)</h3>
+<table>
+  <thead><tr><th class="w40">Variable</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>DATABASE_URL</code>, <code>REDIS_URL</code></td><td>PostgreSQL and Redis</td></tr>
+    <tr><td><code>JWT_SIGNING_KEY</code>, <code>REFRESH_TOKEN_PEPPER</code>, <code>CODE_PEPPER</code></td><td>Tokens and one-time code hashing</td></tr>
+    <tr><td><code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code></td><td>Payments</td></tr>
+    <tr><td><code>APPLE_*</code> (App Store Server API key), <code>GOOGLE_PLAY_*</code> (service account)</td><td>Subscription verification</td></tr>
+    <tr><td><code>S3_BUCKET</code>, <code>CDN_BASE_URL</code></td><td>Media</td></tr>
+    <tr><td><code>EMAIL_*</code>, <code>TWILIO_*</code></td><td>Email and SMS</td></tr>
+    <tr><td><code>EXPO_ACCESS_TOKEN</code></td><td>Sending push through the Expo push service (enhanced security)</td></tr>
+    <tr><td><code>GOOGLE_GEOCODING_KEY</code></td><td>Address to coordinates</td></tr>
+    <tr><td><code>SENTRY_DSN</code></td><td>API errors</td></tr>
+    <tr><td><code>COMMISSION_RATE</code>, <code>SERVICE_FEE_RATE</code>, <code>RESPONSE_HOURS</code>, <code>REMINDER_HOURS</code>, <code>PAYOUT_HOLD_DAYS</code></td><td>Business settings (open decisions)</td></tr>
+  </tbody>
+</table>
+
+<h2>10.3 Backend deployment</h2>
+<ol>
+  <li>CI builds one Docker image per commit; the same image runs the API and (with another command) the worker.</li>
+  <li>Merges to <code>main</code> deploy to staging automatically. Production deploys from a release tag after manual approval.</li>
+  <li>Database migrations run as a separate step before the new version starts. Use expand-then-contract changes so the old and new versions both work during a deploy.</li>
+  <li>Health endpoints: <code>/health/live</code> (process up) and <code>/health/ready</code> (database and Redis reachable). Roll back automatically if the new version is not ready.</li>
+  <li>Run at least two API instances behind a load balancer with TLS; scale on CPU and latency. WebSocket connections need sticky sessions or the Redis adapter.</li>
+  <li>Backups: daily automated database snapshots plus point-in-time recovery; test a restore before launch and every quarter. Object storage versioning on media.</li>
+  <li>Monitoring: error rates and latency per endpoint, job queue depth and failures, webhook failures, payment reconciliation mismatches, push and email delivery failures. Alerts go to an on-call channel.</li>
+</ol>
+
+<h2>10.4 Web app</h2>
+<ul>
+  <li>Already configured: <code>vercel.json</code> at the repository root and in <code>mobile/</code> installs with <code>npm ci</code>, builds with <code>npm run build:web</code> (Expo static export to <code>mobile/dist</code>) and rewrites every path to <code>index.html</code> (single-page app).</li>
+  <li>Vercel project settings: Root Directory empty (repository root) or <code>mobile</code>; Framework Preset “Other”. Set the <code>EXPO_PUBLIC_*</code> variables for Preview and Production.</li>
+  <li>Add security headers in <code>vercel.json</code> (Content-Security-Policy allowing the API, Stripe and Maps domains; Strict-Transport-Security; X-Content-Type-Options; Referrer-Policy) and a cookie consent banner before any non-essential tracking.</li>
+  <li>The admin console is part of the web app and is only reachable for staff accounts (server-enforced).</li>
+</ul>
+
+<h2>10.5 Android release</h2>
+<pre># one-time: npx eas-cli@latest init ; npx eas-cli@latest credentials -p android
+npx eas-cli@latest build -p android --profile preview      # internal APK for testers
+npx eas-cli@latest build -p android --profile production   # AAB, versionCode auto-incremented
+npx eas-cli@latest submit -p android --latest              # upload to the Play Console</pre>
+<ul>
+  <li>Release through Play Console tracks: internal testing → closed testing → production (staged rollout).</li>
+  <li>Complete the store listing, data safety form (location, photos, payments, messages, identifiers), content rating, target audience, and the account deletion URL (the app already has in-app deletion).</li>
+  <li>Keep Play App Signing enabled; EAS manages the upload keystore. Back up credentials in the company account.</li>
+</ul>
+
+<h2>10.6 iOS release</h2>
+<pre>npx eas-cli@latest build -p ios --profile production        # EAS creates certificates and profiles
+npx eas-cli@latest submit -p ios --latest                    # upload to App Store Connect / TestFlight</pre>
+<ul>
+  <li>Test through TestFlight (internal, then external testers) before App Review.</li>
+  <li>App Review needs: a working reviewer account with sample data, privacy “nutrition label” answers, purpose strings for camera (present) and location (to add), in-app account deletion (present), the Pro plan as an in-app purchase, and Sign in with Apple if any other third-party sign-in is offered.</li>
+  <li><code>supportsTablet</code> is <code>false</code>: the app ships for iPhone only.</li>
+</ul>
+
+<h2>10.7 Build profiles and over-the-air updates</h2>
+<p>Recommended <code>eas.json</code> (extends the current file):</p>
+<pre>{
+  "cli": { "version": "&gt;= 16.0.0", "appVersionSource": "remote" },
+  "build": {
+    "development": { "developmentClient": true, "distribution": "internal", "channel": "development" },
+    "preview":     { "distribution": "internal", "channel": "preview", "android": { "buildType": "apk" } },
+    "production":  { "autoIncrement": true, "channel": "production", "android": { "buildType": "app-bundle" } }
+  },
+  "submit": { "production": {} }
+}</pre>
+<ul>
+  <li>Add <code>expo-updates</code> and set a runtime version policy so an update only reaches builds with the same native code.</li>
+  <li>JavaScript-only fixes: <code>npx eas-cli@latest update --channel production</code>. Changes to native modules or <code>app.json</code> need a new store build.</li>
+  <li>Check the Expo SDK 57 documentation for the exact <code>expo-updates</code> and <code>eas.json</code> options before applying.</li>
+</ul>
+
+<h2>10.8 CI/CD pipelines (GitHub Actions)</h2>
+<table>
+  <thead><tr><th class="w25">Workflow</th><th class="w25">Trigger</th><th>Steps</th></tr></thead>
+  <tbody>
+    <tr><td>app-ci</td><td>Pull request</td><td><code>npm ci</code>, typecheck, lint, unit tests, <code>expo-doctor</code>, web build</td></tr>
+    <tr><td>app-preview</td><td>Merge to <code>main</code></td><td>EAS Update to <code>preview</code>; Vercel preview deploy</td></tr>
+    <tr><td>app-release</td><td>Release tag</td><td>EAS production builds (Android, iOS) and submit; Vercel production deploy</td></tr>
+    <tr><td>api-ci</td><td>Pull request</td><td>Lint, typecheck, unit and integration tests (PostgreSQL and Redis services), OpenAPI diff check</td></tr>
+    <tr><td>api-deploy</td><td><code>main</code> → staging; tag → production (approval)</td><td>Build image, run migrations, deploy, smoke tests</td></tr>
+  </tbody>
+</table>
+
+<h2>10.9 Go-live checklist</h2>
+<table>
+  <thead><tr><th class="w30">Area</th><th>Check</th></tr></thead>
+  <tbody>
+    <tr><td>Product</td><td>Open decisions in section 13 that block launch are decided and configured.</td></tr>
+    <tr><td>Demo removal</td><td>Everything in appendix B is removed or replaced; no sample data or watermarked images ship.</td></tr>
+    <tr><td>Legal</td><td>Final Terms, privacy policy, cancellation and refund policies, imprint details (company address, managing director, register number, VAT id).</td></tr>
+    <tr><td>Payments</td><td>Stripe live mode, webhooks verified, Connect onboarding tested, refund and payout tested with real small amounts.</td></tr>
+    <tr><td>Security</td><td>External penetration test or security review; staff accounts with two-step verification; secrets rotated from staging.</td></tr>
+    <tr><td>Operations</td><td>Monitoring and alerts on; on-call rota; backup restore tested; support inbox and admin reviewers staffed (24 h application review target).</td></tr>
+    <tr><td>Stores</td><td>Listings, screenshots, privacy forms, reviewer account, age rating; staged rollout plan.</td></tr>
+    <tr><td>Quality</td><td>All acceptance criteria in section 12 pass on Android, iOS and web.</td></tr>
+  </tbody>
+</table>

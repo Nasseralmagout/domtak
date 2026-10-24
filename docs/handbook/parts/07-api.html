@@ -1,0 +1,175 @@
+<h1>7. API specification (REST v1)</h1>
+<h2>7.1 Conventions</h2>
+<table>
+  <thead><tr><th class="w25">Topic</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>Base URL</td><td><code>https://api.&lt;domain&gt;/v1</code>. JSON in and out, camelCase field names matching <code>mobile/src/data/types.ts</code>.</td></tr>
+    <tr><td>Authentication</td><td>Mobile: <code>Authorization: Bearer &lt;access token&gt;</code>. Web: httpOnly session cookie plus a CSRF token header on writes.</td></tr>
+    <tr><td>Money</td><td>Integer euro cents in every money field (<code>amount</code>, <code>price</code>, <code>total</code>…), with <code>currency: "EUR"</code> on payment objects.</td></tr>
+    <tr><td>Time</td><td>ISO 8601 in UTC (<code>2026-10-24T18:00:00Z</code>); dates as <code>YYYY-MM-DD</code>.</td></tr>
+    <tr><td>Lists</td><td>Cursor pagination: <code>?limit=20&amp;cursor=…</code> → <code>{ items: [...], nextCursor }</code>.</td></tr>
+    <tr><td>Errors</td><td>RFC 7807 problem JSON: <code>{ type, title, status, detail, code, fields }</code>. Stable codes the app can map to text, for example <code>ROLE_NOT_APPROVED</code>, <code>BOOKING_STATE_CONFLICT</code>, <code>QUOTE_EXPIRED</code>, <code>DEADLINE_PASSED</code>, <code>TICKET_ALREADY_USED</code>, <code>WRONG_EVENT</code>, <code>PAYMENT_DECLINED</code>.</td></tr>
+    <tr><td>State changes</td><td>Actions are explicit endpoints (<code>POST /bookings/:id/cancel</code>), not free PATCHes of <code>status</code>. Each returns the updated resource. Concurrent changes return <code>409</code>.</td></tr>
+    <tr><td>Idempotency</td><td><code>Idempotency-Key</code> header is required on every request that creates a booking, order, payment, refund or payout. Repeating the key returns the first result.</td></tr>
+    <tr><td>Rate limits</td><td><code>429</code> with <code>Retry-After</code>. Strict limits on auth, codes, search and reports.</td></tr>
+    <tr><td>Contract</td><td>OpenAPI 3.1 document at <code>/v1/openapi.json</code>; the app’s API client is generated from it in CI.</td></tr>
+  </tbody>
+</table>
+<p>The third column names the store action in <code>mobile/src/store/useApp.ts</code> (or other store file) that the endpoint replaces.</p>
+
+<h2>7.2 Auth and account</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>POST /auth/register</code></td><td>Create a member account; sends an email code</td><td><code>register</code></td></tr>
+    <tr><td><code>POST /auth/verify-email</code>, <code>POST /auth/resend-code</code></td><td>Verify the 6-digit code</td><td>verify screen</td></tr>
+    <tr><td><code>POST /auth/login</code>, <code>POST /auth/2fa/verify</code></td><td>Sign in (with remember me); second step if enabled</td><td><code>signIn</code></td></tr>
+    <tr><td><code>POST /auth/refresh</code>, <code>POST /auth/logout</code></td><td>Rotate tokens; end session</td><td><code>signOut</code></td></tr>
+    <tr><td><code>POST /auth/password/forgot</code> · <code>/verify</code> · <code>/reset</code></td><td>Password reset in three steps</td><td>forgot-password screen</td></tr>
+    <tr><td><code>GET /me</code>, <code>PATCH /me</code></td><td>Current account and profile</td><td><code>updateUser</code></td></tr>
+    <tr><td><code>PUT /me/workspace</code></td><td>Switch active workspace (approved roles only)</td><td><code>switchWorkspace</code></td></tr>
+    <tr><td><code>GET /me/preferences</code>, <code>PATCH /me/preferences</code></td><td>Notification, privacy, language preferences</td><td><code>setPref</code></td></tr>
+    <tr><td><code>POST /me/email</code> + <code>/confirm</code>; <code>POST /me/phone</code> + <code>/confirm</code></td><td>Change email or phone with a code</td><td>account-security</td></tr>
+    <tr><td><code>POST /me/password</code>; <code>POST /me/2fa</code>, <code>DELETE /me/2fa</code></td><td>Change password; two-step verification</td><td>account-security</td></tr>
+    <tr><td><code>GET /me/sessions</code>, <code>DELETE /me/sessions/:id</code></td><td>Devices; sign out a device</td><td>account-security</td></tr>
+    <tr><td><code>POST /me/export</code>, <code>DELETE /me</code></td><td>GDPR data export; delete account</td><td>account-security, settings</td></tr>
+    <tr><td><code>POST /me/push-tokens</code>, <code>DELETE /me/push-tokens/:token</code></td><td>Register a device for push</td><td>new</td></tr>
+  </tbody>
+</table>
+
+<h2>7.3 Professional access</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>POST /applications</code></td><td>Submit an application (role, details, document media ids)</td><td><code>submitApplication</code></td></tr>
+    <tr><td><code>GET /applications/current</code>, <code>PUT /applications/current</code></td><td>Status, missing items, history; resubmit</td><td>application screen</td></tr>
+  </tbody>
+</table>
+
+<h2>7.4 Social</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /feed?tab=forYou|following|nearby</code>, <code>GET /stories</code></td><td>Home feed pages and stories row (blocked accounts excluded)</td><td><code>useFeedPosts</code></td></tr>
+    <tr><td><code>POST /posts</code>, <code>DELETE /posts/:id</code></td><td>Create (approved professionals only) or delete a post</td><td><code>addPost</code></td></tr>
+    <tr><td><code>POST /stories</code></td><td>Create a story (professionals only)</td><td>new-post</td></tr>
+    <tr><td><code>GET /posts/:id</code>; <code>POST|DELETE /posts/:id/like</code>; <code>POST|DELETE /posts/:id/save</code></td><td>Post detail, like, save</td><td><code>toggleLike</code>, <code>toggleSave</code></td></tr>
+    <tr><td><code>GET|POST /posts/:id/comments</code>; <code>GET|POST /events/:id/comments</code></td><td>Comments with optional photo media ids</td><td><code>addComment</code></td></tr>
+    <tr><td><code>POST|DELETE /comments/:id/like</code>, <code>DELETE /comments/:id</code></td><td>Comment like; delete own comment</td><td><code>toggleCommentLike</code></td></tr>
+    <tr><td><code>GET /profiles/:id</code>, <code>/profiles/:id/posts</code>, <code>/followers</code>, <code>/following</code></td><td>Profile and connections</td><td>mock reads</td></tr>
+    <tr><td><code>POST|DELETE /profiles/:id/follow</code></td><td>Follow / unfollow</td><td><code>toggleFollow</code></td></tr>
+    <tr><td><code>POST|DELETE /profiles/:id/block</code>, <code>GET /me/blocked</code></td><td>Block (ends friendship) / unblock</td><td><code>toggleBlock</code></td></tr>
+    <tr><td><code>GET /friends</code>, <code>DELETE /friends/:profileId</code></td><td>Friends list; remove</td><td><code>removeFriend</code></td></tr>
+    <tr><td><code>GET|POST /friend-requests</code>; <code>POST /friend-requests/:id/accept|decline</code>; <code>DELETE /friend-requests/:id</code></td><td>Send, answer, cancel</td><td><code>sendFriendRequest</code>, <code>respondFriendRequest</code>, <code>cancelFriendRequest</code></td></tr>
+    <tr><td><code>GET /communities</code>, <code>GET /communities/:id</code>, <code>POST|DELETE /communities/:id/membership</code></td><td>Communities; join / leave</td><td><code>toggleCommunity</code></td></tr>
+    <tr><td><code>GET /wishlist</code>, <code>PUT|DELETE /wishlist/:kind/:id</code></td><td>Saved events, artists, venues</td><td><code>toggleWish</code></td></tr>
+  </tbody>
+</table>
+
+<h2>7.5 Messages and notifications</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /conversations</code>, <code>POST /conversations</code></td><td>List; open (or reuse) a conversation with someone</td><td><code>ensureConversation</code></td></tr>
+    <tr><td><code>GET|POST /conversations/:id/messages</code></td><td>Messages (text, image, voice)</td><td><code>sendMessage</code></td></tr>
+    <tr><td><code>POST /conversations/:id/read</code>, <code>POST /messages/:id/like</code></td><td>Read state; like a message</td><td><code>markConversationRead</code>, <code>toggleMessageLike</code></td></tr>
+    <tr><td><code>GET /notifications</code>, <code>POST /notifications/read</code></td><td>Notifications; mark read</td><td><code>markNotificationsRead</code></td></tr>
+    <tr><td><code>GET /action-queue</code></td><td>Open items for the attention banner and dashboard</td><td><code>useActionQueue</code></td></tr>
+    <tr><td><code>WSS /v1/realtime</code></td><td>Realtime events (section 5.6)</td><td>new</td></tr>
+  </tbody>
+</table>
+
+<h2>7.6 Discovery, providers and reviews</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /search?q=&amp;type=</code></td><td>Events, artists, lessons, venues, communities, organizers, people</td><td>search screen</td></tr>
+    <tr><td><code>GET /events?category&amp;date&amp;free&amp;priceMax&amp;genres&amp;area&amp;lat&amp;lng&amp;radiusKm&amp;sort</code></td><td>Discoverable events with filters and distance</td><td><code>applyFilters</code></td></tr>
+    <tr><td><code>GET /events/map?lat&amp;lng&amp;radiusKm&amp;…</code></td><td>Map pins for nearby events (and venues on request)</td><td>map screen</td></tr>
+    <tr><td><code>GET /events/:id</code>; <code>POST|DELETE /events/:id/going</code></td><td>Event detail; going</td><td><code>toggleGoing</code></td></tr>
+    <tr><td><code>GET /artists?kind&amp;genre&amp;sort</code>, <code>GET /artists/:id</code>, <code>GET /artists/:id/reviews</code></td><td>Artists with services, lessons, charges and “would book again” score</td><td><code>useArtistScore</code></td></tr>
+    <tr><td><code>GET /venues?type&amp;parking&amp;garden&amp;catering&amp;security</code>, <code>GET /venues/:id</code>, <code>GET /venues/:id/reviews</code></td><td>Venues with separate parking and garden, catering, security, charges</td><td><code>useVenue</code></td></tr>
+    <tr><td><code>POST /venues/:id/estimate</code>; <code>POST /artists/:id/estimate</code></td><td>Server-side price lines for the request form (guests, catering, security, extras, travel, equipment)</td><td><code>venueEstimate</code>, <code>artistEstimate</code></td></tr>
+    <tr><td><code>GET /lessons?instrument&amp;format&amp;level</code>, <code>GET /lessons/:id</code></td><td>Lessons</td><td><code>useLesson</code></td></tr>
+    <tr><td><code>POST /bookings/:id/review</code>, <code>POST /events/:id/review</code></td><td>Review after completion: stars, or recommend + praise tags for musicians</td><td><code>submitReview</code></td></tr>
+  </tbody>
+</table>
+
+<h2>7.7 Events, invitations and tickets</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>POST /events</code>, <code>PATCH /events/:id</code></td><td>Create (draft) and edit; sold ticket types are protected</td><td><code>addEvent</code>, <code>saveEventDraft</code>, <code>updateEvent</code></td></tr>
+    <tr><td><code>POST /events/:id/publish</code></td><td>Publish (public: approved organizers only)</td><td><code>setEventState</code></td></tr>
+    <tr><td><code>POST /events/:id/cancel</code></td><td>Cancel with reason; notifies everyone; flags linked bookings</td><td><code>cancelEvent</code></td></tr>
+    <tr><td><code>GET /me/events</code>, <code>GET /events/:id/workspace</code></td><td>Hosted events; readiness, budget, providers, guests</td><td><code>readiness</code>, <code>budget</code></td></tr>
+    <tr><td><code>POST /events/:id/bookings/:bookingId</code></td><td>Attach a provider booking to an event</td><td><code>linkBooking</code></td></tr>
+    <tr><td><code>POST /events/:id/invitations</code>, <code>PUT /events/:id/cost-sharing</code></td><td>Invite guests; configure cost sharing</td><td><code>inviteGuests</code>, <code>setCostSharing</code></td></tr>
+    <tr><td><code>GET /invitations/:id</code>, <code>POST /invitations/:id/respond</code>, <code>POST /invitations/:id/pay</code></td><td>Guest RSVP and contribution (ticket only after successful payment)</td><td><code>respondInvite</code>, <code>payContribution</code></td></tr>
+    <tr><td><code>POST /ticket-orders</code></td><td>Reserve tickets and create the payment</td><td><code>startTicketCheckout</code>, <code>completeCheckout</code></td></tr>
+    <tr><td><code>GET /me/tickets</code>, <code>GET /tickets/:id</code></td><td>Wallet and e-ticket (QR payload)</td><td>tickets</td></tr>
+    <tr><td><code>POST /tickets/:id/refund</code></td><td>Refund under the event’s policy (organizer or support)</td><td><code>refundTicket</code></td></tr>
+    <tr><td><code>POST /events/:id/check-ins</code></td><td>Validate a scanned code; returns result and previous check-in time</td><td><code>checkIn</code></td></tr>
+    <tr><td><code>GET /events/:id/attendees</code></td><td>Guest list with check-in state</td><td>attendees screen</td></tr>
+    <tr><td><code>POST /events/:id/promotions</code></td><td>Paid promotion (budget, days, radius, audience)</td><td><code>promoteEvent</code></td></tr>
+  </tbody>
+</table>
+
+<h2>7.8 Bookings (customer side)</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>POST /bookings</code></td><td>Listed-price request (artist, venue or lesson); server computes price lines and starts the payment step</td><td><code>createBooking</code></td></tr>
+    <tr><td><code>POST /bookings/quote-requests</code></td><td>Request a quote (nothing charged)</td><td><code>requestQuote</code></td></tr>
+    <tr><td><code>GET /bookings?tab=musicians|venues|lessons</code>, <code>GET /bookings/:id</code></td><td>List and detail with timeline, deadline, payment state</td><td>my-bookings, booking screen</td></tr>
+    <tr><td><code>POST /bookings/:id/quote/accept</code>, <code>/quote/reject</code></td><td>Answer the current quote version</td><td><code>acceptQuote</code>, <code>rejectQuote</code></td></tr>
+    <tr><td><code>POST /bookings/:id/payment</code></td><td>Start or retry payment on the same booking</td><td><code>startBookingCheckout</code>, <code>retryPayment</code></td></tr>
+    <tr><td><code>POST /bookings/:id/changes</code>, <code>POST /bookings/:id/changes/:changeId/resolve</code></td><td>Request a change; accept or decline it</td><td><code>requestChange</code>, <code>resolveChange</code></td></tr>
+    <tr><td><code>POST /bookings/:id/cancel</code></td><td>Cancel with reason; returns the money outcome</td><td><code>cancelBooking</code></td></tr>
+    <tr><td><code>POST /bookings/:id/dispute</code>, <code>POST /bookings/:id/evidence</code></td><td>Report a problem; add evidence</td><td><code>setBookingStatus('disputed')</code>, <code>addBookingEvidence</code></td></tr>
+  </tbody>
+</table>
+
+<h2>7.9 Provider workspace</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /provider/requests?status=</code>, <code>GET /provider/requests/:id</code></td><td>Incoming requests with deadline, reminder state, date conflicts</td><td><code>requestConflict</code></td></tr>
+    <tr><td><code>POST /provider/requests/:id/accept</code>, <code>/decline</code></td><td>Answer within the deadline (decline needs a reason)</td><td><code>setRequestStatus</code></td></tr>
+    <tr><td><code>POST /provider/requests/:id/quote</code></td><td>Send or revise an itemised quote (also used for counter offers)</td><td><code>quoteRequest</code>, <code>counterRequest</code></td></tr>
+    <tr><td><code>GET|PUT /provider/availability</code></td><td>Weekdays, blocked dates, fee, minimum hours, radius, instant book</td><td><code>setAvailability</code></td></tr>
+    <tr><td><code>GET|PUT /provider/services</code>; <code>GET|POST|PATCH|DELETE /provider/lessons</code></td><td>Pricing mode, travel and equipment charges; lessons</td><td><code>store/services.ts</code></td></tr>
+    <tr><td><code>GET|PUT /provider/venue-listing</code>, <code>POST /provider/venue-listing/publish</code></td><td>Venue listing editor and publish</td><td><code>updateVenueListing</code></td></tr>
+    <tr><td><code>GET /provider/earnings</code>, <code>GET|POST /provider/payouts</code></td><td>Ledger (gross, commission, net, refunds), payouts</td><td><code>requestPayout</code></td></tr>
+    <tr><td><code>POST /provider/payout-account/link</code></td><td>Onboarding link for the payout account (identity and bank verification)</td><td>new</td></tr>
+  </tbody>
+</table>
+
+<h2>7.10 Payments, subscriptions, media and support</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Replaces</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /payment-methods</code>, <code>POST /payment-methods/setup</code>, <code>DELETE /payment-methods/:id</code>, <code>PUT /payment-methods/default</code></td><td>Saved methods through the payment provider (no card data on our servers)</td><td><code>addPaymentMethod</code>, <code>setSelectedPayment</code></td></tr>
+    <tr><td><code>POST /webhooks/stripe</code></td><td>Payment provider events (signature verified)</td><td>new</td></tr>
+    <tr><td><code>GET /subscription</code>, <code>POST /subscription/store-receipt</code>, <code>POST /subscription/checkout</code></td><td>Pro plan status; verify App Store / Play purchase; web checkout</td><td><code>setPlan</code></td></tr>
+    <tr><td><code>POST /webhooks/app-store</code>, <code>POST /webhooks/google-play</code></td><td>Store subscription notifications (renewals, cancellations, refunds)</td><td>new</td></tr>
+    <tr><td><code>POST /media/uploads</code>, <code>POST /media/:id/complete</code></td><td>Upload URL; confirm upload</td><td>new</td></tr>
+    <tr><td><code>GET|POST /support/cases</code>, <code>GET /support/cases/:id</code>, <code>POST /support/cases/:id/messages</code>, <code>POST /support/cases/:id/close</code></td><td>Support cases with linked record</td><td><code>openCase</code>, <code>replyCase</code>, <code>closeCase</code></td></tr>
+    <tr><td><code>POST /reports</code></td><td>Report content or an account (one open report per target)</td><td><code>reportContent</code></td></tr>
+  </tbody>
+</table>
+
+<h2>7.11 Admin (staff permissions)</h2>
+<table>
+  <thead><tr><th class="w40">Endpoint</th><th>Purpose</th><th class="w25">Permission</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /admin/metrics</code></td><td>Overview metrics and queues</td><td>any staff</td></tr>
+    <tr><td><code>GET /admin/applications</code>, <code>POST /admin/applications/:id/decision</code></td><td>Approve, request information (missing items), reject (reason)</td><td>reviewer</td></tr>
+    <tr><td><code>GET /admin/bookings?q=</code>, <code>GET /admin/bookings/:id</code>, <code>GET /admin/requests/:id</code></td><td>Investigation: timeline, participants, payment state, exceptions</td><td>support, finance</td></tr>
+    <tr><td><code>POST /admin/bookings/:id/expire</code></td><td>Expire an overdue request</td><td>support</td></tr>
+    <tr><td><code>GET /admin/finance/queue</code>, <code>POST /admin/payments/:id/reconcile</code>, <code>POST /admin/refunds</code></td><td>Captures, releases, refunds, payouts; authorized refund decisions</td><td>finance</td></tr>
+    <tr><td><code>GET /admin/reports</code>, <code>POST /admin/reports/:id/decision</code></td><td>Dismiss, restrict, remove</td><td>moderator</td></tr>
+    <tr><td><code>GET /admin/support/cases</code>, <code>POST /admin/support/cases/:id/reply</code></td><td>Answer and resolve cases</td><td>support</td></tr>
+    <tr><td><code>GET /admin/audit-log</code></td><td>Decision history</td><td>admin</td></tr>
+  </tbody>
+</table>

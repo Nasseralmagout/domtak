@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Domtak V1 — Technical Handbook</title>
+<style>
+@font-face { font-family: 'DM Sans'; font-weight: 400; src: url('../../mobile/node_modules/@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf'); }
+@font-face { font-family: 'DM Sans'; font-weight: 400; font-style: italic; src: url('../../mobile/node_modules/@expo-google-fonts/dm-sans/400Regular_Italic/DMSans_400Regular_Italic.ttf'); }
+@font-face { font-family: 'DM Sans'; font-weight: 500; src: url('../../mobile/node_modules/@expo-google-fonts/dm-sans/500Medium/DMSans_500Medium.ttf'); }
+@font-face { font-family: 'DM Sans'; font-weight: 700; src: url('../../mobile/node_modules/@expo-google-fonts/dm-sans/700Bold/DMSans_700Bold.ttf'); }
+@font-face { font-family: 'Poppins'; font-weight: 600; src: url('../../mobile/node_modules/@expo-google-fonts/poppins/600SemiBold/Poppins_600SemiBold.ttf'); }
+@font-face { font-family: 'Poppins'; font-weight: 700; src: url('../../mobile/node_modules/@expo-google-fonts/poppins/700Bold/Poppins_700Bold.ttf'); }
+
+:root {
+  --ink: #1D1730;
+  --soft: #4A4360;
+  --muted: #6B6580;
+  --line: #DCD6EA;
+  --tint: #F4F1FA;
+  --brand: #3B1F8B;
+  --deep: #2E0B5E;
+  --gold: #F2B632;
+  --ok: #1E7B4F;
+  --warn: #9A5B00;
+  --bad: #A8243A;
+}
+@page { size: A4; margin: 22mm 18mm 20mm 18mm; }
+@page cover { margin: 0; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font-family: 'DM Sans', 'Inter', sans-serif; font-size: 9.6pt; line-height: 1.5; color: var(--ink); }
+h1, h2, h3, h4 { font-family: 'Poppins', 'Inter', sans-serif; color: var(--deep); line-height: 1.25; break-after: avoid; }
+h1 { font-size: 21pt; margin: 0 0 6mm; padding-bottom: 3mm; border-bottom: 2.5pt solid var(--gold); break-before: page; }
+h2 { font-size: 13.5pt; margin: 8mm 0 2.5mm; }
+h3 { font-size: 11pt; margin: 6mm 0 2mm; color: var(--brand); }
+h4 { font-size: 9.8pt; margin: 4mm 0 1.5mm; color: var(--ink); }
+p { margin: 0 0 2.6mm; }
+ul, ol { margin: 0 0 3mm; padding-left: 5.5mm; }
+li { margin: 0 0 1.1mm; }
+a { color: var(--brand); text-decoration: none; }
+code, .mono { font-family: 'DejaVu Sans Mono', 'Liberation Mono', monospace; font-size: 8.2pt; background: var(--tint); padding: 0.2mm 1mm; border-radius: 1mm; color: #34206E; word-break: break-word; }
+pre { font-family: 'DejaVu Sans Mono', monospace; font-size: 7.9pt; line-height: 1.45; background: #1F1636; color: #EDE8F8; padding: 3mm 4mm; border-radius: 2mm; margin: 0 0 3.5mm; white-space: pre-wrap; break-inside: avoid; }
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+table { width: 100%; border-collapse: collapse; margin: 1mm 0 4mm; font-size: 8.4pt; line-height: 1.4; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th { text-align: left; font-weight: 700; background: var(--deep); color: #fff; padding: 1.6mm 2mm; vertical-align: bottom; }
+td { padding: 1.5mm 2mm; border-bottom: 0.5pt solid var(--line); vertical-align: top; }
+tbody tr:nth-child(even) td { background: #FAF8FD; }
+td code { font-size: 7.6pt; }
+.w20 { width: 20%; } .w25 { width: 25%; } .w30 { width: 30%; } .w15 { width: 15%; } .w12 { width: 12%; } .w35 { width: 35%; } .w40 { width: 40%; } .w10 { width: 10%; } .w8 { width: 8%; }
+.note { background: var(--tint); border-radius: 2mm; padding: 3mm 4mm; margin: 2mm 0 4mm; break-inside: avoid; }
+.note.warn { background: #FFF5E0; }
+.note.bad { background: #FCEBEE; }
+.note b:first-child { color: var(--deep); }
+.tag { display: inline-block; font-size: 7pt; font-weight: 700; letter-spacing: 0.3pt; padding: 0.3mm 1.6mm; border-radius: 3mm; vertical-align: 0.3mm; white-space: nowrap; }
+.t-built { background: #DDF2E6; color: var(--ok); }
+.t-build { background: #E6E0F7; color: var(--brand); }
+.t-dec { background: #FFEFC9; color: var(--warn); }
+.t-later { background: #ECEAF1; color: var(--muted); }
+.kv { display: grid; grid-template-columns: 38mm 1fr; gap: 1.2mm 4mm; margin: 0 0 4mm; }
+.kv div:nth-child(odd) { color: var(--muted); }
+.small { font-size: 8.2pt; color: var(--soft); }
+.lead { font-size: 10.6pt; color: var(--soft); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+.avoid { break-inside: avoid; }
+.pb { break-before: page; }
+
+/* Cover */
+.cover { page: cover; height: 297mm; width: 210mm; background: var(--deep); color: #fff; position: relative; overflow: hidden; }
+.cover .band { position: absolute; left: 0; right: 0; bottom: 0; height: 88mm; background: #24084A; }
+.cover .inner { position: absolute; left: 22mm; right: 22mm; top: 34mm; }
+.cover .brand { font-family: 'Poppins'; font-weight: 700; font-size: 13pt; letter-spacing: 4pt; color: var(--gold); }
+.cover h1.title { font-size: 34pt; color: #fff; border: 0; margin: 14mm 0 4mm; padding: 0; break-before: avoid; line-height: 1.12; }
+.cover .sub { font-size: 14pt; color: #D9CCF5; max-width: 150mm; }
+.cover .rule { width: 26mm; height: 2.5pt; background: var(--gold); margin: 10mm 0; }
+.cover .meta { position: absolute; left: 22mm; right: 22mm; bottom: 22mm; display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 6mm; font-size: 9pt; color: #D9CCF5; }
+.cover .meta b { display: block; color: #fff; font-size: 10pt; margin-bottom: 1mm; }
+.cover .platforms { margin-top: 12mm; display: flex; gap: 3mm; }
+.cover .platforms span { border: 1pt solid #8F79C9; border-radius: 4mm; padding: 1.2mm 4mm; font-size: 9.5pt; color: #fff; }
+
+/* TOC */
+.toc { break-before: page; }
+.toc h1 { break-before: avoid; }
+.toc ol { list-style: none; padding: 0; margin: 0; }
+.toc li { display: flex; align-items: baseline; gap: 2mm; margin: 0 0 1.3mm; }
+.toc li.l1 { font-weight: 700; margin-top: 2.6mm; color: var(--deep); }
+.toc li.l2 { padding-left: 7mm; color: var(--soft); }
+.toc li .dots { flex: 1; border-bottom: 0.8pt dotted #B9B0D0; transform: translateY(-1mm); }
+.toc li .pg { min-width: 7mm; text-align: right; }
+
+/* Diagrams */
+.diagram { break-inside: avoid; margin: 2mm 0 5mm; }
+.row { display: flex; gap: 3mm; align-items: stretch; }
+.box { flex: 1; border: 1pt solid #BFB3E3; border-radius: 2mm; padding: 2.4mm 3mm; background: #fff; font-size: 8.2pt; }
+.box b { display: block; color: var(--deep); font-size: 8.8pt; margin-bottom: 0.6mm; }
+.box.dark { background: var(--deep); color: #E8E1F8; border-color: var(--deep); }
+.box.dark b { color: #fff; }
+.box.tint { background: var(--tint); }
+.box.gold { background: #FFF4D6; border-color: #EBC45E; }
+.arrow { text-align: center; color: var(--brand); font-size: 11pt; line-height: 1; margin: 1mm 0; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5mm; margin: 1mm 0 4mm; }
+.chain .st { border: 1pt solid #BFB3E3; border-radius: 3mm; padding: 1mm 2.5mm; font-size: 8pt; font-weight: 700; color: var(--deep); background: #fff; }
+.chain .st.ok { background: #DDF2E6; border-color: #9CD3B5; color: var(--ok); }
+.chain .st.ex { background: #FCEBEE; border-color: #E9A9B5; color: var(--bad); }
+.chain .ar { color: var(--muted); font-size: 9pt; }
+</style>
+</head>
+<body>

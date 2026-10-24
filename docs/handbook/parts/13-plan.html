@@ -1,0 +1,36 @@
+<h1>13. Open decisions</h1>
+<p>From blueprint section 16. Each decision needs an owner and a date. Until it is made, the teams build the interim behaviour and keep the setting configurable.</p>
+<table>
+  <thead><tr><th class="w30">Decision</th><th class="w15">Needed before</th><th class="w12">Flows</th><th>Interim behaviour in this handbook</th></tr></thead>
+  <tbody>
+    <tr><td>Authorization and capture vs. charge after acceptance; payment provider; legal payment structure</td><td>Payment build</td><td>F14–F19</td><td>Stripe with both models configurable (section 8.2)</td></tr>
+    <tr><td>Quote validity, deadline, and whether acceptance replaces provider confirmation</td><td>Quote build</td><td>F15–F16</td><td>Provider sets a validity date; customer acceptance starts payment</td></tr>
+    <tr><td>Cancellation, refund, no-show, rescheduling and dispute policies</td><td>Launch</td><td>F13, F18, F20–F22</td><td>Policy text per event; refunds only by authorized decision</td></tr>
+    <tr><td>Who pays commission, final rate, tax presentation, payment fee allocation</td><td>Launch</td><td>F14–F19</td><td>10% commission from provider, 5% customer service fee, configurable</td></tr>
+    <tr><td>Payout timing, required verification, who receives each charge</td><td>Launch</td><td>F19–F20</td><td>Payout after completion and a configurable hold; Connect verification required</td></tr>
+    <tr><td>Private cost-sharing limits, host settlement, capacity, re-entry, offline scanning</td><td>Ticket build</td><td>F20–F22</td><td>Online scanning only; one entry per ticket</td></tr>
+    <tr><td>Public ticket selling, settlement and fee scope</td><td>Public event commerce</td><td>F12, F20–F22</td><td>Organizer ticket sales through the platform, settlement after the event</td></tr>
+    <tr><td>Sign-in methods, age policy, multiple roles, delegated staff permissions</td><td>Access build</td><td>F01–F04, F22</td><td>Email + password, multiple approved roles, delegated scanner staff per event</td></tr>
+    <tr><td>Lesson format, recurring sessions, response and cancellation rules</td><td>Lesson build</td><td>F23</td><td>Single sessions; same 24 h response window as bookings</td></tr>
+    <tr><td>Measurable launch targets and pilot duration</td><td>Pilot</td><td>Dashboards</td><td>Track the dashboard metrics from day one</td></tr>
+    <tr><td>Reviewer, support and finance authority; escalation policy</td><td>Administration</td><td>F03, F24–F27</td><td>Separate staff permissions; finance approves refunds</td></tr>
+    <tr><td>Exact venue address visibility before booking</td><td>Venue build</td><td>F06–F07</td><td>Area and approximate pin public; exact address after confirmation</td></tr>
+    <tr><td>Video posts and live streaming in V1</td><td>Media build</td><td>Social</td><td>Photos only; video and live behind a feature flag</td></tr>
+    <tr><td>Rental rules, community creation, artist support model</td><td>Later phases</td><td>F28–F30</td><td>Not built in V1</td></tr>
+  </tbody>
+</table>
+
+<h1>14. Suggested work plan</h1>
+<p>The phases build on each other. Durations depend on team size and should be estimated by the teams after reading this handbook. Each phase ends with its features working end-to-end on staging on all three platforms.</p>
+<table>
+  <thead><tr><th class="w15">Phase</th><th class="w35">Backend</th><th class="w35">Frontend</th><th>Exit criteria</th></tr></thead>
+  <tbody>
+    <tr><td>0. Setup</td><td>Accounts (section 9), cloud environments, CI/CD, API skeleton, database and migrations, OpenAPI pipeline, seed script</td><td>EAS project, development builds, API client generation, env configuration, Sentry</td><td>Hello-world deploy to staging; app talks to the staging API</td></tr>
+    <tr><td>1. Identity and access</td><td>Auth, sessions, codes, profiles, preferences, applications, staff permissions, media upload, audit log</td><td>Real sign-up, sign-in, reset, account security; profile and avatar upload; application flow; workspace switch</td><td>F01–F04 pass; admin can review applications</td></tr>
+    <tr><td>2. Content and discovery</td><td>Events (read and create), venues, artist services, lessons, availability, search, geo, feed, posts, comments with photos, follows, friends, communities, wishlist</td><td>Replace mock reads; real map and location; image picker; post and comment creation; empty, loading and error states</td><td>F05–F13, F23 (browsing) pass</td></tr>
+    <tr><td>3. Messaging and notifications</td><td>Conversations, WebSocket gateway, notifications, action queue, push and email sending</td><td>Realtime chat, push registration and deep links, notification list, attention banner</td><td>Messages and notices arrive on all platforms</td></tr>
+    <tr><td>4. Transactions</td><td>Bookings, quotes, changes, cancellations, timers, Stripe payments and webhooks, ticket orders, invitations and contributions, check-in, ledger, Connect payouts, subscriptions</td><td>Booking and quote flows, PaymentSheet / Payment Element, ticket wallet, scanner online validation, earnings, Pro plan purchase</td><td>F14–F22 pass in Stripe test mode</td></tr>
+    <tr><td>5. Operations</td><td>Support cases, reports and moderation, admin queues and metrics, finance queue, GDPR export and deletion, retention jobs</td><td>Support and admin screens on real data; remove demo controls</td><td>F24–F27 pass; appendix B cleared</td></tr>
+    <tr><td>6. Launch</td><td>Load and security tests, monitoring and alerts, backup restore test, live keys</td><td>Store listings, TestFlight and Play testing, accessibility pass, final legal texts in the app</td><td>Go-live checklist (10.9) complete</td></tr>
+  </tbody>
+</table>

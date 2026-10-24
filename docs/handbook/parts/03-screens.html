@@ -1,0 +1,135 @@
+<h1>3. Screens and navigation</h1>
+<h2>3.1 Navigation structure</h2>
+<div class="diagram">
+  <div class="row">
+    <div class="box dark"><b>Bottom tabs</b>Home · Artists · Create (+) · Events · Calendar</div>
+    <div class="box dark"><b>Header (Home)</b>Menu · Messages · Map · Notifications</div>
+    <div class="box dark"><b>Side menu</b>Profile, Dashboard, Switch workspace, Pro tools, My events, Events near me, Communities, Friends, Music lessons, Bookings, Tickets, Wishlist, Payment methods, Notifications, Pro plan, Help, Support cases, Admin (staff), Settings, Log out</div>
+  </div>
+</div>
+<p>Routing uses Expo Router (file-based). Every file in <code>mobile/src/app</code> is a screen; <code>_layout.tsx</code> files define navigators. The URL path of a screen is the same on all three platforms, so deep links and web URLs share one scheme: <code>domtak://event/bunker7</code> on mobile and <code>https://&lt;web-domain&gt;/event/bunker7</code> on the web. Signed-out users are redirected to <code>/login?next=&lt;path&gt;</code> and return to the path after signing in.</p>
+
+<h2>3.2 Screen inventory</h2>
+<p>90 route files implement the 136 screen states on the design canvas. “Data” lists what the screen needs from the API (section 7).</p>
+
+<h3>Onboarding, sign-in and access</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/</code></td><td>Entry redirect</td><td>Session check → onboarding, login or Home</td></tr>
+    <tr><td><code>/onboarding</code></td><td>Onboarding (3 slides)</td><td>Static</td></tr>
+    <tr><td><code>/login</code>, <code>/register</code></td><td>Sign in, register</td><td>Auth: sign-in, register (member), remember me</td></tr>
+    <tr><td><code>/verify</code></td><td>Verify email code</td><td>Auth: verify 6-digit code, resend</td></tr>
+    <tr><td><code>/forgot-password</code></td><td>Reset password (3 steps)</td><td>Auth: request code, verify, set new password</td></tr>
+    <tr><td><code>/role</code>, <code>/profile-setup</code></td><td>Choose role, profile setup / edit</td><td>Profile update, avatar upload, genres; professional roles route to the application</td></tr>
+    <tr><td><code>/apply</code></td><td>Professional application form</td><td>Role-specific fields (stage name, genres, links, photos, address, capacity…); submit application</td></tr>
+    <tr><td><code>/application</code> (<code>/pro-verification</code>)</td><td>Application status</td><td>Status, missing items, reason, history; resubmit</td></tr>
+    <tr><td><code>/workspace</code></td><td>Switch workspace</td><td>Approved roles; switch active workspace</td></tr>
+  </tbody>
+</table>
+
+<h3>Home and social</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/(tabs)</code> (<code>?tab=forYou|following|nearby</code>)</td><td>Home feed</td><td>Feed pages, stories row, attention banner (action queue), quick links, communities strip, upcoming events, sponsored slot</td></tr>
+    <tr><td><code>/story/[id]</code>, <code>/live/[id]</code></td><td>Story viewer, live</td><td>Story frames; live stream (see section 9, video) with “Book this artist”</td></tr>
+    <tr><td><code>/post/[id]</code></td><td>Post and comments</td><td>Post, comments with photos, like, reply, report, hide removed content</td></tr>
+    <tr><td><code>/new-post</code> (<code>?story=1</code>)</td><td>New post or story</td><td>Professionals only (members see an explanation); media upload, caption, visibility Public/Followers</td></tr>
+    <tr><td><code>/create-menu</code>, <code>/(tabs)/create</code></td><td>Create (+) sheet</td><td>Options per workspace and permission</td></tr>
+    <tr><td><code>/menu</code></td><td>Side menu</td><td>Profile summary, workspace, counts</td></tr>
+    <tr><td><code>/notifications</code></td><td>Notifications</td><td>Transaction notices (essential) and social updates (optional)</td></tr>
+    <tr><td><code>/search</code></td><td>Search</td><td>Events, artists, lessons, venues, communities, organizers, people</td></tr>
+    <tr><td><code>/communities</code>, <code>/community/[id]</code></td><td>Communities</td><td>Platform communities, join/leave, rules, posts, events</td></tr>
+    <tr><td><code>/friends</code> (<code>?tab=requests</code>)</td><td>Friends and requests</td><td>Send, accept, decline, cancel, remove</td></tr>
+    <tr><td><code>/profile/[id]</code>, <code>/connections/[id]</code></td><td>Profile, followers / following</td><td>Profile, posts grid, follow, message, block, report</td></tr>
+    <tr><td><code>/inbox</code>, <code>/chat/[id]</code></td><td>Messages</td><td>Conversations (all / booking chats), messages (text, image, voice), read state</td></tr>
+  </tbody>
+</table>
+
+<h3>Events and tickets</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/(tabs)/events</code>, <code>/events/[category]</code></td><td>Events tab, event lists</td><td>Discoverable events by category, filters, sort</td></tr>
+    <tr><td><code>/filters</code></td><td>Filters</td><td>Category, date, price, genre, area, distance, sort</td></tr>
+    <tr><td><code>/map</code></td><td>Nearby events map</td><td>Events near a location with filters; optional venue pins</td></tr>
+    <tr><td><code>/event/[id]</code>, <code>/event-comments/[id]</code></td><td>Event page, discussion</td><td>Event, line-up, venue, tickets, going, discussion with photos</td></tr>
+    <tr><td><code>/tickets/[eventId]</code>, <code>/checkout</code>, <code>/success</code></td><td>Choose tickets, checkout, success</td><td>Ticket types and stock; payment; issued tickets</td></tr>
+    <tr><td><code>/ticket/[id]</code></td><td>E-ticket</td><td>QR code, status (valid, used with time, cancelled, refunded), help</td></tr>
+    <tr><td><code>/review/[id]</code></td><td>Leave a review</td><td>Stars (events, venues) or “Would book again” + praise tags (musicians)</td></tr>
+    <tr><td><code>/create-event</code> (<code>?private=1</code>, <code>?edit=id</code>)</td><td>Create / edit event (4 steps)</td><td>Details, location, tickets, preview; draft, publish (organizer), edit with sold-ticket protection</td></tr>
+    <tr><td><code>/event-created</code></td><td>Event created</td><td>Share, manage, edit</td></tr>
+    <tr><td><code>/my-events</code>, <code>/event-workspace/[id]</code></td><td>My events, event workspace</td><td>State, readiness, budget lines, providers, guests, cost sharing, cancel event</td></tr>
+    <tr><td><code>/invite</code></td><td>Invite guests</td><td>Friends and followers to invite</td></tr>
+    <tr><td><code>/invitation/[id]</code></td><td>Invitation (guest)</td><td>RSVP, contribution payment, ticket</td></tr>
+  </tbody>
+</table>
+
+<h3>Artists, venues and lessons</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/(tabs)/artists</code>, <code>/artists/[kind]</code></td><td>Artists tab, DJs / musicians / bands</td><td>Artist lists, filters, “would book again” sort</td></tr>
+    <tr><td><code>/artist/[id]</code>, <code>/ratings/[id]</code></td><td>Artist profile, reviews</td><td>Profile, score, praise tags, lessons, charges, availability, book / request quote</td></tr>
+    <tr><td><code>/venues</code>, <code>/venue/[id]</code></td><td>Venues, venue page</td><td>Key facts, parking, garden, facilities, requirements, catering, security, charges, live estimate, stars</td></tr>
+    <tr><td><code>/lessons</code>, <code>/lesson/[id]</code></td><td>Lessons</td><td>Lesson search (instrument, format, level), lesson details, book</td></tr>
+    <tr><td><code>/wishlist</code></td><td>Wishlist</td><td>Saved events, artists, venues</td></tr>
+  </tbody>
+</table>
+
+<h3>Booking and payments</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/booking/new</code></td><td>Booking request</td><td>Artist, venue or lesson; date, hours, guests, extras; price lines; listed request or quote request; event link</td></tr>
+    <tr><td><code>/booking/[id]</code></td><td>Booking status</td><td>Lifecycle, deadline, payment state, actions per status (pay, retry, accept quote, change, cancel, help, review)</td></tr>
+    <tr><td><code>/quote/[id]</code></td><td>Quote</td><td>Itemised quote, validity, accept or decline</td></tr>
+    <tr><td><code>/booking/issue</code></td><td>Cancel, refund, dispute</td><td>Reason, outcome, evidence, support case</td></tr>
+    <tr><td><code>/my-bookings</code> (<code>?tab=</code>)</td><td>Your bookings and tickets</td><td>Musicians, venues, lessons, tickets</td></tr>
+    <tr><td><code>/payment-methods</code></td><td>Payment methods</td><td>Saved methods, add card, default</td></tr>
+    <tr><td><code>/subscription</code></td><td>Pro plan</td><td>€9,99 / month or €89 / year, first month free</td></tr>
+  </tbody>
+</table>
+
+<h3>Calendar, account and support</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/(tabs)/calendar</code></td><td>Calendar</td><td>Month, week, overview of tickets, bookings, events, availability</td></tr>
+    <tr><td><code>/dashboard</code></td><td>Member / host dashboard</td><td>Action queue, upcoming, bookings, events</td></tr>
+    <tr><td><code>/settings</code></td><td>Settings</td><td>Workspace, notifications, privacy, language, admin console (staff)</td></tr>
+    <tr><td><code>/account-security</code></td><td>Account and security</td><td>Change email/phone (code), password, two-step verification, devices, data export, delete account</td></tr>
+    <tr><td><code>/blocked</code></td><td>Blocked users</td><td>List, unblock</td></tr>
+    <tr><td><code>/help</code></td><td>Help and FAQ</td><td>Static content, contact</td></tr>
+    <tr><td><code>/support</code>, <code>/support/new</code>, <code>/support/[id]</code></td><td>Support cases</td><td>Cases with reference, linked record, timeline, reply, close, appeal</td></tr>
+    <tr><td><code>/legal</code> (<code>?tab=</code>)</td><td>Terms, privacy, imprint</td><td>Static legal text (to be replaced by counsel’s final text)</td></tr>
+  </tbody>
+</table>
+
+<h3>Professional tools</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/pro/workspace</code></td><td>Workspace home (per role)</td><td>Requests due, readiness checklist, earnings summary, insights</td></tr>
+    <tr><td><code>/pro/requests</code>, <code>/pro/request/[id]</code></td><td>Incoming requests</td><td>Accept, decline (reason), propose changes / revised quote, conflict check, deadline</td></tr>
+    <tr><td><code>/pro/availability</code></td><td>Availability</td><td>Weekdays, blocked dates, fee, minimum hours, radius, instant book</td></tr>
+    <tr><td><code>/pro/services</code></td><td>Services and pricing</td><td>Listed or quote, travel and equipment charges, lessons</td></tr>
+    <tr><td><code>/pro/earnings</code></td><td>Earnings and payouts</td><td>Ledger, commission, payouts, report an issue</td></tr>
+    <tr><td><code>/pro/events</code>, <code>/pro/promote/[eventId]</code></td><td>Organizer events, promote</td><td>Events, sales, edit; promotion budget, days, radius, audience</td></tr>
+    <tr><td><code>/pro/attendees/[eventId]</code>, <code>/pro/scan</code></td><td>Guest list, QR scanner</td><td>Attendees, check-in state; scan and validate tickets</td></tr>
+    <tr><td><code>/pro/venue-listing</code></td><td>Venue listing editor</td><td>All venue fields incl. parking, garden, catering, security, extra charges; completion checklist</td></tr>
+  </tbody>
+</table>
+
+<h3>Admin console (staff)</h3>
+<table>
+  <thead><tr><th class="w25">Route</th><th class="w25">Screen</th><th>Data and actions</th></tr></thead>
+  <tbody>
+    <tr><td><code>/admin</code></td><td>Overview</td><td>Metrics, queues, booking exceptions</td></tr>
+    <tr><td><code>/admin/applications</code></td><td>Applications</td><td>Review queue; approve, request information, reject (with reason)</td></tr>
+    <tr><td><code>/admin/bookings</code> (<code>?request=</code>)</td><td>Booking investigation</td><td>Search, timeline, participants, payment state, exceptions</td></tr>
+    <tr><td><code>/admin/finance</code></td><td>Finance queue</td><td>Pending captures, releases, refunds, payouts, totals</td></tr>
+    <tr><td><code>/admin/reports</code></td><td>Moderation</td><td>Reports; dismiss, restrict, remove (audit logged)</td></tr>
+  </tbody>
+</table>

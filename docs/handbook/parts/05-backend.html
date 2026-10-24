@@ -1,0 +1,139 @@
+<h1>5. Backend architecture</h1>
+<p>No backend exists yet. This section is the recommended design. It is a modular monolith: one deployable API service plus a worker process, sharing one PostgreSQL database. This is the simplest architecture that meets V1’s needs, and modules can be split out later if load requires it.</p>
+
+<h2>5.1 Recommended stack</h2>
+<table>
+  <thead><tr><th class="w25">Concern</th><th class="w35">Recommendation</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Runtime and language</td><td>Node.js 22 LTS, TypeScript</td><td>Same language as the app; the domain types in <code>mobile/src/data/types.ts</code> can be shared.</td></tr>
+    <tr><td>Framework</td><td>NestJS (REST controllers, WebSocket gateway, guards for RBAC, OpenAPI generation)</td><td>Clear module boundaries and built-in OpenAPI output for the typed app client.</td></tr>
+    <tr><td>Database</td><td>PostgreSQL 16 with PostGIS and pg_trgm</td><td>Relational integrity for money and bookings; geo queries for the map; fuzzy search.</td></tr>
+    <tr><td>ORM and migrations</td><td>Prisma or Drizzle; migrations committed to the repository</td><td>Reviewed, repeatable schema changes.</td></tr>
+    <tr><td>Jobs and cache</td><td>Redis + BullMQ (delayed jobs, retries)</td><td>24 h deadlines, 12 h reminders, expiries, payouts, notifications.</td></tr>
+    <tr><td>Files</td><td>S3-compatible object storage + CDN</td><td>Photos, avatars, application documents, data exports.</td></tr>
+    <tr><td>Hosting region</td><td>EU, Frankfurt (for example AWS eu-central-1)</td><td>GDPR: personal data of Berlin users stays in the EU.</td></tr>
+  </tbody>
+</table>
+
+<h2>5.2 System overview</h2>
+<div class="diagram">
+  <div class="row">
+    <div class="box tint"><b>Android app</b>Expo / React Native</div>
+    <div class="box tint"><b>iOS app</b>Expo / React Native</div>
+    <div class="box tint"><b>Web app</b>Static SPA on Vercel</div>
+    <div class="box tint"><b>Admin console</b>Same web app, staff login</div>
+  </div>
+  <div class="arrow">▼ HTTPS (REST /v1) and WSS (realtime)</div>
+  <div class="row">
+    <div class="box dark"><b>API service</b>Auth, REST endpoints, WebSocket gateway, RBAC guards, validation, OpenAPI</div>
+    <div class="box dark"><b>Worker service</b>Deadlines, reminders, expiries, payouts, notifications, media processing, exports</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="row">
+    <div class="box"><b>PostgreSQL</b>All domain data, audit log (PostGIS, pg_trgm)</div>
+    <div class="box"><b>Redis</b>Job queues, rate limits, pub/sub, cache</div>
+    <div class="box"><b>Object storage + CDN</b>Media and documents</div>
+  </div>
+  <div class="arrow">▼ external services</div>
+  <div class="row">
+    <div class="box gold"><b>Stripe</b>Payments, Connect payouts, webhooks</div>
+    <div class="box gold"><b>Expo Push</b>FCM (Android), APNs (iOS)</div>
+    <div class="box gold"><b>Email / SMS</b>Transactional email, OTP codes</div>
+    <div class="box gold"><b>Maps</b>Map tiles, geocoding</div>
+    <div class="box gold"><b>Sentry</b>Errors (app and API)</div>
+  </div>
+</div>
+
+<h2>5.3 Modules</h2>
+<table>
+  <thead><tr><th class="w25">Module</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td>auth</td><td>Registration, email verification, sign-in, sessions and devices, password reset, two-step verification, change email/phone</td></tr>
+    <tr><td>users, profiles</td><td>Account, public profile (member, artist, band, DJ, venue, organizer), preferences, wishlist, follows, blocks</td></tr>
+    <tr><td>access</td><td>Workspaces, approved roles, professional applications and their review, staff permissions</td></tr>
+    <tr><td>social</td><td>Posts, stories, comments with photos, likes, saves, feeds (For You, Following, Nearby), communities, friends</td></tr>
+    <tr><td>messaging</td><td>Conversations, messages (text, image, voice), read state, booking-linked chats</td></tr>
+    <tr><td>events</td><td>Public and private events, lifecycle, line-up, ticket types, invitations, cost sharing, readiness and budget</td></tr>
+    <tr><td>tickets</td><td>Ticket orders, issued tickets, QR codes, check-in, refunds</td></tr>
+    <tr><td>providers</td><td>Artist services and pricing, lessons, availability, venue listings (parking, garden, catering, security, charges)</td></tr>
+    <tr><td>bookings</td><td>Booking requests, provider requests, quotes, change requests, cancellations, disputes, deadlines</td></tr>
+    <tr><td>payments</td><td>Payment intents, authorization and capture, refunds, failures and retries, webhooks, ledger, payouts, subscriptions</td></tr>
+    <tr><td>reviews</td><td>Event and venue star reviews; musician “would book again” reviews with praise tags (verified bookings only)</td></tr>
+    <tr><td>discovery</td><td>Search, filters, geo queries, sorting, promotions (sponsored placement)</td></tr>
+    <tr><td>notifications</td><td>In-app notifications, action queue, push, email, preferences</td></tr>
+    <tr><td>media</td><td>Upload URLs, image processing, CDN URLs, deletion</td></tr>
+    <tr><td>support</td><td>Support cases with reference numbers, linked records, messages, appeals</td></tr>
+    <tr><td>moderation, admin</td><td>Reports, decisions, removed content, admin queues, metrics, audit log</td></tr>
+    <tr><td>privacy</td><td>Data export, account deletion, retention jobs, consent records</td></tr>
+  </tbody>
+</table>
+
+<h2>5.4 Authentication and authorization</h2>
+<h3>Authentication</h3>
+<ul>
+  <li>Email and password registration. Passwords hashed with Argon2id. Email verified with a 6-digit code (valid 10 minutes, at most 5 attempts, resend limited). The app’s <code>/verify</code> screen already expects a 6-digit code.</li>
+  <li>Short-lived access token (JWT, about 15 minutes) and a rotating refresh token stored server-side per device. “Remember me” off = session ends when the app restarts. The devices list in Account &amp; security reads the sessions table; signing out a device revokes its refresh token.</li>
+  <li>Password reset, change email and change phone all use one-time codes. Two-step verification (<code>prefs.twoFactor</code>) asks for an SMS code (or TOTP) at each new sign-in.</li>
+  <li>Rate limits on sign-in, code requests and code checks per account, IP and device.</li>
+  <li><span class="tag t-dec">DECISION</span> Additional sign-in methods (Google, Apple) and the age policy (blueprint F01–F04). If any third-party sign-in is offered on iOS, Sign in with Apple must be offered too (App Store rule).</li>
+</ul>
+<h3>Authorization</h3>
+<ul>
+  <li>The server stores <code>approved_roles</code> and the <code>active_role</code> per account. Switching (<code>PUT /v1/me/workspace</code>) is refused for a role that is not approved.</li>
+  <li>Each endpoint declares the roles it accepts (guards) and checks ownership in the query (for example <code>WHERE provider_id = :me</code>). Never trust ids or roles sent by the client.</li>
+  <li>Staff permissions (<code>admin</code>, <code>reviewer</code>, <code>support</code>, <code>finance</code>, <code>moderator</code>) live in a separate table, require two-step verification, and every staff decision writes an audit log entry (actor, action, target, note, time).</li>
+</ul>
+
+<h2>5.5 Background jobs and timers</h2>
+<table>
+  <thead><tr><th class="w25">Job</th><th class="w25">When</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td>Provider reminder</td><td>12 h after a valid request reaches the provider</td><td>Push and email to the provider, only if the request is still awaiting a response.</td></tr>
+    <tr><td>Request expiry</td><td>24 h after the request reached the provider</td><td>Status <code>expired</code>; payment <code>release_pending</code> and start the release with the payment provider; notify both sides.</td></tr>
+    <tr><td>Quote expiry</td><td>At the end of <code>validUntil</code></td><td>Quote <code>expired</code>; customer can ask for a new quote.</td></tr>
+    <tr><td>Authorization watch</td><td>Daily</td><td>Card authorizations expire after a limited time at the payment provider; capture or release before expiry and alert finance.</td></tr>
+    <tr><td>Payment reconciliation</td><td>On webhook and hourly</td><td>Move <code>capture_pending</code>, <code>release_pending</code>, <code>refund_pending</code>, <code>payout_pending</code> to their final state only when the provider confirms.</td></tr>
+    <tr><td>Event lifecycle</td><td>At event start and end</td><td><code>in_progress</code> at start, <code>completed</code> at end; unlock reviews; start payout holds.</td></tr>
+    <tr><td>Reminders</td><td>24 h before an event; before a cost-sharing deadline</td><td>Ticket holders and guests who have not paid.</td></tr>
+    <tr><td>Payouts</td><td>After completion + hold period <span class="tag t-dec">DECISION</span></td><td>Create transfers to providers (net of commission); mark <code>payout_pending</code> → <code>paid_out</code> on confirmation.</td></tr>
+    <tr><td>Promotions</td><td>At promotion end</td><td>Remove sponsored placement.</td></tr>
+    <tr><td>Application SLA</td><td>Hourly</td><td>Flag applications older than the 24 h review target in the admin queue.</td></tr>
+    <tr><td>Privacy</td><td>On request; nightly</td><td>Build data exports; execute account deletions; purge data past its retention period.</td></tr>
+  </tbody>
+</table>
+<p>All jobs are idempotent (safe to run twice) and re-check the current state before acting, because a provider may answer one second before the expiry job runs.</p>
+
+<h2>5.6 Realtime, notifications and messaging</h2>
+<ul>
+  <li>One authenticated WebSocket connection per signed-in app instance. Server events: <code>message.created</code>, <code>conversation.read</code>, <code>notification.created</code>, <code>booking.updated</code>, <code>request.created</code>, <code>ticket.checked_in</code>. Use Redis pub/sub so several API instances can deliver events.</li>
+  <li>When the user is offline, the same events go out as push notifications (Expo push service → FCM / APNs). Tapping a push opens its deep link (for example <code>/booking/b3</code>).</li>
+  <li>The home attention banner and dashboard use an <b>action queue</b> endpoint that returns open items: payment failed, quote received, accepted and awaiting payment, change requested, event cancellation pending, invitations, unpaid contributions, friend requests, support replies, application updates and (for providers) new requests.</li>
+</ul>
+<table>
+  <thead><tr><th class="w35">Notice</th><th class="w20">Recipient</th><th class="w15">Channels</th><th>Type</th></tr></thead>
+  <tbody>
+    <tr><td>New booking request, 12 h reminder</td><td>Provider</td><td>Push, email, in-app</td><td>Essential</td></tr>
+    <tr><td>Request accepted, declined or expired; quote received; change requested</td><td>Customer</td><td>Push, email, in-app</td><td>Essential</td></tr>
+    <tr><td>Payment failed, refund started or completed, payout sent</td><td>Payer / provider</td><td>Push, email, in-app</td><td>Essential</td></tr>
+    <tr><td>Event cancelled or changed</td><td>Ticket holders, guests, booked providers</td><td>Push, email, in-app</td><td>Essential</td></tr>
+    <tr><td>Application decision, support reply, moderation decision</td><td>Account</td><td>Push, email, in-app</td><td>Essential</td></tr>
+    <tr><td>New message</td><td>Recipient</td><td>Push, in-app</td><td>Optional (setting “Messages”)</td></tr>
+    <tr><td>Events near me</td><td>Members who opted in</td><td>Push</td><td>Optional (setting “Events near me”)</td></tr>
+    <tr><td>Likes, comments, follows, friend requests, invitations</td><td>Account</td><td>In-app, push</td><td>Social</td></tr>
+  </tbody>
+</table>
+
+<h2>5.7 Media</h2>
+<ul>
+  <li>The app asks for an upload URL (<code>POST /v1/media/uploads</code>), uploads directly to object storage, then sends the media id with the post, comment, avatar or listing.</li>
+  <li>A worker checks the file type, strips location metadata (EXIF), creates sizes (thumbnail, feed, full) and publishes CDN URLs.</li>
+  <li>Limits per kind are configuration, not code (file size, count per post or comment). Deleting a post or account deletes its media.</li>
+  <li><span class="tag t-dec">DECISION</span> Video posts and live streaming need a video service (for example Mux or Cloudflare Stream). V1 can launch with photos only and keep the video and live screens behind a feature flag.</li>
+</ul>
+
+<h2>5.8 Search and location</h2>
+<ul>
+  <li>Venues and events store a geographic point (PostGIS <code>geography(Point)</code>) set by geocoding the address. Distance filters use <code>ST_DWithin</code>; results return <code>distanceKm</code> from the user’s location.</li>
+  <li>Text search across events, artists, lessons, venues, communities, organizers and people uses PostgreSQL full-text search plus trigram similarity. A dedicated search engine is only needed later.</li>
+  <li><span class="tag t-dec">DECISION</span> Exact venue address visibility before booking (blueprint F06–F07). Until decided, return the area and approximate pin publicly and the exact address only to confirmed participants.</li>
+</ul>

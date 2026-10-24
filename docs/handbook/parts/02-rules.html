@@ -1,0 +1,65 @@
+<h1>2. Product rules, roles and permissions</h1>
+<p>The rules below are product requirements. The front-end already follows them. The backend must enforce every one of them independently: a client can be modified, so no rule may depend on the app hiding a button.</p>
+
+<h2>2.1 Accounts and workspaces</h2>
+<ul>
+  <li>Every account starts as a <b>Member</b> (internal role <code>fan</code>). The member workspace is always available.</li>
+  <li>Three <b>professional roles</b> need a reviewed application: <b>Artist</b> (<code>musician</code>: solo artist, band or DJ), <b>Venue</b> (<code>venue</code>) and <b>Organizer</b> (<code>organizer</code>). Application states are <code>pending</code>, <code>info</code> (more information requested, with the exact missing items), <code>approved</code> and <code>rejected</code> (with a reason). Submitting an application never grants access by itself.</li>
+  <li>One account can hold several approved workspaces (<code>approvedRoles</code>). Exactly one is <b>active</b> at a time (<code>role</code>). Switching to a role that is not approved is refused.</li>
+  <li><b>Staff</b> (admin, reviewer, support, finance, moderator) are not app roles. They are separate staff permissions on top of an account and are checked on every admin endpoint (section 5.4). <span class="tag t-dec">DECISION</span> The reviewer, support and finance authority hierarchy is open (blueprint F03, F24–F27).</li>
+</ul>
+
+<h2>2.2 Permission matrix</h2>
+<p>“Approved” means the role is in <code>approvedRoles</code> and is the active workspace. The server checks both role and ownership (for example, only the provider of a request may answer it).</p>
+<table>
+  <thead><tr><th class="w35">Action</th><th>Member</th><th>Artist</th><th>Venue</th><th>Organizer</th><th>Staff</th></tr></thead>
+  <tbody>
+    <tr><td>Browse feed, events, artists, venues, lessons, map</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Like, comment, follow, friends, direct messages, join communities</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>—</td></tr>
+    <tr><td>Attach photos to comments</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>—</td></tr>
+    <tr><td>Publish feed posts and stories</td><td>No</td><td>Approved</td><td>Approved</td><td>Approved</td><td>—</td></tr>
+    <tr><td>Create private events (invite guests, cost sharing)</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>—</td></tr>
+    <tr><td>Create and publish public events, sell public tickets</td><td>No (saved as draft)</td><td>No</td><td>No</td><td>Approved</td><td>—</td></tr>
+    <tr><td>Promote an event (paid placement)</td><td>No</td><td>No</td><td>No</td><td>Approved, own events</td><td>—</td></tr>
+    <tr><td>Buy tickets; book artists, venues and lessons</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>—</td></tr>
+    <tr><td>Receive booking requests, send quotes, counter offers</td><td>No</td><td>Approved</td><td>Approved</td><td>No</td><td>Read only</td></tr>
+    <tr><td>Availability, services and pricing, lessons</td><td>No</td><td>Approved</td><td>Availability</td><td>No</td><td>—</td></tr>
+    <tr><td>Venue listing (parking, garden, catering, security, charges)</td><td>No</td><td>No</td><td>Approved</td><td>No</td><td>—</td></tr>
+    <tr><td>Earnings and payouts</td><td>No</td><td>Approved</td><td>Approved</td><td>Approved</td><td>Finance</td></tr>
+    <tr><td>Ticket scanning and guest list</td><td colspan="4">Host or organizer of that event, plus staff they delegate (artists and venues get no automatic access)</td><td>—</td></tr>
+    <tr><td>Apply for a professional role</td><td>Yes</td><td colspan="3">Yes, for another role</td><td>—</td></tr>
+    <tr><td>Review applications, investigate bookings, finance queue, moderation, support replies</td><td>No</td><td>No</td><td>No</td><td>No</td><td>By staff permission</td></tr>
+  </tbody>
+</table>
+
+<h2>2.3 Product owner rules</h2>
+<table>
+  <thead><tr><th class="w30">Rule</th><th>Requirement</th></tr></thead>
+  <tbody>
+    <tr><td>Public events</td><td>Only approved organizers create and publish public events. Members, artists and venues create private events only. A public event saved by someone who cannot publish stays a draft; <code>setEventState(published)</code> is refused.</td></tr>
+    <tr><td>Member photos</td><td>Members can upload photos only inside comments (post comments and event discussions). Feed posts and stories are for approved professional accounts.</td></tr>
+    <tr><td>Venue page</td><td>The venue page opens with key facts (capacity, rooms and stages, price or “Request a quote”, rating or “New”). Parking and garden/outdoor space are separate items, each with its own details (parking: available, kind, spaces, notes; garden: available, capacity, covered, notes).</td></tr>
+    <tr><td>Musician rating</td><td>Musicians are not rated with stars. Their score is the share of verified reviews (from completed bookings) that answered “Would book again” = yes, shown with the count, plus praise tag counts: On time, Great sound, Read the crowd, Professional, Good value, Easy to work with. With no verified reviews: “No verified bookings yet”. Venues and events keep 1–5 stars.</td></tr>
+    <tr><td>Nearby map</td><td>A map of nearby events with filters: distance (1, 2, 5, 10 km or any), today, this weekend, free, live music, genre, plus the general filters (category, date, price, area, sort). Optional venue pins.</td></tr>
+    <tr><td>Catering and security</td><td>Venues can offer catering priced per guest (<code>pricePerGuest × max(guests, minGuests)</code>) and security priced by attendance (<code>ceil(guests / guestsPerGuard) × pricePerGuard</code>). Security can be mandatory from a guest count (<code>requiredFrom</code>).</td></tr>
+  </tbody>
+</table>
+
+<h2>2.4 Blueprint rules that the backend must guarantee</h2>
+<ol>
+  <li>A member cannot publish a public event without organizer approval.</li>
+  <li>A professional application status is visible and does not grant access before approval.</li>
+  <li>Every provider booking has its own response deadline and its own financial record. Artist and venue bookings for the same event are independent.</li>
+  <li>The provider has 24 hours to respond from the moment a valid request reaches them. A reminder goes out after 12 hours, only while the request is still awaiting a response.</li>
+  <li>An unanswered request expires at 24 hours. Expiry starts the release or refund; it never claims the release is already complete.</li>
+  <li>Provider acceptance alone does not confirm a booking. A booking is confirmed only when the payment is verified.</li>
+  <li>Declining one provider request does not cancel other confirmed bookings of the same event. Cancelling an event flags linked bookings for the cancellation process; it does not cancel them automatically.</li>
+  <li>Agreed terms (price lines, date, quote version) are stored on the booking and stay unchanged when the provider later changes their prices.</li>
+  <li>A payment retry happens on the same booking. It never creates a second booking or a second charge.</li>
+  <li>Ticket validation refuses wrong-event, cancelled, refunded and already-used tickets, and shows when an already-used ticket was checked in.</li>
+  <li>A private-event guest ticket (cost sharing) is issued only after the contribution payment succeeds. A failed payment never issues a ticket.</li>
+  <li>Support cannot promise a refund before an authorized decision. A support case cannot be closed while a linked refund or release is still pending.</li>
+  <li>Dashboard actions respect ownership and role permissions. Financial totals separate booking value, fees, refunds and provider payouts.</li>
+  <li>Empty states show the real absence of activity. No fabricated numbers or results.</li>
+  <li>Communities are created by the platform only in V1. Blocking someone also ends the friendship and declines pending friend requests. A reported account never learns who reported it.</li>
+</ol>

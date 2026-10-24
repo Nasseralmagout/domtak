@@ -1,0 +1,116 @@
+<h1>4. Front-end architecture (Android, iOS, Web)</h1>
+<p>One TypeScript codebase in <code>mobile/</code> produces all three apps. Android and iOS are native apps built with Expo (React Native); the web app is the same code rendered by React Native Web and exported as a static single-page app.</p>
+
+<h2>4.1 Technology stack</h2>
+<table>
+  <thead><tr><th class="w30">Concern</th><th class="w30">Technology (version in repo)</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Framework</td><td>Expo SDK 57 (<code>expo ~57.0.28</code>)</td><td>Continuous Native Generation: there are no committed <code>android/</code> or <code>ios/</code> folders. Native config lives in <code>app.json</code> and config plugins.</td></tr>
+    <tr><td>UI runtime</td><td>React Native 0.86.3, React 19.2.3</td><td>React Native Web 0.21 for the web build.</td></tr>
+    <tr><td>Language</td><td>TypeScript ~6.0 (strict)</td><td><code>npm run typecheck</code></td></tr>
+    <tr><td>Navigation</td><td>Expo Router ~57 (typed routes)</td><td>Routes in <code>src/app</code>; URL = deep link path.</td></tr>
+    <tr><td>State</td><td>zustand 5 + persist (AsyncStorage)</td><td>Today it holds all demo data. In production, keep it for session and UI state only (section 4.6).</td></tr>
+    <tr><td>Images</td><td>expo-image</td><td>Bundled sample images today (<code>src/data/images.ts</code>, keys of type <code>ImgKey</code>).</td></tr>
+    <tr><td>Camera / QR</td><td>expo-camera, react-native-qrcode-svg</td><td>Ticket scanner and e-ticket QR codes.</td></tr>
+    <tr><td>Fonts and icons</td><td>Poppins, DM Sans, Lilita One (wordmark); Material Community Icons</td><td>Web uses a generated SVG path map: <code>npm run icons</code> → <code>src/components/iconPaths.ts</code>.</td></tr>
+    <tr><td>Other Expo modules</td><td>expo-linear-gradient, expo-haptics, expo-clipboard, expo-linking, expo-splash-screen, expo-status-bar, expo-font</td><td></td></tr>
+    <tr><td>Lint</td><td>ESLint 9 with eslint-config-expo</td><td><code>npm run lint</code> (CI uses <code>CI=1 npx eslint .</code>)</td></tr>
+    <tr><td>Builds</td><td>EAS Build / Submit / Update; Vercel for web</td><td><code>eas.json</code>, <code>vercel.json</code></td></tr>
+  </tbody>
+</table>
+
+<h2>4.2 Folder structure</h2>
+<pre>mobile/
+├─ app.json            Expo config: name, bundle ids (de.domtak.app), scheme (domtak), plugins, permissions
+├─ eas.json            EAS build profiles: preview (Android APK), production (Android AAB, auto-increment)
+├─ vercel.json         Web build on Vercel (also one at the repo root)
+├─ assets/             Icons, splash, illustrations, sample photos (98 images)
+├─ scripts/            gen-icon-paths.mjs; svg-export/ and design-export/ (design tooling, not part of the app)
+└─ src/
+   ├─ app/             90 route files (screens) and layouts
+   ├─ components/      Shared UI: ui.tsx (Button, T, Pill, Chip, Toggle, Icon…), layout.tsx (Screen, headers,
+   │                   PermissionNotice, DemoBar), cards.tsx, PostCard.tsx, ActionSheet.tsx, TabBar.tsx…
+   ├─ data/            types.ts (domain model), mock.ts (sample data), images.ts (image registry)
+   ├─ lib/             Business rules: booking, pricing, ratings, events, access, support, admin, dashboards,
+   │                   promotions, format (dates, euro), eventHost
+   ├─ store/           useApp.ts (main store and actions), filters, social, discovery, services, toast
+   └─ theme/           Colors, fonts, radius, shadows</pre>
+
+<h2>4.3 How data flows today</h2>
+<ul>
+  <li><b>Sample data</b> (<code>src/data/mock.ts</code>): profiles, venues, events, posts, stories, bookings b1–b7, requests r1–r6, lessons, communities, support case DT-4821, admin applications.</li>
+  <li><b>Store</b> (<code>src/store/useApp.ts</code>): one zustand store persisted to AsyncStorage (web: localStorage) under the key <code>domtak-app</code>. About 90 actions implement every user action (section 7 maps them to endpoints). Selectors must return stable values (zustand v5).</li>
+  <li><b>Rules</b> (<code>src/lib/*</code>): pure functions for labels, state transitions, prices, deadlines, readiness and permissions. Keep them for display on the client, and re-implement the authoritative versions on the server.</li>
+  <li><b>Demo clock:</b> <code>TODAY = 2026-10-14T12:00</code> in <code>src/lib/format.ts</code> keeps the sample data current. Replace it with the real time in production.</li>
+</ul>
+
+<h2>4.4 Design system</h2>
+<table>
+  <thead><tr><th class="w25">Token</th><th>Value and use</th></tr></thead>
+  <tbody>
+    <tr><td>Brand colors</td><td>Deep purple <code>#2E0B5E</code> (headers, splash), brand <code>#3B1F8B</code> (actions), gold <code>#F2B632</code> (highlights), lilac <code>#C9B8F0</code>, background <code>#F8F7FB</code>. Full palette in <code>src/theme</code>.</td></tr>
+    <tr><td>Typography</td><td>Poppins (headings), DM Sans (body), Lilita One (DOMTAK wordmark).</td></tr>
+    <tr><td>Components</td><td>Use the shared components in <code>src/components</code>; do not restyle per screen. Touch targets are at least 44 px; every interactive element has an accessibility label.</td></tr>
+    <tr><td>Status language</td><td>Labels and tones for booking, payment, quote, event, application, ticket and case states are centralised in <code>src/lib</code> (for example <code>STATUS_LABEL</code>, <code>PAYMENT_LABEL</code>). The API returns state codes; the app maps them to text.</td></tr>
+    <tr><td>Design reference</td><td>Final designs of all 136 screens on the design canvas (page “V1 · Wireframe &amp; final”).</td></tr>
+  </tbody>
+</table>
+
+<h2>4.5 Platform specifics</h2>
+<table>
+  <thead><tr><th class="w15">Topic</th><th class="w30">Android</th><th class="w30">iOS</th><th>Web</th></tr></thead>
+  <tbody>
+    <tr><td>Identifier</td><td>Package <code>de.domtak.app</code></td><td>Bundle ID <code>de.domtak.app</code>; iPhone only (<code>supportsTablet: false</code>)</td><td>Domain to be chosen (for example <code>app.domtak.de</code>)</td></tr>
+    <tr><td>Distribution</td><td>Google Play (AAB); internal APK via EAS preview</td><td>App Store; TestFlight for testing</td><td>Vercel (static SPA, all paths rewrite to <code>index.html</code>)</td></tr>
+    <tr><td>Camera</td><td>CAMERA permission (declared)</td><td><code>NSCameraUsageDescription</code> (declared)</td><td>Browser camera permission (HTTPS required)</td></tr>
+    <tr><td>Location</td><td colspan="2">To add: expo-location, “when in use” permission with a usage text (Android ACCESS_COARSE/FINE_LOCATION; iOS <code>NSLocationWhenInUseUsageDescription</code>)</td><td>Browser geolocation</td></tr>
+    <tr><td>Push</td><td>Firebase Cloud Messaging (FCM) via Expo push service</td><td>APNs key via Expo push service</td><td>Optional Web Push; in-app notifications otherwise</td></tr>
+    <tr><td>Maps</td><td>Google Maps SDK (API key)</td><td>Apple Maps or Google Maps</td><td>Google Maps JS API or MapLibre in a <code>map.web.tsx</code> variant</td></tr>
+    <tr><td>Payments</td><td>Stripe PaymentSheet (cards, Google Pay)</td><td>Stripe PaymentSheet (cards, Apple Pay)</td><td>Stripe Payment Element</td></tr>
+    <tr><td>Pro subscription</td><td>Google Play Billing</td><td>Apple In-App Purchase</td><td>Stripe Billing (section 8.6)</td></tr>
+    <tr><td>Token storage</td><td>expo-secure-store (Keystore)</td><td>expo-secure-store (Keychain)</td><td>httpOnly, Secure, SameSite cookie</td></tr>
+    <tr><td>Deep links</td><td>App Links for <code>https://&lt;domain&gt;</code>; scheme <code>domtak://</code></td><td>Universal Links (associated domains); scheme <code>domtak://</code></td><td>Normal URLs</td></tr>
+  </tbody>
+</table>
+
+<h2>4.6 From demo to production: integration plan</h2>
+<ol>
+  <li><b>API client.</b> Add a typed API client (generated from the backend’s OpenAPI document) and a server-state library such as TanStack Query for caching, retries and pagination. Base URL from <code>EXPO_PUBLIC_API_URL</code>.</li>
+  <li><b>Reads.</b> Replace imports from <code>src/data/mock.ts</code> with queries, one domain at a time (profiles, venues, events, posts, bookings…). Keep the <code>src/data/types.ts</code> shapes as the contract; the backend returns the same field names (camelCase JSON).</li>
+  <li><b>Writes.</b> Replace each zustand action with a mutation that calls the matching endpoint (section 7). The server returns the new state; the client never computes a payment or booking state on its own.</li>
+  <li><b>Auth.</b> Store the refresh token in expo-secure-store on mobile and in an httpOnly cookie on the web; keep the short-lived access token in memory. Refresh on 401. Respect “remember me”.</li>
+  <li><b>Images.</b> Replace <code>ImgKey</code> image keys with URLs from the media service (CDN). Keep bundled assets only for brand art (logo, onboarding illustrations).</li>
+  <li><b>Remove demo pieces</b> (appendix B): demo controls (DemoBar) on 10 screens, the admin demo switch, sample scanner codes, the fixed <code>TODAY</code> date and sample application shortcuts.</li>
+  <li><b>Real-time and push.</b> Subscribe to the message and notification channels (section 5.6); register the push token after sign-in.</li>
+  <li><b>States.</b> Every screen gets loading, empty, error and offline states for real network conditions. Mutations that move money use idempotency keys.</li>
+  <li><b>Persistence.</b> Persist only the session, preferences and drafts locally. Clear user data on sign-out.</li>
+</ol>
+
+<h2>4.7 Native modules to add</h2>
+<p>Install with <code>npx expo install &lt;package&gt;</code> so versions match SDK 57, and check the versioned Expo docs (<code>docs.expo.dev/versions/v57.0.0</code>) before using an API. After adding a module with native code, Expo Go is no longer enough: use development builds (<code>eas build --profile development</code>).</p>
+<table>
+  <thead><tr><th class="w30">Package</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>expo-notifications</code></td><td>Push token registration, notification handling and deep links from notifications</td></tr>
+    <tr><td><code>expo-location</code></td><td>“Near me” on the map, Nearby feed and distance filters</td></tr>
+    <tr><td><code>react-native-maps</code> (+ web map library)</td><td>Real map with event and venue pins</td></tr>
+    <tr><td><code>expo-image-picker</code> (and <code>expo-image-manipulator</code>)</td><td>Photos for posts, stories, comments, avatars, venue listing, application documents</td></tr>
+    <tr><td><code>@stripe/stripe-react-native</code></td><td>PaymentSheet, Apple Pay, Google Pay (Expo config plugin)</td></tr>
+    <tr><td>In-app purchase library (for example <code>react-native-iap</code> or RevenueCat)</td><td>Pro subscription in the stores</td></tr>
+    <tr><td><code>expo-secure-store</code></td><td>Refresh token and device secrets</td></tr>
+    <tr><td><code>expo-updates</code></td><td>Over-the-air updates through EAS Update</td></tr>
+    <tr><td><code>@sentry/react-native</code></td><td>Crash and error reporting</td></tr>
+    <tr><td><code>expo-localization</code> + i18n library</td><td>Prepared for German (the settings already offer English / Deutsch; V1 ships English)</td></tr>
+  </tbody>
+</table>
+
+<h2>4.8 Working on the app</h2>
+<pre>cd mobile
+npm ci                     # install exact versions from package-lock.json
+npx expo start             # dev server: press a (Android), i (iOS simulator), w (web)
+npm run typecheck          # tsc --noEmit
+npm run lint               # ESLint (strict rules: no setState in effect bodies, no Date.now in render)
+npm run icons              # regenerate web icon paths after using a new icon name
+npm run build:web          # static web build into mobile/dist
+npx expo-doctor            # dependency and config check</pre>
+<p>Run typecheck and lint before every pull request. Never create or edit <code>android/</code> or <code>ios/</code> by hand; change <code>app.json</code> or a config plugin instead.</p>

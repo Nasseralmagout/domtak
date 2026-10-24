@@ -1,0 +1,54 @@
+<h1>Appendix A. Glossary</h1>
+<table>
+  <thead><tr><th class="w25">Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Member</td><td>Every account’s default workspace (internal role <code>fan</code>).</td></tr>
+    <tr><td>Workspace</td><td>The active role of an account: Member, Artist, Venue or Organizer. Only approved roles can be active.</td></tr>
+    <tr><td>Provider</td><td>An artist, band, DJ, venue or lesson teacher who receives booking requests.</td></tr>
+    <tr><td>Host</td><td>The account that created an event (private or public). For public events the host is an approved organizer.</td></tr>
+    <tr><td>Booking</td><td>One agreement between a customer and one provider, with its own deadline, price lines and payment state.</td></tr>
+    <tr><td>Request</td><td>A booking seen from the provider’s side.</td></tr>
+    <tr><td>Quote</td><td>An itemised, versioned price offer from a provider, valid until a date.</td></tr>
+    <tr><td>Cost sharing</td><td>A private event setting where each accepted guest pays a contribution to receive a ticket.</td></tr>
+    <tr><td>Action queue</td><td>The list of items that need the user’s decision (attention banner and dashboard).</td></tr>
+    <tr><td>Would book again</td><td>The musician score: share of verified reviews that recommend booking the artist again.</td></tr>
+    <tr><td>EAS</td><td>Expo Application Services: cloud builds, store submission and over-the-air updates.</td></tr>
+    <tr><td>Connect</td><td>Stripe’s marketplace product for paying out providers.</td></tr>
+  </tbody>
+</table>
+
+<h1>Appendix B. Demo-only items to remove or replace</h1>
+<table>
+  <thead><tr><th class="w30">Item</th><th>Where</th><th class="w30">Replace with</th></tr></thead>
+  <tbody>
+    <tr><td>Sample data</td><td><code>src/data/mock.ts</code> and initial store state in <code>src/store/useApp.ts</code></td><td>API data; seed script for staging only</td></tr>
+    <tr><td>Device-only persistence of all data</td><td>zustand <code>persist</code> key <code>domtak-app</code></td><td>Server state; persist session, preferences and drafts only</td></tr>
+    <tr><td>Fixed demo date</td><td><code>TODAY</code> in <code>src/lib/format.ts</code></td><td>Real current time (server time for rules)</td></tr>
+    <tr><td>Demo controls (DemoBar)</td><td>10 screens: application, booking/[id], booking/issue, event-workspace/[id], help, invitation/[id], pro/request/[id], pro/scan, settings, support/[id]</td><td>Remove; real events come from the server</td></tr>
+    <tr><td>Admin demo switch</td><td><code>adminMode</code> toggle in settings and help</td><td>Staff permissions from the server</td></tr>
+    <tr><td>Sample application shortcuts</td><td><code>SAMPLE_APPLICATION</code>, <code>DEMO_MISSING</code>, <code>DEMO_REJECT_REASON</code> in <code>src/lib/access.ts</code></td><td>Real applications and admin decisions</td></tr>
+    <tr><td>Scanner sample codes</td><td><code>src/app/pro/scan.tsx</code></td><td>Real camera scans only</td></tr>
+    <tr><td>Bundled photos referenced by key</td><td><code>src/data/images.ts</code>, <code>assets/images</code></td><td>CDN URLs from the media service; keep brand art</td></tr>
+    <tr><td>Watermarked Unsplash+ photos (19)</td><td><code>av_ben</code>, <code>av_sara</code>, <code>band_jam</code>, <code>dj_kai</code>, <code>dj_killers</code>, <code>dj_radio</code>, <code>dj_red</code>, <code>ev_drummer</code>, <code>ev_hands</code>, <code>ev_party</code>, <code>ev_selfie</code>, <code>ev_stage_gold</code>, <code>feed_crowd</code>, <code>feed_drums</code>, <code>m_pianist</code>, <code>m_sameul</code>, <code>m_singer</code>, <code>ven_kids</code>, <code>ven_neon</code></td><td>Licensed or own photos (marketing screenshots, onboarding)</td></tr>
+    <tr><td>Static map image</td><td><code>map_berlin.jpg</code> (Google Maps screenshot) and percentage pin positions (<code>mapPos</code>)</td><td>Map SDK with real coordinates</td></tr>
+    <tr><td>Simulated payments and payment methods</td><td>checkout, payment-methods, <code>completeCheckout</code></td><td>Stripe</td></tr>
+    <tr><td>Placeholder legal details</td><td><code>src/app/legal.tsx</code> imprint fields in brackets</td><td>Company details and final legal texts</td></tr>
+  </tbody>
+</table>
+
+<h1>Appendix C. Quick reference</h1>
+<div class="kv">
+  <div>Repository</div><div><code>github.com/Nasseralmagout/DOMTAK-V1</code> (app in <code>mobile/</code>)</div>
+  <div>App identifiers</div><div>Android <code>de.domtak.app</code> · iOS <code>de.domtak.app</code> · scheme <code>domtak://</code></div>
+  <div>Expo SDK</div><div>57 (React Native 0.86, React 19.2, TypeScript 6)</div>
+  <div>Domain model</div><div><code>mobile/src/data/types.ts</code></div>
+  <div>Business rules</div><div><code>mobile/src/lib/*.ts</code> (booking, pricing, ratings, events, access, support, admin)</div>
+  <div>Store actions</div><div><code>mobile/src/store/useApp.ts</code> (about 90 actions mapped in section 7)</div>
+  <div>Response window</div><div>24 h, reminder at 12 h</div>
+  <div>Demo rates</div><div>Service fee 5% · commission 10%</div>
+  <div>Pro plan</div><div>€9,99 / month · €89 / year · first month free</div>
+  <div>Design reference</div><div>Design canvas “Domtak Android App”, page “V1 · Wireframe &amp; final” (136 screens)</div>
+</div>
+<p class="small">End of document.</p>
+</body>
+</html>

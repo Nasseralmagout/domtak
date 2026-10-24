@@ -1,0 +1,154 @@
+<h1>6. Data model</h1>
+<p>The front-end’s domain types (<code>mobile/src/data/types.ts</code> and the interfaces in <code>src/store/useApp.ts</code>) are the contract. The tables below are the recommended PostgreSQL schema behind them. Table names are snake_case; the API returns camelCase JSON matching the TypeScript types.</p>
+<div class="note"><b>Conventions.</b> Primary keys are UUIDs. Every table has <code>created_at</code> and <code>updated_at</code>. Money is stored as integer cents with a currency (<code>EUR</code>), never as floating point; the app formats cents to euro. Timestamps are <code>timestamptz</code> in UTC; the app shows Europe/Berlin time. Soft-delete only where retention requires it (bookings, payments, tickets); otherwise delete.</div>
+<div class="note warn"><b>One booking, two views.</b> The demo keeps the customer’s bookings (<code>Booking</code>) and the provider’s incoming requests (<code>IncomingRequest</code>) as separate sample lists. In the backend they are the <b>same booking row</b>, returned from the customer side by <code>/v1/bookings</code> and from the provider side by <code>/v1/provider/requests</code>. A provider’s counter offer becomes a quote revision on that booking.</div>
+
+<h2>6.1 Accounts, access and social</h2>
+<table>
+  <thead><tr><th class="w20">Table</th><th class="w45">Key columns</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>users</td><td>id, email (unique, case-insensitive), email_verified_at, phone, phone_verified_at, password_hash, active_role, approved_roles role[], two_factor_enabled, language, deleted_at</td><td><code>approved_roles</code> always contains <code>fan</code>. Roles: fan, musician, venue, organizer.</td></tr>
+    <tr><td>sessions</td><td>id, user_id, device_name, platform, refresh_token_hash, remember, last_seen_at, revoked_at</td><td>Devices list; sign out other devices.</td></tr>
+    <tr><td>verification_codes</td><td>id, user_id, purpose, target, code_hash, expires_at, attempts, used_at</td><td>Purposes: verify_email, reset_password, change_email, change_phone, two_factor.</td></tr>
+    <tr><td>preferences</td><td>user_id, notify_bookings, notify_messages, notify_nearby, private_account, remember_me, language</td><td>Mirrors <code>Prefs</code>.</td></tr>
+    <tr><td>profiles</td><td>id, user_id, handle (unique), name, kind, title, bio, city, avatar_media_id, cover_media_id, genres text[], instruments text[], links jsonb, verified</td><td>Kinds: fan, musician, dj, band, organizer. Counters are derived or cached.</td></tr>
+    <tr><td>applications</td><td>id, user_id, role, status, details jsonb, missing text[], reason, submitted_at, decided_at, reviewer_id</td><td>Status: pending, info, approved, rejected. One open application at a time.</td></tr>
+    <tr><td>application_history</td><td>id, application_id, at, status, note, actor_id</td><td>Status timeline shown to the applicant.</td></tr>
+    <tr><td>staff_permissions</td><td>user_id, permission</td><td>admin, reviewer, support, finance, moderator.</td></tr>
+    <tr><td>follows, blocks</td><td>follower_id / followee_id; blocker_id / blocked_id</td><td>Unique pairs. Blocking removes friendship and pending requests.</td></tr>
+    <tr><td>friend_requests, friendships</td><td>id, from_id, to_id, status, responded_at; user_a, user_b</td><td>Status: pending, accepted, declined.</td></tr>
+    <tr><td>posts, post_media</td><td>id, author_id, kind, caption, location, event_id, track, visibility, removed_at; post_id, media_id, position</td><td>Only approved professionals create posts. Visibility: Public, Followers.</td></tr>
+    <tr><td>stories</td><td>id, author_id, frames (media ids), is_live, expires_at</td><td>Professionals only.</td></tr>
+    <tr><td>comments, comment_media, comment_likes</td><td>id, target_type (post or event), target_id, author_id, text, removed_at</td><td>Any member may attach photos to a comment.</td></tr>
+    <tr><td>post_likes, post_saves</td><td>user_id, post_id</td><td></td></tr>
+    <tr><td>communities, community_members</td><td>id, name, description, cover_media_id, genres, rules; community_id, user_id</td><td>Created by the platform only in V1.</td></tr>
+    <tr><td>conversations, conversation_members, messages</td><td>id, booking_id; conversation_id, user_id, last_read_at; id, conversation_id, sender_id, type, text, media_id, duration_s, liked</td><td>Types: text, image, voice. Booking chats link to a booking.</td></tr>
+    <tr><td>notifications, push_tokens</td><td>id, user_id, type, actor_id, text, href, thumb_media_id, read_at; user_id, token, platform</td><td></td></tr>
+    <tr><td>wishlist_items</td><td>user_id, kind (event, artist, venue), target_id</td><td></td></tr>
+    <tr><td>media</td><td>id, owner_id, kind, storage_key, mime, width, height, bytes, variants jsonb, status</td><td>Status: uploading, ready, rejected.</td></tr>
+  </tbody>
+</table>
+
+<h2>6.2 Providers, events and tickets</h2>
+<table>
+  <thead><tr><th class="w20">Table</th><th class="w45">Key columns</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>venues</td><td>id, owner_id, name, type, area, city, postcode, address, location geography, capacity, rooms, stages, equipment, occasions text[], description, facilities text[], requirements text[], pricing_mode, price_per_night_cents, status</td><td>Types: Club, Open air, Hall, Loft, Garden, Bar.</td></tr>
+    <tr><td>venues (amenities)</td><td>parking jsonb {available, spaces, kind, notes}; garden jsonb {available, capacity, covered, notes}; catering jsonb {available, price_per_guest, min_guests, notes}; security jsonb {available, guests_per_guard, price_per_guard, required_from, notes}; extra_charges jsonb [{label, amount}]</td><td>Parking and garden are separate. Parking kinds: on-site, street, garage, nearby.</td></tr>
+    <tr><td>venue_media</td><td>venue_id, media_id, position</td><td>Cover first.</td></tr>
+    <tr><td>artist_services</td><td>profile_id, pricing_mode, fee_per_hour_cents, min_hours, radius_km, instant_book, travel_cents, travel_note, equipment_cents, equipment_note</td><td>Pricing: listed or quote.</td></tr>
+    <tr><td>availability</td><td>owner (profile or venue), weekdays jsonb, blocked_dates date[]</td><td></td></tr>
+    <tr><td>lessons</td><td>id, profile_id, title, instrument, format, location, duration_min, price_cents, quote_only, level, description, active</td><td>Formats: in-person, online, at-studio.</td></tr>
+    <tr><td>events</td><td>id, title, subtitle, cover_media_id, category, genre, venue_id (nullable), address, location geography, host_id, organizer_id, is_private, state, start_at, end_at, age_limit, description, refund_policy, expected_guests, cancel_reason, cancelled_at</td><td>Only approved organizers may set <code>is_private = false</code> and publish.</td></tr>
+    <tr><td>event_lineup</td><td>event_id, profile_id or name, position</td><td></td></tr>
+    <tr><td>ticket_types</td><td>id, event_id, name, description, price_cents, capacity, sales_start, sales_end</td><td>Sold count derived from tickets. Sold types cannot be deleted or repriced.</td></tr>
+    <tr><td>cost_sharing</td><td>event_id, enabled, per_guest_cents, deadline, note</td><td>Private events.</td></tr>
+    <tr><td>invitations</td><td>id, event_id, guest_id, status, contribution_cents, payment_state, ticket_id, sent_at, message</td><td>Status: invited, accepted, declined.</td></tr>
+    <tr><td>ticket_orders</td><td>id, buyer_id, event_id, total_cents, payment_id, status</td><td></td></tr>
+    <tr><td>tickets</td><td>id, order_id, invite_id, event_id, type_id, holder_name, holder_id, code (unique), status, paid_cents, checked_in_at, checked_in_by</td><td>Status: valid, used, cancelled, refunded.</td></tr>
+    <tr><td>check_ins</td><td>id, event_id, ticket_id, code, result, scanned_at, scanned_by, device_id</td><td>Results: accepted, already_used, wrong_event, cancelled, refunded, unknown. Every scan is logged.</td></tr>
+    <tr><td>promotions</td><td>id, event_id, organizer_id, budget_cents, days, radius_km, audience text[], starts_at, ends_at, payment_id</td><td>Sponsored placement in feeds and lists.</td></tr>
+    <tr><td>reviews</td><td>id, author_id, target_type (event, venue, musician), target_id, booking_id, rating (1–5, null for musicians), recommend, tags text[], text, verified</td><td>Musician reviews need a completed booking (<code>verified = true</code>).</td></tr>
+  </tbody>
+</table>
+
+<h2>6.3 Bookings, payments and support</h2>
+<table>
+  <thead><tr><th class="w20">Table</th><th class="w45">Key columns</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>bookings</td><td>id, customer_id, type (musician, venue, lesson), provider_profile_id, venue_id, lesson_id, event_id, title, date, start_time, end_time, hours, location, guests, equipment, extras, note, pricing_mode, amount_cents, charges jsonb, status, payment_state, deadline_at, reminder_at, reminded_at, cancel_reason, pending_cancellation jsonb, payment_attempts</td><td><code>charges</code> is a snapshot of the agreed price lines (base, travel, equipment, catering, security, fee) and never changes when the provider edits prices.</td></tr>
+    <tr><td>booking_timeline</td><td>id, booking_id, at, label, actor_id</td><td>Shown on the status screen and in admin.</td></tr>
+    <tr><td>booking_changes</td><td>id, booking_id, note, requested_by, requested_at, previous_status, resolved_at, accepted</td><td>Agreed terms stay until the other side accepts.</td></tr>
+    <tr><td>booking_evidence</td><td>id, booking_id, added_by, media_id or text</td><td>Disputes.</td></tr>
+    <tr><td>quotes</td><td>id, booking_id, version, status, items jsonb [{label, amount}], total_cents, valid_until, note</td><td>One row per version. Version 0 = requested (nothing priced).</td></tr>
+    <tr><td>payments</td><td>id, purpose (booking, tickets, contribution, promotion), purpose_id, amount_cents, currency, state, provider, provider_ref, capture_method, attempt_no, idempotency_key, failure_code</td><td>A retry is a new attempt on the same purpose; never a new booking.</td></tr>
+    <tr><td>refunds</td><td>id, payment_id, amount_cents, reason, state, provider_ref, decided_by</td><td>State: pending, succeeded, failed.</td></tr>
+    <tr><td>ledger_entries</td><td>id, booking_id, kind, amount_cents, at</td><td>Kinds: booking_value, service_fee, commission, refund, payout. Feeds earnings and the finance dashboard.</td></tr>
+    <tr><td>payout_accounts</td><td>user_id, provider_account_id, status</td><td>Connected account onboarding and verification status.</td></tr>
+    <tr><td>payouts</td><td>id, user_id, amount_cents, state, provider_ref, requested_at, paid_at</td><td>State: processing, paid, failed.</td></tr>
+    <tr><td>subscriptions</td><td>user_id, plan (monthly, yearly), store (apple, google, stripe), status, trial_end, period_end, store_ref</td><td>Pro plan.</td></tr>
+    <tr><td>support_cases, support_messages</td><td>id, ref (for example DT-4821), user_id, topic, linked_kind, linked_id, status, resolved_at; id, case_id, from (user, support), author_id, text, at</td><td>Status: open, waiting (support replied), resolved.</td></tr>
+    <tr><td>reports</td><td>id, reporter_id, kind, target_id, reason, details, status, decided_by, decision_note, decided_at</td><td>Kinds: post, comment, profile, message, event. Status: open, dismissed, restricted, removed. One open report per reporter and target.</td></tr>
+    <tr><td>audit_log</td><td>id, at, actor_id, action, target_type, target_id, note, before jsonb, after jsonb</td><td>Append-only. Every staff decision and money movement.</td></tr>
+  </tbody>
+</table>
+
+<h2>6.4 Booking lifecycle</h2>
+<p>Listed price (happy path):</p>
+<div class="chain"><span class="st">requested</span><span class="ar">→</span><span class="st">pending</span><span class="ar">→</span><span class="st">accepted</span><span class="ar">→</span><span class="st ok">confirmed</span><span class="ar">→</span><span class="st ok">completed</span></div>
+<p>Exceptions: <span class="chain" style="display:inline-flex;margin:0"><span class="st ex">declined</span><span class="st ex">expired</span><span class="st ex">cancelled</span><span class="st ex">disputed</span><span class="st">change_requested</span><span class="st ex">payment_failed</span></span></p>
+<table>
+  <thead><tr><th class="w15">From</th><th class="w30">Trigger</th><th class="w15">To</th><th>Payment state and side effects</th></tr></thead>
+  <tbody>
+    <tr><td>—</td><td>Customer submits a listed-price request</td><td>requested</td><td>Payment step starts.</td></tr>
+    <tr><td>requested</td><td>Valid request reaches the provider</td><td>pending</td><td><code>authorized</code> (if the payment model uses authorization); <code>deadline_at = +24 h</code>, <code>reminder_at = +12 h</code>.</td></tr>
+    <tr><td>pending</td><td>Provider accepts</td><td>accepted</td><td><code>capture_pending</code>; capture starts. Not confirmed yet.</td></tr>
+    <tr><td>accepted</td><td>Payment verified (webhook)</td><td>confirmed</td><td><code>paid</code>; chat and calendar entries for both sides.</td></tr>
+    <tr><td>accepted</td><td>Payment fails</td><td>payment_failed</td><td><code>failed</code>; customer retries on the same booking (back to accepted / capture).</td></tr>
+    <tr><td>pending</td><td>Provider declines (reason)</td><td>declined</td><td><code>release_pending</code> → <code>released</code> when confirmed.</td></tr>
+    <tr><td>pending</td><td>24 h deadline passes</td><td>expired</td><td><code>release_pending</code> → <code>released</code>. Never shown as released before confirmation.</td></tr>
+    <tr><td>any open</td><td>Customer or provider cancels (reason)</td><td>cancelled</td><td>Authorization → <code>release_pending</code>; captured payment → <code>refund_pending</code> → <code>refunded</code>, per the cancellation policy.</td></tr>
+    <tr><td>confirmed</td><td>Either side requests a change</td><td>change_requested</td><td>Payment unchanged; on accept, new terms apply; on decline, back to the previous status.</td></tr>
+    <tr><td>confirmed / completed</td><td>Problem reported</td><td>disputed</td><td>Payment state stays visible; a support case opens.</td></tr>
+    <tr><td>confirmed</td><td>Event date has passed</td><td>completed</td><td>Payout scheduled: <code>payout_pending</code> → <code>paid_out</code>. Reviews unlock.</td></tr>
+    <tr><td>linked event</td><td>Host cancels the event</td><td>(unchanged)</td><td><code>pending_cancellation</code> set; the booking goes through the cancellation process, it is not cancelled automatically.</td></tr>
+  </tbody>
+</table>
+<p class="small">The legacy status <code>paid</code> (payment verified, not yet confirmed) is kept for compatibility; new bookings move straight from accepted to confirmed when payment is verified. The client mapping is <code>paymentAfter()</code> in <code>mobile/src/lib/booking.ts</code>.</p>
+
+<h3>Quote-based bookings</h3>
+<div class="chain"><span class="st">quote requested</span><span class="ar">→</span><span class="st">quote sent (v1)</span><span class="ar">→</span><span class="st">accepted · payment</span><span class="ar">→</span><span class="st ok">confirmed</span><span class="ar">→</span><span class="st ok">completed</span></div>
+<ul>
+  <li>Requesting a quote charges nothing. The provider sends an itemised quote with a validity date; each revision increases the version and needs the customer’s acceptance again.</li>
+  <li>Accepting a valid quote moves the booking to <code>accepted</code> and starts the payment. An expired or unsent quote cannot be accepted. Declining ends the offer without a booking.</li>
+  <li><span class="tag t-dec">DECISION</span> Quote validity length, the provider deadline for quotes, and whether customer acceptance replaces provider confirmation (blueprint F15–F16).</li>
+</ul>
+
+<h2>6.5 Payment states</h2>
+<table>
+  <thead><tr><th class="w20">State</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>not_started</td><td>No payment step yet (for example a quote request).</td></tr>
+    <tr><td>authorized</td><td>Amount reserved, pending the provider’s decision.</td></tr>
+    <tr><td>capture_pending</td><td>Provider accepted; capture requested, not yet confirmed.</td></tr>
+    <tr><td>paid</td><td>Payment verified by the payment provider.</td></tr>
+    <tr><td>release_pending / released</td><td>Authorization release requested / confirmed (declined, expired or cancelled before capture).</td></tr>
+    <tr><td>refund_pending / refunded</td><td>Refund requested / confirmed by the payment provider.</td></tr>
+    <tr><td>failed</td><td>The payment did not succeed. Nothing was charged.</td></tr>
+    <tr><td>payout_pending / paid_out</td><td>Provider payout requested / confirmed.</td></tr>
+    <tr><td>disputed</td><td>A case or chargeback is open.</td></tr>
+  </tbody>
+</table>
+<p>Only payment-provider webhooks (or a reconciliation job reading the provider’s API) move a <code>*_pending</code> state to its final state.</p>
+
+<h2>6.6 Other lifecycles</h2>
+<table>
+  <thead><tr><th class="w20">Entity</th><th>States and rules</th></tr></thead>
+  <tbody>
+    <tr><td>Event</td><td><code>draft</code> → <code>planning</code> (provider bookings outstanding) → <code>published</code> → <code>ready</code> (all linked bookings confirmed) → <code>in_progress</code> (from start time) → <code>completed</code> (after end time); <code>cancelled</code> at any time with a reason. Private published events read “Invitations open”. Readiness and budget come from the linked bookings (<code>lib/events.ts</code>).</td></tr>
+    <tr><td>Application</td><td><code>pending</code> → <code>approved</code> (role added to approved_roles) | <code>info</code> (missing items listed; applicant resubmits → pending) | <code>rejected</code> (reason; applicant may apply again).</td></tr>
+    <tr><td>Ticket</td><td><code>valid</code> → <code>used</code> (first check-in time stored) | <code>cancelled</code> | <code>refunded</code>. A ticket of a cancelled event is refused at the door.</td></tr>
+    <tr><td>Invitation</td><td><code>invited</code> → <code>accepted</code> | <code>declined</code>. Free invitation: ticket issued on accept. With cost sharing: ticket issued only after the contribution payment succeeds.</td></tr>
+    <tr><td>Support case</td><td><code>open</code> (waiting for support) ⇄ <code>waiting</code> (support replied, waiting for the member) → <code>resolved</code>. Cannot resolve while a linked refund or release is pending.</td></tr>
+    <tr><td>Report</td><td><code>open</code> → <code>dismissed</code> | <code>restricted</code> | <code>removed</code> (posts and comments are hidden for everyone). Decision note and audit entry required.</td></tr>
+    <tr><td>Friend request</td><td><code>pending</code> → <code>accepted</code> | <code>declined</code>; the sender may cancel while pending.</td></tr>
+  </tbody>
+</table>
+
+<h2>6.7 Pricing and scoring rules</h2>
+<table>
+  <thead><tr><th class="w25">Rule</th><th>Formula (from <code>mobile/src/lib</code>)</th></tr></thead>
+  <tbody>
+    <tr><td>Catering</td><td><code>pricePerGuest × max(guests, minGuests)</code>, only if available and guests &gt; 0</td></tr>
+    <tr><td>Security</td><td><code>ceil(guests / guestsPerGuard) × pricePerGuard</code>; mandatory when guests ≥ <code>requiredFrom</code></td></tr>
+    <tr><td>Artist estimate</td><td>Base = fee per hour × hours (no base price when the artist prices by quote); travel and equipment are separate lines; optional service fee line. The provider’s minimum hours (availability) are enforced on the request.</td></tr>
+    <tr><td>Lesson estimate</td><td>Price per session × sessions (its own price, never the performance fee); quote-only lessons have no price</td></tr>
+    <tr><td>Customer service fee</td><td>5% of the booking total (demo rate) <span class="tag t-dec">DECISION</span></td></tr>
+    <tr><td>Platform commission</td><td>10% of each booking paid through the app, deducted from the provider’s payout (as stated in the Terms) <span class="tag t-dec">DECISION</span> final rate and who pays</td></tr>
+    <tr><td>Provider net</td><td><code>gross × (1 − commission rate)</code></td></tr>
+    <tr><td>Musician score</td><td><code>round(recommended / total × 100)</code>% over verified reviews; top praise tags by count; no score when total = 0</td></tr>
+    <tr><td>Venue / event rating</td><td>Average of 1–5 star reviews with count; show “New” when there are no reviews</td></tr>
+    <tr><td>Deadlines</td><td>Response window 24 h, reminder 12 h (<code>RESPONSE_HOURS</code>, <code>REMINDER_HOURS</code>)</td></tr>
+  </tbody>
+</table>
+<p>Rates and windows must be server configuration (not constants in code), because several are open decisions.</p>

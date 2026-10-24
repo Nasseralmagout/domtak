@@ -1,0 +1,106 @@
+<section class="cover">
+  <div class="inner">
+    <div class="brand">DOMTAK</div>
+    <h1 class="title" data-notoc>Technical Handbook<br>Version 1 (V1)</h1>
+    <div class="sub">Everything the frontend and backend teams need to implement, deploy and operate Domtak on Android, iOS and the web.</div>
+    <div class="platforms"><span>Android</span><span>iOS</span><span>Web</span></div>
+    <div class="rule"></div>
+    <div class="sub" style="font-size: 11pt">Music social network · events and tickets · artist, venue and lesson booking · Berlin</div>
+  </div>
+  <div class="band"></div>
+  <div class="meta">
+    <div><b>Document</b>Version 1.0<br>24 October 2026</div>
+    <div><b>Code</b>github.com/<br>Nasseralmagout/DOMTAK-V1<br>branch <span style="color:#fff">main</span></div>
+    <div><b>Audience</b>Frontend, backend, DevOps,<br>QA and product</div>
+  </div>
+</section>
+
+<section class="toc">
+  <h1 data-notoc>Contents</h1>
+  <!--TOC-->
+</section>
+
+<h1>About this document</h1>
+<p class="lead">Domtak V1 exists today as a complete, working front-end: one Expo / React Native codebase that runs as an Android app, an iOS app and a web app. Every screen and flow works, but on sample data stored on the device. There is no server yet, and payments, messages and notifications are simulated. This handbook describes what is built, what the backend must provide, which external services must be activated, and how to ship all three platforms.</p>
+
+<h2>How to read the labels</h2>
+<table>
+  <thead><tr><th class="w20">Label</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="tag t-built">BUILT</span></td><td>Exists in the V1 front-end today (UI, navigation, client-side rules), running on demo data.</td></tr>
+    <tr><td><span class="tag t-build">TO BUILD</span></td><td>Must be implemented: backend services, real integrations, or production hardening of the front-end.</td></tr>
+    <tr><td><span class="tag t-dec">DECISION</span></td><td>An open product, legal or business decision from the blueprint. Do not hard-code an answer; build it configurable or wait for the decision.</td></tr>
+    <tr><td><span class="tag t-later">LATER</span></td><td>Outside V1 scope (blueprint flows F28–F30). Keep the data model open to it, but do not build it now.</td></tr>
+  </tbody>
+</table>
+<p>Recommendations for technologies and vendors are marked as such. They are sensible defaults that fit the existing code and EU/GDPR hosting; the teams may change them, provided the contracts in this document (data model, API behaviour, state machines and acceptance criteria) are kept.</p>
+
+<h2>Sources this document is based on</h2>
+<table>
+  <thead><tr><th class="w30">Source</th><th>What it contains</th></tr></thead>
+  <tbody>
+    <tr><td>Code repository</td><td><code>github.com/Nasseralmagout/DOMTAK-V1</code>, branch <code>main</code>. The app is in <code>mobile/</code>. The same history also lives in <code>Nasseralmagout/domtak</code> (pull request #1).</td></tr>
+    <tr><td>Product blueprint</td><td>“Domtak User Flows and Dashboards” (1 October 2026): 16 sections and flows F01–F30, the booking and payment state tables, dashboards and the list of open decisions.</td></tr>
+    <tr><td>Product owner rules</td><td>Rules added on top of the blueprint (section 2.3): organizer-only public events, member photos only in comments, clearer venue page with parking and garden separate, “would book again” rating for musicians, nearby-events map with filters, catering and security priced by attendance.</td></tr>
+    <tr><td>Design canvas</td><td>“Domtak Android App” design artifact, page “V1 · Wireframe &amp; final”: final designs of all 136 V1 screens (private; the owner shares it from the page’s Share menu).</td></tr>
+    <tr><td>Web preview</td><td>Vercel project built from <code>vercel.json</code> in the repository (Root Directory <code>mobile</code> or empty, framework preset “Other”).</td></tr>
+  </tbody>
+</table>
+
+<h1>1. Project overview</h1>
+<h2>1.1 Product summary</h2>
+<p>Domtak is a music-first platform for Berlin that connects fans, musicians (solo artists, bands and DJs), venues and event organizers. It combines four products in one app:</p>
+<ul>
+  <li><b>Social:</b> an Instagram-style home feed (For You, Following, Nearby), stories, live, comments, follows, friends, direct messages and platform-run music communities.</li>
+  <li><b>Events and tickets:</b> discovery by category, filters and a nearby-events map, event pages and discussions, ticket checkout, an e-ticket wallet with QR codes, and door check-in.</li>
+  <li><b>Booking:</b> booking musicians, venues and music lessons, at a listed price or by itemised quote, with a 24-hour provider response window, a payment state for every booking, change requests, cancellations, disputes and reviews.</li>
+  <li><b>Professional workspaces:</b> reviewed applications for artists, venues and organizers; requests, availability, services and pricing, earnings and payouts, event management, promotion, guest lists and a QR scanner; plus an admin console for applications, booking exceptions, finance and moderation.</li>
+</ul>
+
+<h2>1.2 Current status</h2>
+<table>
+  <thead><tr><th class="w25">Area</th><th class="w15">Status</th><th>Details</th></tr></thead>
+  <tbody>
+    <tr><td>Screens and navigation</td><td><span class="tag t-built">BUILT</span></td><td>90 route files (136 designed screen states) covering flows F01–F27 of the blueprint. Same code on Android, iOS and web.</td></tr>
+    <tr><td>Business rules (client side)</td><td><span class="tag t-built">BUILT</span></td><td>Booking and payment state machine, 24 h deadline and 12 h reminder, quotes, pricing (catering, security, travel, equipment, fees), ratings, event lifecycle, permissions. These are in <code>mobile/src/lib</code> and <code>mobile/src/store</code> and must be re-implemented on the server as the source of truth.</td></tr>
+    <tr><td>Data</td><td><span class="tag t-build">TO BUILD</span></td><td>All content is sample data (<code>src/data/mock.ts</code>) and user actions are stored on the device (zustand + AsyncStorage, key <code>domtak-app</code>). Needs the backend API.</td></tr>
+    <tr><td>Accounts and sign-in</td><td><span class="tag t-build">TO BUILD</span></td><td>UI is complete (register, verify code, sign in, forgot password, two-step verification, change email/phone, devices, data export, delete account). No real authentication yet.</td></tr>
+    <tr><td>Payments</td><td><span class="tag t-build">TO BUILD</span> <span class="tag t-dec">DECISION</span></td><td>Checkout, failure, retry, refund and payout screens exist; nothing is charged. Payment provider and authorization model are open decisions.</td></tr>
+    <tr><td>Messages, notifications, push</td><td><span class="tag t-build">TO BUILD</span></td><td>Inbox, chat and notification screens exist on local data. No realtime transport, push or email.</td></tr>
+    <tr><td>Map and location</td><td><span class="tag t-build">TO BUILD</span></td><td>Nearby map with filters works on a static Berlin image with positioned pins. Needs a map SDK, device location and geo queries.</td></tr>
+    <tr><td>Media upload</td><td><span class="tag t-build">TO BUILD</span></td><td>Post, story and comment-photo screens use bundled sample images. Needs image picking, upload and a CDN.</td></tr>
+    <tr><td>QR scanner</td><td><span class="tag t-built">BUILT</span> (camera)</td><td>Uses <code>expo-camera</code>. Validation runs against local data; must call the server.</td></tr>
+    <tr><td>Admin console</td><td><span class="tag t-built">BUILT</span> (demo)</td><td>Applications, bookings, finance, reports. Opened by a demo switch; needs staff authentication and role-based access.</td></tr>
+    <tr><td>Builds</td><td><span class="tag t-built">BUILT</span></td><td>Android bundle and web export build cleanly. <code>eas.json</code> has preview (APK) and production (AAB) profiles. iOS builds need an Apple Developer account.</td></tr>
+  </tbody>
+</table>
+
+<h2>1.3 Scope of work for the teams</h2>
+<div class="cols">
+  <div class="box tint"><b>Backend team</b>
+    <ul style="margin:1mm 0 0">
+      <li>API and database for every entity in section 6</li>
+      <li>Authentication, roles, applications and staff access</li>
+      <li>Booking, quote and payment state machines with timers</li>
+      <li>Payment provider integration, webhooks, refunds, payouts</li>
+      <li>Tickets, QR validation and check-in</li>
+      <li>Feed, comments, messages (realtime), notifications</li>
+      <li>Media storage, search, geo queries</li>
+      <li>Admin, moderation, support cases, audit log</li>
+      <li>Hosting, monitoring, backups, GDPR tooling</li>
+    </ul>
+  </div>
+  <div class="box tint"><b>Frontend team</b>
+    <ul style="margin:1mm 0 0">
+      <li>API client layer; replace mock data and local actions</li>
+      <li>Secure token storage and session handling</li>
+      <li>Native modules: push, location, maps, image picker, payments</li>
+      <li>Remove demo controls; real dates and real admin access</li>
+      <li>Error, loading and offline states against a real network</li>
+      <li>Replace watermarked sample photos and the map image</li>
+      <li>Store builds, signing, submission, over-the-air updates</li>
+      <li>Web hosting and domain</li>
+      <li>Automated tests for the acceptance criteria (section 12)</li>
+    </ul>
+  </div>
+</div>

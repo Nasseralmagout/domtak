@@ -1,0 +1,55 @@
+<h1>8. Payments</h1>
+<div class="note warn"><b>Open decision first.</b> The blueprint leaves the payment provider, the legal payment structure, and the choice between “authorize now, capture on acceptance” and “charge after acceptance” open (F14–F19). The app is built so that either works: it shows the payment state of each booking and never promises escrow. The design below uses Stripe as the recommended provider and supports both models through configuration. Have the model confirmed by legal and finance before building it.</div>
+
+<h2>8.1 Recommended model</h2>
+<ul>
+  <li><b>Provider:</b> Stripe, with <b>Stripe Connect</b> (Express accounts) for artists, venues and organizers. Stripe handles identity verification (KYC) and bank payouts for providers. Card data never touches Domtak servers.</li>
+  <li><b>Flow of money:</b> the customer pays Domtak’s platform account; after the service is delivered, Domtak transfers the provider’s share (booking value minus commission) to the provider’s connected account (“separate charges and transfers”). This lets payouts wait until the event is completed.</li>
+  <li><b>Payment UI:</b> Stripe PaymentSheet on Android and iOS (cards, Google Pay, Apple Pay) and the Payment Element on the web. The app shows Visa, Google Pay, PayPal and SEPA direct debit as options today; enable each method in Stripe and check which methods support the chosen model (for example, SEPA direct debit does not support an authorization hold).</li>
+  <li><b>Source of truth:</b> Stripe webhooks. The API never marks money as moved until the matching webhook (or a reconciliation read) confirms it.</li>
+</ul>
+
+<h2>8.2 Listed-price booking</h2>
+<table>
+  <thead><tr><th class="w8">#</th><th class="w40">Step</th><th>Model A: authorize, capture on acceptance</th><th>Model B: charge after acceptance</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Customer submits the request</td><td>Server creates the booking (<code>requested</code>) and a PaymentIntent with manual capture; app confirms it in the PaymentSheet</td><td>Server creates the booking; no payment yet (<code>not_started</code>)</td></tr>
+    <tr><td>2</td><td>Valid request reaches the provider</td><td>On the “amount capturable” webhook: <code>pending</code> / <code>authorized</code>; 24 h deadline and 12 h reminder scheduled</td><td><code>pending</code>; deadline and reminder scheduled</td></tr>
+    <tr><td>3</td><td>Provider accepts</td><td>Server captures: <code>accepted</code> / <code>capture_pending</code> → on success webhook <code>confirmed</code> / <code>paid</code></td><td><code>accepted</code>; customer pays (PaymentIntent, automatic capture) → <code>confirmed</code> / <code>paid</code></td></tr>
+    <tr><td>4</td><td>Provider declines, deadline passes, or cancellation before payment</td><td>Server cancels the PaymentIntent: <code>release_pending</code> → <code>released</code> on webhook</td><td>Nothing to release</td></tr>
+    <tr><td>5</td><td>Payment fails</td><td colspan="2"><code>payment_failed</code> / <code>failed</code>; the customer retries on the same booking (new attempt, same booking id, new idempotency key)</td></tr>
+    <tr><td>6</td><td>Event completed</td><td colspan="2"><code>completed</code>; payout scheduled after the hold period: <code>payout_pending</code> → <code>paid_out</code> (transfer to the connected account)</td></tr>
+  </tbody>
+</table>
+<p class="small">Card authorizations are only valid for a limited time (typically about 7 days for online card payments). The 24-hour response window fits inside it; the authorization watch job (section 5.5) protects edge cases such as late change requests.</p>
+
+<h2>8.3 Quotes, tickets and contributions</h2>
+<ul>
+  <li><b>Quotes:</b> requesting and receiving a quote charges nothing. Accepting a valid quote starts a normal payment (automatic capture) for the quote total; success confirms the booking.</li>
+  <li><b>Tickets:</b> <code>POST /ticket-orders</code> holds the requested ticket stock for a short time, creates a PaymentIntent and issues tickets (unique codes) only after payment success. Releasing unpaid holds is a job. <span class="tag t-dec">DECISION</span> Public ticket selling scope, fees and organizer settlement (blueprint F12, F20–F22).</li>
+  <li><b>Cost-sharing contributions:</b> one PaymentIntent per guest invitation; the guest ticket is issued only on success. <span class="tag t-dec">DECISION</span> Contribution limits and how the host receives the money.</li>
+  <li><b>Promotions:</b> paid by the organizer before the promotion starts.</li>
+</ul>
+
+<h2>8.4 Cancellations, refunds and disputes</h2>
+<ul>
+  <li>Before capture: release the authorization (no charge). After capture: create a refund according to the policy shown on the booking or event; the state stays <code>refund_pending</code> until Stripe confirms.</li>
+  <li>Support may only promise a refund after an authorized decision (finance permission); every refund decision is in the audit log.</li>
+  <li>Card disputes (chargebacks) set the booking or order to <code>disputed</code>; evidence is collected from the booking (timeline, messages, check-ins, evidence files) and submitted through Stripe.</li>
+  <li><span class="tag t-dec">DECISION</span> Cancellation, refund, no-show, rescheduling and dispute policies (F13, F18, F20–F22).</li>
+</ul>
+
+<h2>8.5 Fees, commission and payouts</h2>
+<ul>
+  <li>Demo rates in the app: customer service fee 5% (<code>SERVICE_FEE_RATE</code>), platform commission 10% deducted from the provider (<code>PLATFORM_COMMISSION_RATE</code>, stated in the Terms). Both are server configuration. <span class="tag t-dec">DECISION</span> Final rates, who pays the commission, tax presentation and payment fee allocation.</li>
+  <li>The ledger records booking value, service fee, commission, refunds and payouts separately, so provider earnings and the admin finance dashboard can show them separately (blueprint requirement).</li>
+  <li>Providers must finish payout onboarding (identity and bank account) before their first payout. <span class="tag t-dec">DECISION</span> Payout timing and hold period.</li>
+</ul>
+
+<h2>8.6 Pro subscription</h2>
+<p>The Pro plan costs €9,99 per month or €89 per year, with the first month free.</p>
+<ul>
+  <li>Inside the Android and iOS apps, a subscription that unlocks digital features must be sold through <b>Google Play Billing</b> and <b>Apple In-App Purchase</b> (store rules). On the web, use <b>Stripe Billing</b>. A service such as RevenueCat can combine the three into one entitlement.</li>
+  <li>The server stores one subscription record per account and updates it from App Store Server Notifications, Google Play real-time developer notifications and Stripe webhooks.</li>
+  <li>Bookings, event tickets and contributions are payments for real-world services and use Stripe in all apps. Check the store rules for paid event promotions, which may count as a digital purchase.</li>
+</ul>

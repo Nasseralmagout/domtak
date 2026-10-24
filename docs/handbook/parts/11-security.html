@@ -1,0 +1,44 @@
+<h1>11. Security, privacy and compliance</h1>
+<div class="note"><b>Note.</b> This section lists the technical measures and the topics that need legal review. It is not legal advice; the company’s counsel should confirm each legal point for Germany and the EU.</div>
+
+<h2>11.1 Security measures</h2>
+<table>
+  <thead><tr><th class="w25">Area</th><th>Measure</th></tr></thead>
+  <tbody>
+    <tr><td>Transport</td><td>TLS everywhere (HSTS on the web). No plain HTTP endpoints.</td></tr>
+    <tr><td>Authentication</td><td>Argon2id password hashes; hashed one-time codes with expiry and attempt limits; refresh token rotation with reuse detection; per-device sessions; staff accounts require two-step verification.</td></tr>
+    <tr><td>Authorization</td><td>Every endpoint checks role, approval and ownership on the server. Automated tests for access to other users’ bookings, tickets, messages and admin endpoints (IDOR).</td></tr>
+    <tr><td>Input</td><td>Schema validation on every request; parameterised queries (ORM); size limits; file type checks on uploads; no user HTML.</td></tr>
+    <tr><td>Payments</td><td>Card entry only through Stripe’s UI (keeps PCI DSS scope minimal); webhook signatures verified; idempotency keys; no card data in logs.</td></tr>
+    <tr><td>Tickets</td><td>Ticket codes are random and unguessable (or signed); every scan is validated on the server and logged. <span class="tag t-dec">DECISION</span> Offline scanning (blueprint F22).</td></tr>
+    <tr><td>Secrets</td><td>Stored in the cloud secrets manager and CI secrets; never in the repository or in <code>EXPO_PUBLIC_</code> variables; rotated on staff changes.</td></tr>
+    <tr><td>Abuse</td><td>Rate limits on sign-in, codes, messages, friend requests, reports and search; spam and bot detection on registration.</td></tr>
+    <tr><td>Data</td><td>Encryption at rest for the database, backups and storage; least-privilege access; production data never copied to development.</td></tr>
+    <tr><td>Supply chain</td><td>Dependabot (or similar) for app and API dependencies; lockfiles committed; CI fails on known critical vulnerabilities.</td></tr>
+    <tr><td>Audit</td><td>Append-only audit log for staff decisions and money movements.</td></tr>
+  </tbody>
+</table>
+
+<h2>11.2 Privacy (GDPR)</h2>
+<ul>
+  <li><b>Hosting and processors:</b> personal data stays in the EU; list every processor (cloud, Stripe, email, SMS, maps, Sentry, analytics, Expo, Apple, Google) in the records of processing with a DPA.</li>
+  <li><b>User rights in the app:</b> data export and account deletion already exist in Account &amp; security; the backend must implement them (export as a downloadable file; deletion with removal of profile, posts, comments, photos, friends and messages).</li>
+  <li><b>Retention</b> (as stated in the app’s privacy summary): profile and social content until account deletion; booking, payment, refund, payout and ticket records for the period German tax and commercial law requires, also after deletion; support cases and moderation decisions under a retention policy so decisions stay traceable.</li>
+  <li><b>Location:</b> used only while the user uses Nearby or the map, and only with permission. Do not store precise location history.</li>
+  <li><b>Photos:</b> strip location metadata on upload.</li>
+  <li><b>Consent:</b> analytics and any non-essential cookies or device storage need prior consent (web banner, in-app setting).</li>
+  <li><b>Children and age:</b> <span class="tag t-dec">DECISION</span> Minimum age for accounts. Events can carry an age limit (for example 18+); the door team checks ID.</li>
+</ul>
+
+<h2>11.3 Legal texts and platform rules to review</h2>
+<table>
+  <thead><tr><th class="w30">Topic</th><th>Status and action</th></tr></thead>
+  <tbody>
+    <tr><td>Imprint (Impressum)</td><td>Screen exists with placeholders: street and number, postcode, managing director, commercial register number, VAT id. Fill in before launch.</td></tr>
+    <tr><td>Terms and privacy policy</td><td>The app shows a plain-language summary labelled as a beta text. Counsel writes the binding texts; the app shows them (or links to the web versions).</td></tr>
+    <tr><td>Cancellation, refund and no-show policies</td><td><span class="tag t-dec">DECISION</span> Needed for bookings, tickets and contributions; shown on each booking and event.</td></tr>
+    <tr><td>Marketplace obligations</td><td>Review EU platform rules that apply to a marketplace for services: ranking and “Sponsored” labelling (the app labels promoted events), notice-and-action for reported content with reasons and appeals (the report and appeal flows exist), and reporting of seller income to tax authorities.</td></tr>
+    <tr><td>Accessibility</td><td>Target WCAG 2.1 AA on all platforms; check whether the European Accessibility Act applies to ticket and booking sales.</td></tr>
+    <tr><td>Image and map rights</td><td>19 sample photos carry an “Unsplash+” watermark and <code>map_berlin.jpg</code> is a Google Maps screenshot; replace them (appendix B).</td></tr>
+  </tbody>
+</table>

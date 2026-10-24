@@ -1,0 +1,55 @@
+<h1>12. Testing and acceptance</h1>
+<h2>12.1 Test strategy</h2>
+<table>
+  <thead><tr><th class="w25">Level</th><th class="w30">Tools (suggested)</th><th>Scope</th></tr></thead>
+  <tbody>
+    <tr><td>Unit</td><td>Jest / Vitest</td><td>State machines, payment state mapping, pricing formulas, scores, deadlines, permissions (port the rules in <code>mobile/src/lib</code> to server tests first).</td></tr>
+    <tr><td>API integration</td><td>Test runner + real PostgreSQL and Redis containers</td><td>Every endpoint: success, validation, permission and conflict cases; jobs with a controllable clock.</td></tr>
+    <tr><td>Contract</td><td>OpenAPI diff in CI</td><td>No breaking change without a version bump.</td></tr>
+    <tr><td>Payments</td><td>Stripe test mode, test cards, webhook replay</td><td>Authorize, capture, decline, expiry release, failure and retry, refund, payout, dispute.</td></tr>
+    <tr><td>End-to-end mobile</td><td>Maestro or Detox on Android and iOS</td><td>The flows in 12.3 on development builds against staging.</td></tr>
+    <tr><td>End-to-end web</td><td>Playwright</td><td>Same flows on the web build; responsive widths.</td></tr>
+    <tr><td>Load</td><td>k6 or similar</td><td>Feed, search, event page, ticket checkout at sale start, check-in bursts at doors.</td></tr>
+    <tr><td>Security</td><td>Automated scanning + manual review</td><td>Access control (IDOR), auth, uploads, webhooks, rate limits.</td></tr>
+  </tbody>
+</table>
+
+<h2>12.2 Acceptance criteria (from the blueprint)</h2>
+<table>
+  <thead><tr><th class="w45">Criterion</th><th>How to test</th></tr></thead>
+  <tbody>
+    <tr><td>A member cannot publish a public event without organizer approval.</td><td>API: publish as member, artist, venue and unapproved organizer → refused; approved organizer → allowed.</td></tr>
+    <tr><td>Application status is visible and does not grant premature access.</td><td>Pending, info and rejected applicants get <code>ROLE_NOT_APPROVED</code> on professional endpoints.</td></tr>
+    <tr><td>Every provider booking has its own deadline and financial record.</td><td>Event with artist and venue bookings: decline one, the other stays unchanged.</td></tr>
+    <tr><td>Reminder after 12 h only while awaiting a response.</td><td>Clock-controlled job test: answered at 11 h → no reminder.</td></tr>
+    <tr><td>Expiry at 24 h without claiming the release is complete.</td><td>Status <code>expired</code>, payment <code>release_pending</code> until the webhook.</td></tr>
+    <tr><td>Acceptance alone does not confirm a booking if payment fails.</td><td>Accept + failed capture → <code>payment_failed</code>, not confirmed.</td></tr>
+    <tr><td>Rejecting one request does not cancel unrelated confirmed bookings.</td><td>As above, plus event cancellation flags bookings instead of cancelling them.</td></tr>
+    <tr><td>Agreed terms remain after profile prices change.</td><td>Change provider fee after booking → booking charges unchanged.</td></tr>
+    <tr><td>Ticket validation rejects wrong-event, cancelled, refunded and used tickets.</td><td>Scan each case; used ticket shows the first check-in time.</td></tr>
+    <tr><td>Dashboard actions respect ownership and role permissions.</td><td>Access other users’ resources → 403/404.</td></tr>
+    <tr><td>Financial totals separate booking value, fees, refunds and payouts.</td><td>Ledger totals match Stripe test data.</td></tr>
+    <tr><td>Empty states show real absence of activity.</td><td>New account: every list shows its empty state, no sample content.</td></tr>
+    <tr><td>All flows work in English on every platform.</td><td>E2E suite passes on Android, iOS and web.</td></tr>
+  </tbody>
+</table>
+
+<h2>12.3 Flow coverage</h2>
+<table>
+  <thead><tr><th class="w8">Flow</th><th class="w30">Name</th><th>Main screens</th></tr></thead>
+  <tbody>
+    <tr><td>F01</td><td>Member registration</td><td>onboarding, register, verify, profile-setup</td></tr>
+    <tr><td>F02–F03</td><td>Professional application and review</td><td>apply, application, admin/applications</td></tr>
+    <tr><td>F04</td><td>Sign-in, recovery, role switching</td><td>login, forgot-password, workspace, account-security</td></tr>
+    <tr><td>F05–F07</td><td>Artist and venue setup; update profile or availability</td><td>pro/services, pro/venue-listing, pro/availability, profile-setup</td></tr>
+    <tr><td>F08</td><td>Discover and evaluate a provider</td><td>artists, artist/[id], ratings, venues, venue/[id], map, search</td></tr>
+    <tr><td>F09–F10</td><td>Communities; friends and messages</td><td>communities, community/[id], friends, inbox, chat</td></tr>
+    <tr><td>F11–F13</td><td>Private and public events; change or cancel</td><td>create-event, event-created, my-events, event-workspace, pro/events</td></tr>
+    <tr><td>F14–F16</td><td>Listed booking, quotes, provider response</td><td>booking/new, booking/[id], quote/[id], pro/requests, pro/request/[id]</td></tr>
+    <tr><td>F17–F19</td><td>Failed payment, refund and cancellation, earnings and payout</td><td>checkout, booking/[id], booking/issue, pro/earnings</td></tr>
+    <tr><td>F20–F22</td><td>Guests and cost sharing, ticket wallet, check-in</td><td>invite, invitation/[id], my-bookings (tickets), ticket/[id], pro/scan, pro/attendees</td></tr>
+    <tr><td>F23</td><td>Discover and book a lesson</td><td>lessons, lesson/[id], booking/new</td></tr>
+    <tr><td>F24–F27</td><td>Investigation, moderation, roles, support and appeal</td><td>admin/*, support/*, help</td></tr>
+    <tr><td>F28–F30</td><td>Technicians and equipment, user communities, artist projects</td><td><span class="tag t-later">LATER</span> not in V1</td></tr>
+  </tbody>
+</table>
